@@ -10,12 +10,12 @@ import './style/app.css';
 
 // ---- App modules ----
 import { initRouter, route, fallback, navigate } from './router.js';
-import { isLoggedIn, getToken, getEmail, isOwner } from './state/auth.js';
-import { setAuth, setUserProfile } from './state/auth.js';
+import { isLoggedIn, clearAuth } from './state/auth.js';
+import { setUserProfile } from './state/auth.js';
 import { setClasses } from './state/class.js';
 import { api } from './api/client.js';
 
-import { renderShell, syncNav, onClassChange, updateClassSelector } from './components/AppShell.js';
+import { renderShell, syncNav, onClassChange, updateClassSelector, refreshShell } from './components/AppShell.js';
 import { setStudents, setDashboard, getSelectedId, setSelectedClass } from './state/class.js';
 import { setWorkspace } from './state/workflow.js';
 import { showToast } from './utils/toast.js';
@@ -75,6 +75,7 @@ async function boot() {
         try {
             const me = await api('/auth/me');
             setUserProfile(me);
+            refreshShell();
             const classes = await api('/classes');
             setClasses(classes || []);
             const selectedId = getSelectedId();
@@ -99,6 +100,8 @@ async function boot() {
             }
         } catch {
             // Token invalid/expired — clear and redirect to login
+            clearAuth();
+            refreshShell();
             navigate('login');
             return;
         }

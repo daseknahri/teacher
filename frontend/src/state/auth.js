@@ -42,8 +42,10 @@ export function setUserProfile({ role, id, full_name }) {
 
 export function clearAuth() {
     _state.token = '';
+    _state.email = '';
     _state.role = '';
     _state.userId = null;
     _state.name = '';
     localStorage.removeItem(AUTH_KEY);
+    localStorage.removeItem(EMAIL_KEY);
 }

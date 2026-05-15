@@ -8,6 +8,7 @@ import { setClasses } from '../state/class.js';
 import { showToast } from '../utils/toast.js';
 import { navigate } from '../router.js';
 import { generateStrongPassword } from '../utils/password.js';
+import { refreshShell } from '../components/AppShell.js';
 
 export function renderLoginView() {
   /*  Hide app chrome  */
@@ -174,6 +175,7 @@ export function renderLoginView() {
       setAuth({ token: data.access_token, email });
       const me = await api('/auth/me');
       setUserProfile(me);
+      refreshShell();
       const classes = await api('/classes');
       setClasses(classes || []);
       navigate('class');
