@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+node_modules/
+frontend/node_modules/
+frontend/dist/
+.env
+backend/.env
+backend/app.db
+app.db
+*.log
+storage/
+backend/storage/
+_push_sood/
+.tmp_notebooklm/
+.playwright-mcp/

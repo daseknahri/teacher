@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: teacher-progress-db
+    environment:
+      POSTGRES_DB: teacher_progress
+      POSTGRES_USER: teacher
+      POSTGRES_PASSWORD: teacher
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  teacher-app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: teacher-progress-mvp
+    env_file:
+      - ./backend/.env
+      - ./.env
+    depends_on:
+      - postgres
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./storage:/app/storage
+    environment:
+      - DATABASE_URL=${DATABASE_URL:-postgresql+psycopg://teacher:teacher@postgres:5432/teacher_progress}
+      - STORAGE_DIR=/app/storage
+      - PRINCIPAL_EXPORT_TEMPLATE=${PRINCIPAL_EXPORT_TEMPLATE:-}
+
+volumes:
+  postgres_data:

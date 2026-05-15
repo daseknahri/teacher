@@ -1,0 +1,17 @@
+fastapi==0.115.8
+uvicorn==0.34.0
+sqlalchemy==2.0.38
+pydantic==2.10.6
+python-multipart==0.0.20
+python-dotenv==1.0.1
+openpyxl==3.1.5
+reportlab==4.2.5
+pytesseract==0.3.13
+pytest==8.3.5
+httpx==0.28.1
+psycopg[binary]==3.2.6
+pypdf==5.4.0
+pypdfium2==4.30.0
+arabic-reshaper==3.0.0
+python-bidi==0.4.2
+notebooklm-py==0.4.1

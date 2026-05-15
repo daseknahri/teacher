@@ -1,0 +1,200 @@
+# FE-BE Coordination Log
+
+Last updated: 2026-03-04
+
+Purpose: keep frontend and backend work synchronized during UI revisions.
+
+## Ground Rules
+- FE updates this file when UI behavior changes or when API gaps are discovered.
+- BE updates this file when an API contract changes or a requested endpoint is delivered.
+- Always link to endpoint + payload keys (not only screen names).
+
+## Current UI State (Frontend Implemented)
+- Workflow extraction review modal is live:
+  - Source endpoint: `POST /sessions/{session_id}/uploads`
+  - Review features: edit text, change type, remove, move up/down, add row
+  - Apply endpoint: `POST /sessions/{session_id}/confirm-extraction` with `mode=replace|append`
+  - Backend now returns normalized `items[]` in extraction response for easier FE reuse.
+  - Resume endpoint is wired: `GET /sessions/{session_id}/uploads/latest`
+  - FE now has "Resume Last Extraction" action in Session Active tab.
+  - Session Active now includes progress viewer sourced from `GET /sessions/{session_id}` (`progress_items` list).
+- Workflow create/extract actions are always visible and disabled when blocked by active unit.
+- Unit document download action is live:
+  - `GET /workflow/units/{unit_id}/document`
+- Session image upload trigger is live in active session tab.
+- Workflow checklist CRUD is live:
+  - Add root item: `POST /workflow/classes/{class_id}/units/{unit_id}/items`
+  - Add child item: same endpoint with `parent_item_id`
+  - Edit item: `PUT /workflow/classes/{class_id}/units/{unit_id}/items/{item_id}`
+  - Delete item: `DELETE /workflow/classes/{class_id}/units/{unit_id}/items/{item_id}`
+- Workflow checklist reorder is live:
+  - Reorder + re-parent items: `POST /workflow/classes/{class_id}/units/{unit_id}/items/reorder`
+  - Drag-and-drop tree interactions are now live:
+    - Drag handle in each row.
+    - Drop behavior: top=`before`, middle=`make child`, bottom=`after`.
+    - Root drop zone moves item to root level (append at end).
+  - Fallback FE controls remain: `Up`, `Down`, `In` (nest), `Out` (promote)
+- Workflow parent toggle cascade is fixed:
+  - `POST /workflow/classes/{class_id}/sessions/{session_id}/items/{item_id}/toggle`
+  - Checking a parent now correctly updates all descendants in unit checklist completion state.
+  - Calendar data remains sourced from session actions and includes cascaded checked items after session end.
+  - Frontend Unit Setup preview now derives effective completion from ancestor chain (child appears unchecked if parent unchecked).
+- Workflow date fields are now visible in Workflow UI:
+  - Active session banner shows session date.
+  - Active unit card shows `created_at`.
+  - Unit Setup includes recent sessions list with `session_date`, `start_time`, `end_time`.
+  - Past units list shows `closed_at` (fallback `created_at`).
+  - Recent sessions list supports frontend date-window filters: `Today`, `Week`, `Month`, `All`.
+- Workflow session close UX is now modal-based:
+  - FE collects `session_date`, `start_time`, `end_time`, `note` and validates `end_time >= start_time` before submit.
+- Workflow unit creation now includes optional `planned_hours` input with inline validation.
+- Workflow closed-units list now exposes reopen action for latest closed unit:
+  - `POST /workflow/classes/{class_id}/units/{unit_id}/reopen`
+- Calendar view is now weekly timetable-first:
+  - 7 days rendered in a week strip with fixed teaching slots (`08:00-12:00`, `14:00-18:00`).
+  - Data is now merged from:
+    - `GET /workflow/classes/{class_id}/calendar`
+    - `GET /classes/{class_id}/sessions`
+  - Session chip click now loads detailed session data from `GET /sessions/{session_id}`.
+  - Detail panel now shows absent students, structured headlines, and note.
+  - Drag scaffolds are live:
+    - Drag on empty timetable range -> create session modal -> `POST /classes/{class_id}/sessions`
+    - Drag existing session chip -> move block date/time -> `PUT /sessions/{session_id}`
+    - Drag UX guardrails now include click-vs-drag threshold on empty-slot selection and temporary custom drag ghost for chip moves.
+  - Selected session details now expose explicit edit action (`Edit`) using `PUT /sessions/{session_id}` for date/time/note.
+
+## Backend Requests From Frontend
+- Priority: High
+  - Delivered (2026-03-04):
+    - `POST /sessions/{id}/confirm-extraction` supports `mode` with values `replace` (default) and `append`.
+    - `GET /sessions/{id}/uploads/latest` returns latest extraction payload + normalized `items[]` for resume/review UX.
+- Priority: Medium
+  - Delivered (2026-03-04):
+    - Extraction payload now returns stable `items[].hint_id` in:
+      - `POST /sessions/{id}/uploads`
+      - `GET /sessions/{id}/uploads/latest`
+- Priority: Medium
+  - Checklist reorder persistence request is delivered (2026-03-04).
+- Priority: Medium
+  - Requested:
+    - Workflow-aware calendar create endpoint (session create with optional `unit_id` + optional initial `absent_student_ids`) so calendar-created blocks can stay fully aligned with workflow unit context.
+
+## Known Contract Mappings (Reference)
+- Workflow unit checklist key is `checklist` (not `checklist_items`).
+- Workflow checklist toggle endpoint now rejects ended sessions:
+  - `POST /workflow/classes/{class_id}/sessions/{session_id}/items/{item_id}/toggle`
+  - Returns `409` when `session.end_time` is already set.
+- Workflow unit start now validates:
+  - `title` must be non-empty (returns `400` when blank).
+  - `planned_hours` must be greater than zero when provided (returns `400` otherwise).
+- Workflow unit reopen endpoint is available:
+  - `POST /workflow/classes/{class_id}/units/{unit_id}/reopen`
+  - Returns `409` if another active unit exists.
+- Workflow session end now validates:
+  - `end_time >= start_time` (returns `400` on invalid range).
+  - Repeated `/end` calls preserve existing `end_time` when `end_time` is omitted.
+  - Attendance-only `/end` updates (`absent_student_ids` only) keep active sessions open.
+  - Empty payload `{}` on open session still performs legacy close (auto end time).
+- Closing an already-closed unit now returns `409`.
+- Exam list item uses `title`, `exam_date`, `is_archived`.
+- Class dashboard trend uses:
+  - Attendance: `attendance_trend[].session_date`, `attendance_trend[].attendance_rate`
+  - Exams: `exam_trend[].title`, `exam_trend[].average_score`
+
+## Frontend Backlog Linked To Backend
+- Completed (2026-03-04):
+  - Added UI choice: "Replace existing progress" vs "Append to existing progress" in extraction review modal.
+- Completed (2026-03-04):
+  - Added "Resume last extraction review" button in workflow session tab.
+
+## UI Design Handoff (For UI Guy)
+- Enhance workflow visual hierarchy around active session controls.
+- Polish extraction review modal layout and mode selector styling.
+- Use extraction `items[].hint_id` for stable row identity during re-render/reorder/resume (avoid index-only keying).
+- Polish session progress viewer card (row hierarchy, type badge contrast, spacing).
+- Polish closed-unit reopen affordance (button hierarchy + blocked-state clarity).
+- Standardize workflow button/icon spacing and contrast.
+- Polish drag/drop visuals for final design pass (replace temporary helper text with icon/tooltip guidance and stronger drop affordances).
+- Add visible busy indicators on long actions (extract/resume/apply/reorder/start/end).
+- Run responsive pass on small screens for checklist controls and recent-session filters.
+- Polish inline validation visuals in workflow forms (`title`, `planned_hours`, `start_time/end_time`) so errors are clear but not noisy.
+- Polish weekly timetable visual language (time-axis contrast, dense-slot readability, selected-state hierarchy, mobile overflow behavior).
+- Polish drag interactions in calendar (range highlight affordance, drag ghost, drop-target states, click-vs-drag threshold tuning).
+- Refine drag threshold/ghost tuning for touchpads and low-precision pointer devices (current implementation is baseline behavior).
+
+## Change Log
+- 2026-03-04 (FE):
+  - Added extraction review modal and apply flow.
+  - Updated workflow controls visibility and disabled states.
+  - Added this coordination file.
+- 2026-03-04 (FE):
+  - Added workflow checklist CRUD UI and endpoint wiring (add/edit/delete).
+  - Added backend request for checklist reorder persistence endpoint.
+- 2026-03-04 (FE+BE):
+  - Delivered checklist reorder persistence endpoint and UI controls (`Up/Down/In/Out`).
+  - Endpoint now used in frontend: `POST /workflow/classes/{class_id}/units/{unit_id}/items/reorder`.
+- 2026-03-04 (FE+BE):
+  - Fixed workflow parent-toggle cascade consistency bug (descendant actions were saved but completion flags were stale due no flush before refresh).
+  - Added UI optimistic cascade for session checklist toggle and calendar detail now renders checked item titles.
+- 2026-03-04 (FE):
+  - Unit Setup tab now applies ancestor-aware display state for checklist completion to avoid child-checked visual mismatch when parent is unchecked.
+- 2026-03-04 (FE):
+  - Restored workflow date visibility using existing API fields (`created_at`, `closed_at`, `session_date`, `start_time`, `end_time`).
+- 2026-03-04 (FE):
+  - Added date-window filtering in workflow recent sessions section (client-side on existing `recent_sessions` payload).
+- 2026-03-04 (BE):
+  - Added extraction confirm merge mode: `POST /sessions/{id}/confirm-extraction` now accepts `mode=replace|append`.
+  - Added latest extraction endpoint: `GET /sessions/{id}/uploads/latest`.
+  - Extraction upload response now includes normalized `items[]`.
+- 2026-03-04 (FE):
+  - Wired extraction apply mode selector to send `mode` in confirm payload.
+  - Added "Resume Last Extraction" action using `GET /sessions/{id}/uploads/latest`.
+- 2026-03-04 (FE):
+  - Added workflow auto-refresh handling for closed-session `409` responses on checklist toggle/end actions.
+- 2026-03-04 (FE):
+  - Added workflow end-session modal with inline date/time validation.
+  - Added optional `planned_hours` input + validation in unit create/extract form.
+- 2026-03-04 (FE):
+  - Added workflow session progress viewer in Session Active tab (load/refresh + post-extraction refresh).
+- 2026-03-04 (FE+BE):
+  - Delivered closed-unit reopen flow:
+    - Backend endpoint `POST /workflow/classes/{class_id}/units/{unit_id}/reopen`
+    - Frontend `Re-open` action on latest closed unit.
+- 2026-03-04 (BE):
+  - Added stable extraction row hints via `items[].hint_id` for upload/latest payloads.
+- 2026-03-04 (BE):
+  - Hardened workflow session/unit semantics:
+    - `/sessions/{id}/end` now preserves existing `end_time` when omitted, keeps attendance-only updates open, and validates `end_time >= start_time`.
+    - `/units/start` validates non-empty `title` and positive `planned_hours`.
+    - `/units/{id}/close` returns `409` if unit is already closed.
+- 2026-03-04 (BE):
+  - Added workflow guard: checklist toggle on ended sessions now returns `409` to preserve historical data integrity.
+- 2026-03-04 (FE):
+  - Upgraded workflow checklist reorder UX to drag-and-drop tree interactions (with root drop zone) while preserving button-based fallback controls.
+- 2026-03-04 (FE):
+  - Replaced monthly calendar UI with weekly timetable structure (7-day week, slots 08:00-12:00 and 14:00-18:00).
+  - Added session detail fetch on click using `GET /sessions/{session_id}` and rendered absent list + structured headlines + note in details panel.
+- 2026-03-04 (FE):
+  - Added weekly calendar drag scaffolds:
+    - Drag-create on empty slot ranges wired to `POST /classes/{class_id}/sessions`.
+    - Drag-move existing session chips wired to `PUT /sessions/{session_id}`.
+  - Calendar view now merges workflow calendar payload with base class sessions to display both workflow-linked and generic session blocks.
+- 2026-03-04 (FE):
+  - Added `Edit` action in selected session panel for calendar blocks (date/time/note modal) wired to `PUT /sessions/{session_id}`.
+- 2026-03-04 (FE):
+  - Added drag UX guardrails in weekly calendar:
+    - Empty-slot create only triggers after pointer movement threshold (prevents click misfire).
+    - Session chip drag now uses custom ghost preview + click suppression after drag.
+- 2026-03-04 (FE) — UI Revision Pass:
+  - Workflow: unit type selector (Chapter/Exercises/Exam/Correction) added; `unit_type` sent to `POST /workflow/classes/{class_id}/units/start`.
+  - Workflow: button busy states added to all long-running actions (create unit, start/end session, save attendance, close/reopen unit, resume/upload extraction).
+  - Workflow: input validation styling (`input-error` CSS class) on unit title and planned hours.
+  - Workflow: extraction review modal polished (mode-selector cards with blue highlight, divider, emoji-typed item rows).
+  - Workflow: session progress viewer now uses color-coded type badges (`.progress-type-badge`) and card-style rows.
+  - Class: create-class form now includes optional Subject + Level fields; both sent to `POST /classes`.
+  - Class: student template download button added (calls `GET /classes/{id}/students/template`).
+  - Exam: create-exam form gains Exam Date field (was missing).
+  - Exam: edit exam modal added; calls `PUT /exams/{id}` for title/date/max score.
+  - Exam: exam template download button added (calls `GET /exams/{id}/template`).
+  - Exam: export now tries `GET /exams/{id}/results.csv` first, with fallback to `.xlsx`.
+  - Exam: Create Exam button shows busy state during API call.

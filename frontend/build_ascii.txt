@@ -1,0 +1,22 @@
+
+> teacher-progress-app@1.0.0 build
+> vite build
+
+[36mvite v5.4.21 [32mbuilding for production...[36m[39m
+transforming...
+[32m✓[39m 16 modules transformed.
+[31mx[39m Build failed in 194ms
+[31merror during build:
+[31m[@tailwindcss/vite:generate:build] Cannot apply unknown utility class `group`[31m
+file: [36mC:/Users/user/text/frontend/src/style/app.css[31m
+    at onInvalidCandidate (file:///c:/Users/user/text/frontend/node_modules/tailwindcss/dist/chunk-L5IEUH3R.mjs:21:1511)
+    at $e (file:///c:/Users/user/text/frontend/node_modules/tailwindcss/dist/chunk-L5IEUH3R.mjs:16:36740)
+    at file:///c:/Users/user/text/frontend/node_modules/tailwindcss/dist/chunk-L5IEUH3R.mjs:21:355
+    at Ar (file:///c:/Users/user/text/frontend/node_modules/tailwindcss/dist/chunk-L5IEUH3R.mjs:3:1733)
+    at I (file:///c:/Users/user/text/frontend/node_modules/tailwindcss/dist/chunk-L5IEUH3R.mjs:3:1377)
+    at Ce (file:///c:/Users/user/text/frontend/node_modules/tailwindcss/dist/chunk-L5IEUH3R.mjs:21:172)
+    at Gi (file:///c:/Users/user/text/frontend/node_modules/tailwindcss/dist/chunk-L5IEUH3R.mjs:38:294)
+    at async ao (file:///c:/Users/user/text/frontend/node_modules/tailwindcss/dist/chunk-L5IEUH3R.mjs:38:631)
+    at async vf (file:///c:/Users/user/text/frontend/node_modules/tailwindcss/dist/chunk-L5IEUH3R.mjs:38:1406)
+    at async uu (file:///c:/Users/user/text/frontend/node_modules/@tailwindcss/node/dist/index.mjs:10:3458)[39m
+BUILD_FAIL 

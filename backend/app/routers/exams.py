@@ -1,0 +1,471 @@
+from __future__ import annotations
+
+import csv
+from datetime import UTC, datetime
+from io import BytesIO, StringIO
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+from openpyxl import Workbook
+
+from .. import config as app_config
+from ..config import MAX_EXCEL_UPLOAD_BYTES
+from ..database import get_db
+from ..models import Exam, ExamArchiveState, ExamResult, Student, User
+from ..security import ensure_class_access, ensure_class_writable, get_current_user, is_class_archived, require_teacher
+from ..schemas import ExamCreate, ExamOut, ExamResultOut, ExamUpdate
+from ..services.audit import log_audit
+from ..services.excel import build_exam_template, build_exam_template_notescc, parse_exam_results_excel
+from ..services.rate_limit import enforce_rate_limit
+from ..services.upload_validation import (
+    ALLOWED_EXCEL_EXTENSIONS,
+    ALLOWED_EXCEL_MIME_TYPES,
+    read_validated_upload,
+)
+
+
+router = APIRouter(tags=["exams"], dependencies=[Depends(require_teacher)])
+
+
+def _archive_flags_for_exams(db: Session, exam_ids: list[int]) -> dict[int, bool]:
+    if not exam_ids:
+        return {}
+    rows = db.execute(
+        select(ExamArchiveState.exam_id, ExamArchiveState.is_archived).where(
+            ExamArchiveState.exam_id.in_(exam_ids)
+        )
+    ).all()
+    return {row.exam_id: bool(row.is_archived) for row in rows}
+
+
+def _attach_archive_flags(db: Session, exams: list[Exam]) -> list[Exam]:
+    flags = _archive_flags_for_exams(db, [exam.id for exam in exams])
+    for exam in exams:
+        setattr(exam, "is_archived", flags.get(exam.id, False))
+    return exams
+
+
+def _attach_archive_flag(db: Session, exam: Exam) -> Exam:
+    setattr(exam, "is_archived", _archive_flags_for_exams(db, [exam.id]).get(exam.id, False))
+    return exam
+
+
+def _is_exam_archived(db: Session, exam_id: int) -> bool:
+    state = db.scalar(select(ExamArchiveState).where(ExamArchiveState.exam_id == exam_id))
+    return bool(state and state.is_archived)
+
+
+def _exam_results_rows(db: Session, exam_id: int):
+    return db.execute(
+        select(
+            ExamResult.student_id,
+            Student.student_code,
+            Student.full_name,
+            ExamResult.score,
+            ExamResult.note,
+            ExamResult.teacher_comment,
+        )
+        .join(Student, Student.id == ExamResult.student_id)
+        .where(ExamResult.exam_id == exam_id)
+        .order_by(Student.full_name.asc())
+    ).all()
+
+
+@router.post("/classes/{class_id}/exams", response_model=ExamOut, status_code=status.HTTP_201_CREATED)
+def create_exam(
+    class_id: int,
+    payload: ExamCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Exam:
+    _ = ensure_class_writable(db, class_id, current_user)
+    exam = Exam(
+        class_id=class_id,
+        title=payload.title.strip(),
+        exam_date=payload.exam_date,
+        max_score=payload.max_score,
+        weight=payload.weight,
+    )
+    db.add(exam)
+    db.flush()
+    log_audit(
+        db,
+        user=current_user,
+        action="exam.create",
+        entity_type="exam",
+        entity_id=exam.id,
+        class_id=class_id,
+        details={"title": exam.title, "max_score": exam.max_score},
+    )
+    db.commit()
+    db.refresh(exam)
+    return _attach_archive_flag(db, exam)
+
+
+@router.get("/classes/{class_id}/exams", response_model=list[ExamOut])
+def list_exams(
+    class_id: int,
+    include_archived: bool = Query(default=False),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[Exam]:
+    _ = ensure_class_access(db, class_id, current_user)
+    exams = db.scalars(select(Exam).where(Exam.class_id == class_id).order_by(Exam.exam_date.desc(), Exam.id.desc())).all()
+    exams = _attach_archive_flags(db, exams)
+    if include_archived:
+        return exams
+    return [exam for exam in exams if not getattr(exam, "is_archived", False)]
+
+
+@router.put("/exams/{exam_id}", response_model=ExamOut)
+def update_exam(
+    exam_id: int,
+    payload: ExamUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Exam:
+    exam = _ensure_exam(db, exam_id)
+    _ = ensure_class_writable(db, exam.class_id, current_user)
+    if _is_exam_archived(db, exam_id):
+        raise HTTPException(status_code=409, detail="Exam is archived and cannot be modified.")
+
+    if payload.title is not None:
+        exam.title = payload.title.strip()
+    if payload.exam_date is not None:
+        exam.exam_date = payload.exam_date
+    if payload.max_score is not None:
+        exam.max_score = payload.max_score
+    if payload.weight is not None:
+        exam.weight = payload.weight
+
+    log_audit(
+        db,
+        user=current_user,
+        action="exam.update",
+        entity_type="exam",
+        entity_id=exam.id,
+        class_id=exam.class_id,
+        details={
+            "title": exam.title,
+            "exam_date": exam.exam_date.isoformat(),
+            "max_score": exam.max_score,
+            "weight": exam.weight,
+        },
+    )
+    db.commit()
+    db.refresh(exam)
+    return _attach_archive_flag(db, exam)
+
+
+@router.post("/exams/{exam_id}/archive")
+def archive_exam(
+    exam_id: int,
+    reason: str | None = Query(default=None, max_length=500),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    exam = _ensure_exam(db, exam_id)
+    _ = ensure_class_access(db, exam.class_id, current_user)
+    if is_class_archived(db, exam.class_id):
+        raise HTTPException(status_code=409, detail="Class is archived and cannot be modified.")
+    now = datetime.now(UTC).replace(tzinfo=None)
+    clean_reason = reason.strip() if isinstance(reason, str) and reason.strip() else None
+    state = db.scalar(select(ExamArchiveState).where(ExamArchiveState.exam_id == exam_id))
+    if state is None:
+        state = ExamArchiveState(
+            exam_id=exam_id,
+            is_archived=True,
+            archived_at=now,
+            reason=clean_reason,
+        )
+        db.add(state)
+    else:
+        state.is_archived = True
+        state.archived_at = now
+        if clean_reason is not None:
+            state.reason = clean_reason
+
+    log_audit(
+        db,
+        user=current_user,
+        action="exam.archive",
+        entity_type="exam",
+        entity_id=exam.id,
+        class_id=exam.class_id,
+        details={"reason": clean_reason},
+    )
+    db.commit()
+    db.refresh(state)
+    return {
+        "exam_id": exam_id,
+        "class_id": exam.class_id,
+        "is_archived": state.is_archived,
+        "archived_at": state.archived_at.isoformat() if state.archived_at else None,
+        "reason": state.reason,
+    }
+
+
+@router.post("/exams/{exam_id}/restore")
+def restore_exam(
+    exam_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    exam = _ensure_exam(db, exam_id)
+    _ = ensure_class_access(db, exam.class_id, current_user)
+    state = db.scalar(select(ExamArchiveState).where(ExamArchiveState.exam_id == exam_id))
+    if state is None:
+        state = ExamArchiveState(exam_id=exam_id, is_archived=False, archived_at=None, reason=None)
+        db.add(state)
+    else:
+        state.is_archived = False
+        state.archived_at = None
+        state.reason = None
+
+    log_audit(
+        db,
+        user=current_user,
+        action="exam.restore",
+        entity_type="exam",
+        entity_id=exam.id,
+        class_id=exam.class_id,
+        details=None,
+    )
+    db.commit()
+    db.refresh(state)
+    return {"exam_id": exam_id, "class_id": exam.class_id, "is_archived": False, "archived_at": None, "reason": None}
+
+
+@router.get("/exams/{exam_id}/template")
+def download_exam_template(
+    exam_id: int,
+    template_format: str = Query(default="normalized", alias="format"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    exam = _ensure_exam(db, exam_id)
+    classroom = ensure_class_access(db, exam.class_id, current_user)
+    students = db.scalars(select(Student).where(Student.class_id == exam.class_id).order_by(Student.full_name.asc())).all()
+    student_rows = [
+        {
+            "student_code": student.student_code,
+            "external_id": student.external_id,
+            "full_name": student.full_name,
+            "birth_date": student.birth_date,
+        }
+        for student in students
+    ]
+    if template_format.lower() == "notescc":
+        content = build_exam_template_notescc(
+            student_rows,
+            exam_title=exam.title,
+            class_name=classroom.name,
+            subject=classroom.subject,
+        )
+    else:
+        content = build_exam_template(student_rows)
+    return StreamingResponse(
+        BytesIO(content),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="exam_{exam_id}_template_{template_format}.xlsx"'},
+    )
+
+
+@router.post("/exams/{exam_id}/results/import")
+def import_exam_results(
+    exam_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    exam = _ensure_exam(db, exam_id)
+    _ = ensure_class_access(db, exam.class_id, current_user)
+    if is_class_archived(db, exam.class_id):
+        raise HTTPException(status_code=409, detail="Class is archived and cannot be modified.")
+    if _is_exam_archived(db, exam_id):
+        raise HTTPException(status_code=409, detail="Exam is archived and cannot be modified.")
+    enforce_rate_limit(
+        scope="upload",
+        user_id=current_user.id,
+        limit=app_config.UPLOAD_RATE_LIMIT_COUNT,
+        window_seconds=app_config.UPLOAD_RATE_LIMIT_WINDOW_SECONDS,
+        resource_id=exam.class_id,
+    )
+    content, _ = read_validated_upload(
+        file,
+        max_bytes=MAX_EXCEL_UPLOAD_BYTES,
+        allowed_extensions=ALLOWED_EXCEL_EXTENSIONS,
+        allowed_mime_types=ALLOWED_EXCEL_MIME_TYPES,
+        purpose="excel",
+    )
+    rows, errors = parse_exam_results_excel(content)
+    if errors:
+        raise HTTPException(status_code=400, detail={"errors": errors})
+
+    students = db.scalars(select(Student).where(Student.class_id == exam.class_id)).all()
+    student_by_code: dict[str, Student] = {}
+    for student in students:
+        student_by_code[student.student_code] = student
+        if student.external_id:
+            student_by_code[student.external_id] = student
+    missing_codes: list[str] = []
+    imported = 0
+
+    for row in rows:
+        student = student_by_code.get(row["student_code"])
+        if student is None:
+            missing_codes.append(row["student_code"])
+            continue
+        if row["score"] < 0 or row["score"] > exam.max_score:
+            errors.append(
+                f"student_code {row['student_code']}: score {row['score']} outside [0, {exam.max_score}] range."
+            )
+            continue
+        existing = db.scalar(
+            select(ExamResult).where(ExamResult.exam_id == exam_id, ExamResult.student_id == student.id)
+        )
+        if existing:
+            existing.score = row["score"]
+            existing.note = row["note"]
+            existing.teacher_comment = row["teacher_comment"]
+        else:
+            db.add(
+                ExamResult(
+                    exam_id=exam_id,
+                    student_id=student.id,
+                    score=row["score"],
+                    note=row["note"],
+                    teacher_comment=row["teacher_comment"],
+                )
+            )
+        imported += 1
+
+    if missing_codes:
+        errors.append(f"Unknown student_code values: {', '.join(sorted(set(missing_codes)))}")
+    if errors:
+        db.rollback()
+        raise HTTPException(status_code=400, detail={"errors": errors})
+
+    log_audit(
+        db,
+        user=current_user,
+        action="exam.import_results",
+        entity_type="exam_result",
+        entity_id=exam_id,
+        class_id=exam.class_id,
+        details={"imported": imported},
+    )
+    db.commit()
+    return {"imported": imported}
+
+
+@router.get("/exams/{exam_id}/results", response_model=list[ExamResultOut])
+def list_exam_results(exam_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[ExamResultOut]:
+    exam = _ensure_exam(db, exam_id)
+    _ = ensure_class_access(db, exam.class_id, current_user)
+    rows = _exam_results_rows(db, exam_id)
+    return [
+        ExamResultOut(
+            student_id=row.student_id,
+            student_code=row.student_code,
+            full_name=row.full_name,
+            score=row.score,
+            note=row.note,
+            teacher_comment=row.teacher_comment,
+        )
+        for row in rows
+    ]
+
+
+@router.get("/exams/{exam_id}/results.csv")
+def download_exam_results_csv(
+    exam_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    exam = _ensure_exam(db, exam_id)
+    _ = ensure_class_access(db, exam.class_id, current_user)
+    enforce_rate_limit(
+        scope="export",
+        user_id=current_user.id,
+        limit=app_config.EXPORT_RATE_LIMIT_COUNT,
+        window_seconds=app_config.EXPORT_RATE_LIMIT_WINDOW_SECONDS,
+        resource_id=exam.class_id,
+    )
+    rows = _exam_results_rows(db, exam_id)
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["student_code", "full_name", "score", "max_score", "note", "teacher_comment"])
+    for row in rows:
+        writer.writerow([row.student_code, row.full_name, row.score, exam.max_score, row.note or "", row.teacher_comment or ""])
+    payload = output.getvalue().encode("utf-8")
+
+    log_audit(
+        db,
+        user=current_user,
+        action="exam.export_results_csv",
+        entity_type="exam",
+        entity_id=exam.id,
+        class_id=exam.class_id,
+        details={"rows": len(rows)},
+    )
+    db.commit()
+    return StreamingResponse(
+        BytesIO(payload),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="exam_{exam_id}_results.csv"'},
+    )
+
+
+@router.get("/exams/{exam_id}/results.xlsx")
+def download_exam_results_xlsx(
+    exam_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    exam = _ensure_exam(db, exam_id)
+    _ = ensure_class_access(db, exam.class_id, current_user)
+    enforce_rate_limit(
+        scope="export",
+        user_id=current_user.id,
+        limit=app_config.EXPORT_RATE_LIMIT_COUNT,
+        window_seconds=app_config.EXPORT_RATE_LIMIT_WINDOW_SECONDS,
+        resource_id=exam.class_id,
+    )
+    rows = _exam_results_rows(db, exam_id)
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "exam_results"
+    sheet.append(("student_code", "full_name", "score", "max_score", "note", "teacher_comment"))
+    for row in rows:
+        sheet.append((row.student_code, row.full_name, row.score, exam.max_score, row.note or "", row.teacher_comment or ""))
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+
+    log_audit(
+        db,
+        user=current_user,
+        action="exam.export_results_xlsx",
+        entity_type="exam",
+        entity_id=exam.id,
+        class_id=exam.class_id,
+        details={"rows": len(rows)},
+    )
+    db.commit()
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="exam_{exam_id}_results.xlsx"'},
+    )
+
+
+def _ensure_exam(db: Session, exam_id: int) -> Exam:
+    exam = db.get(Exam, exam_id)
+    if exam is None:
+        raise HTTPException(status_code=404, detail="Exam not found.")
+    return exam

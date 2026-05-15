@@ -1,0 +1,119 @@
+/* ============================================================
+   DESIGN TOKENS — Teacher Progress App
+   ============================================================ */
+
+:root {
+  /* --- Typography --- */
+  --font: 'Inter', 'Segoe UI', -apple-system, sans-serif;
+  --font-mono: 'Cascadia Code', 'Consolas', monospace;
+
+  /* --- Primary (Indigo) --- */
+  --blue-950: #1e1b4b;
+  --blue-900: #1e3a8a;
+  --blue-800: #1e40af;
+  --blue-700: #1d4ed8;
+  --blue-600: #2563eb;
+  --blue-500: #3b82f6;
+  --blue-400: #60a5fa;
+  --blue-100: #dbeafe;
+  --blue-50:  #eff6ff;
+
+  /* --- Accent (Amber — live/active state) --- */
+  --amber-600: #d97706;
+  --amber-500: #f59e0b;
+  --amber-400: #fbbf24;
+  --amber-100: #fef3c7;
+  --amber-50:  #fffbeb;
+
+  /* --- Success (Green — present) --- */
+  --green-700: #15803d;
+  --green-600: #16a34a;
+  --green-500: #22c55e;
+  --green-100: #dcfce7;
+  --green-50:  #f0fdf4;
+
+  /* --- Danger (Red — absent/error) --- */
+  --red-800:  #991b1b;
+  --red-700:  #b91c1c;
+  --red-500:  #ef4444;
+  --red-100:  #fee2e2;
+  --red-50:   #fef2f2;
+
+  /* --- Warning (Orange) --- */
+  --orange-600: #ea580c;
+  --orange-100: #ffedd5;
+
+  /* --- Neutral (Gray) --- */
+  --gray-950: #030712;
+  --gray-900: #111827;
+  --gray-800: #1f2937;
+  --gray-700: #374151;
+  --gray-600: #4b5563;
+  --gray-500: #6b7280;
+  --gray-400: #9ca3af;
+  --gray-300: #d1d5db;
+  --gray-200: #e5e7eb;
+  --gray-100: #f3f4f6;
+  --gray-50:  #f9fafb;
+  --white:    #ffffff;
+
+  /* --- Semantic colors --- */
+  --text-primary:   var(--gray-900);
+  --text-secondary: var(--gray-600);
+  --text-muted:     var(--gray-400);
+  --text-inverse:   var(--white);
+  --text-link:      var(--blue-700);
+
+  --bg-app:     var(--gray-50);
+  --bg-surface: var(--white);
+  --bg-sidebar: var(--blue-950);
+
+  --border:         var(--gray-200);
+  --border-strong:  var(--gray-300);
+  --border-focus:   var(--blue-500);
+
+  --color-present: var(--green-600);
+  --color-absent:  var(--red-600, #dc2626);
+  --color-live:    var(--amber-500);
+
+  /* --- Spacing scale (4px base) --- */
+  --s-0: 0;
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 20px;
+  --s-6: 24px;
+  --s-8: 32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-16: 64px;
+  --s-20: 80px;
+
+  /* --- Border radius --- */
+  --r-xs:   4px;
+  --r-sm:   8px;
+  --r-md:   12px;
+  --r-lg:   16px;
+  --r-xl:   24px;
+  --r-full: 9999px;
+
+  /* --- Elevation / shadows --- */
+  --shadow-xs:  0 1px 2px rgba(0,0,0,0.05);
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md:  0 4px 6px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.05);
+  --shadow-lg:  0 10px 25px rgba(0,0,0,0.10), 0 4px 10px rgba(0,0,0,0.06);
+  --shadow-xl:  0 20px 60px rgba(0,0,0,0.18), 0 8px 24px rgba(0,0,0,0.10);
+
+  /* --- Transitions --- */
+  --ease:        cubic-bezier(0.4, 0, 0.2, 1);
+  --duration-sm: 120ms;
+  --duration-md: 200ms;
+  --duration-lg: 300ms;
+
+  /* --- Sizes --- */
+  --sidebar-width:   220px;
+  --topbar-height:   56px;
+  --bottom-tab-height: 60px;
+  --content-max:     1100px;
+}

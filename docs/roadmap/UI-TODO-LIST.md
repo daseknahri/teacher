@@ -1,0 +1,258 @@
+# UI TODO List
+
+Last updated: 2026-03-04 (debug + revision hotfix pass)
+
+## Debug Hotfix Pass (2026-03-04)
+- [x] Fix empty-checklist unit creation when OpenAI returns `items: []`.
+  - Backend now falls back to deterministic checklist generation when OpenAI output is empty.
+  - Prevents workflow units being created with zero checklist rows after PDF extraction.
+- [x] Improve frontend API error object for robust UX flows.
+  - `api()` now attaches `status`, `body`, and `retry_after` when available.
+  - Fixes lockout/countdown UX depending on HTTP `423` payload metadata.
+- [x] Handle workflow `409` conflicts with automatic workspace refresh.
+  - Create unit / extract unit now recover from active-unit conflict by reloading workspace state.
+  - Start session now recovers from already-open session conflicts.
+- [x] Fix broken Class dashboard attendance export path.
+  - Corrected malformed endpoint string for `Attendance CSV`.
+- [x] Fix Exam results sortable header markup + visible edit action.
+  - Restored valid `<th data-sort>` markup for sort handlers.
+  - Restored visible text for per-row edit action.
+- [x] Fix Calendar weekly grid structural regression.
+  - Removed duplicated `.weekly-grid` wrapper.
+  - Corrected drag-create guard selector from `.week-session-chip` to `.cal-chip`.
+- [x] Restore missing Owner panel action labels.
+  - Reset/delete teacher actions are now visible again.
+  - KPI tile glyphs now use stable text markers instead of empty placeholders.
+
+## Workflow
+- [x] Add unit type selector in UI (`chapter`, `exercise_series`, `exam`, `exam_correction`).
+  - UI now shows a 4-tile selector (Chapter/Exercises/Exam/Correction) in the unit create/extract form.
+  - `unit_type` is sent to `POST /workflow/classes/{class_id}/units/start`.
+  - For `exam`/`exam_correction` types, `source_text` is intentionally omitted.
+- [x] Add checklist CRUD controls in workflow UI (add/edit/delete).
+- [x] Add extraction review panel before confirm.
+- [x] Show extracted lessons/activities/exercises in review.
+- [x] Allow edit/remove/reorder before apply.
+- [x] Confirm extraction with `/sessions/{id}/confirm-extraction`.
+- [x] Add session progress viewer (render confirmed progress items in workflow tab).
+  - Session Active now shows confirmed `progress_items` with load/refresh controls.
+- [x] Keep create/extract controls visible and disable with guidance when blocked.
+- [x] Add unit document download button (`/workflow/units/{unit_id}/document`).
+- [x] Add session image extraction trigger (`/sessions/{session_id}/uploads`).
+- [x] Add extraction apply mode selector in review modal (`replace` vs `append`).
+  - UI now sends `mode` to `POST /sessions/{id}/confirm-extraction`.
+- [x] Add "Resume last extraction review" action (`GET /sessions/{id}/uploads/latest`).
+  - UI can reopen latest extraction, edit rows, then apply as replace/append.
+- [x] Add "re-open last closed unit" flow.
+  - UI now shows `Re-open` action on latest closed unit and calls `POST /workflow/classes/{class_id}/units/{unit_id}/reopen`.
+- [x] Add checklist reordering UI persistence (`/workflow/classes/{class_id}/units/{unit_id}/items/reorder`).
+- [x] Upgrade checklist reorder UX to drag-and-drop tree interactions.
+  - Delivered: drag handle + drop zones by position (`top=before`, `middle=child`, `bottom=after`) plus root-level drop zone.
+  - Fallback controls (`Up/Down/In/Out`) remain available for keyboard/mobile precision.
+- [x] Parent checklist toggle cascades to child items in session (`/workflow/classes/{class_id}/sessions/{session_id}/items/{item_id}/toggle`).
+- [x] Unit Setup preview enforces ancestor rule: child displays unchecked when parent is unchecked.
+- [x] Restore workflow date visibility (active session date, unit created date, recent sessions dates/times, closed unit dates).
+- [x] Add workflow recent-session date filters (`Today`, `Week`, `Month`, `All`).
+- [x] Add workflow duplicate-action guard (client in-flight locks for create/start/end/reorder/crud/extraction).
+- [x] Add workflow load failure retry card (`Retry` button when workspace API fails).
+- [x] Handle closed-session checklist toggle conflict UX.
+  - UI now auto-refreshes workspace and shows a clear warning when backend returns closed-session `409`.
+- [x] Add inline validation UX on unit creation form.
+  - UI now validates `title` and `planned_hours > 0` before submit.
+- [x] Add workflow session time validation feedback.
+  - End-session modal now validates `end_time >= start_time` before API call.
+
+## Calendar
+- [x] Replace monthly calendar layout with weekly timetable structure.
+  - Delivered: 7-day week columns with teaching-hour slots (`08:00-12:00`, `14:00-18:00`).
+- [x] Add session click details panel.
+  - Delivered: selecting a session now shows absent students, structured headlines, and session note.
+  - Data sources: `GET /workflow/classes/{class_id}/calendar` + `GET /sessions/{session_id}`.
+- [x] Add drag-to-create session block scaffold.
+  - Delivered: drag on empty timetable cells opens create modal prefilled from selected slot range.
+  - API wiring: `POST /classes/{class_id}/sessions`.
+- [x] Add drag-to-move session block scaffold.
+  - Delivered: dragging existing session chip to another slot/day updates session date/time.
+  - API wiring: `PUT /sessions/{session_id}`.
+- [x] Add calendar session block edit action.
+  - Delivered: selected session panel now exposes `Edit` action (date/start/end/note modal).
+  - API wiring: `PUT /sessions/{session_id}`.
+- [x] Improve weekly timetable readability on dense weeks.
+  - Delivered: timetable chips now adapt visible density by screen size (1 chip on narrow screens, 2 on wider screens) with overflow indicator preserved.
+  - Delivered: chip time label now shows start-end window when both values exist to improve scanability in busy slots.
+- [x] Polish weekly navigation controls and date hierarchy.
+  - Delivered: week navigation label now includes ISO week number and month-year hierarchy (`Week N - Month YYYY`) plus explicit date range.
+  - Delivered: week label uses current-week highlighting and day headers apply today-state classing during render.
+- [x] Add drag-resize duration UX for session blocks.
+  - UI guy note: added bottom resize handle (ns-resize cursor) with dynamic 15m drag-snap feedback directly on chip hover.
+- [x] Reduce drag accidental interactions.
+  - Delivered baseline: click-vs-drag suppression threshold + temporary drag ghost are now active.
+  - CSS delivered: `.cal-drag-ghost` styled (branded blue ghost with slight rotation), `.drag-create-range`, `.drag-target-active`.
+  - Integrated: CalendarView.js UI now references these classes during dragging/dropping.
+
+## Class Dashboard
+- [x] Expand create class form fields: `subject`, `level`.
+  - Create class form now has 3 columns: Class Name, Subject (optional), Level (optional).
+  - `subject` and `level` are sent to `POST /classes` when filled.
+  - `teacher_user_id` assignment is pending the Owner Panel UI.
+- [x] Add "Download students template" button (`/classes/{id}/students/template`).
+  - 📋 Template button added next to Import in the students table header.
+- [x] Add archive reason input when archiving a class.
+  - Archive button opens a modal with an optional reason textarea.
+  - Reason sent as `{ reason }` in `POST /classes/{id}/archive` body.
+- [x] Add extraction confidence panel (`extraction_metrics.average_confidence` + latest entries).
+  - UI now shows AVG confidence pill and top latest extractions logs.
+
+## Exams
+- [x] Add edit exam modal (`PUT /exams/{id}`) for title/date/max score/weight.
+  - ✏️ Edit button in exam header opens modal with Title, Date and Max Score fields.
+  - Weight field is not yet exposed (backend field not confirmed on FE contract).
+- [x] Add "Download exam template" button (`/exams/{id}/template`).
+  - 📋 Template button added next to Import/Export in exam header.
+- [x] Add inline result details editor for `note` and `teacher_comment`.
+  - ✏️ button per result row opens `_editResultModal` with Score, Note, and Teacher Comment fields.
+  - Saves via `PUT /exams/{examId}/results/{studentId}`.
+- [x] Add CSV export button (`/exams/{id}/results.csv`) next to XLSX export.
+  - Export now tries `/exams/{id}/results.csv` first, falls back to `.xlsx`.
+- [x] Add archived exam filter toggle in exam list.
+  - 🗄 Show archived / 🙈 Hide archived toggle button in pill tab bar.
+  - Hidden by default; toggle flips `_showArchived` state and re-renders.
+
+## Owner Panel
+- [x] Add class-teacher assignment UI (assign/unassign/list by teacher).
+  - Owner Panel now has a Class–Teacher Assignments card with a dropdown per class and a ✔ Save button.
+  - Saves via `PATCH /classes/{id}` with `teacher_user_id`.
+- [x] Add "Send Invite Email" action (`/auth/users/{id}/send-invite`).
+  - Each teacher row now has a 📧 Invite button with busy state.
+  - Sends `POST /auth/users/{id}/send-invite` with `{app_url}`.
+- [x] Add per-teacher class details card with quick links.
+  - Teacher Workload card added to Owner view, listing assigned classes dynamically per active teacher.
+
+## Auth And Account
+- [x] Add "Change Password" screen (`/auth/change-password`).
+  - 🔐 Change Password card added at the bottom of the Owner Panel.
+  - Validates current + new password (≥8 chars); calls `POST /auth/change-password`.
+- [x] Add lockout UX for HTTP `423` (countdown/help text).
+  - Login button shows `🔒 Locked — retry in Xs` countdown when server returns 423.
+  - Uses `retry_after` from error payload (defaults 30s); auto-unlocks when timer expires.
+
+## Cross-Cutting UX And Quality
+- [x] Normalize icon/text encoding issues (remove mojibake artifacts in source strings).
+  - Completed 2026-03-04: normalized `src/views/*.js` and `src/components/AppShell.js` to ASCII-safe labels.
+  - Replaced icon-only/blank action controls with readable text fallbacks (`Save`, `Edit`, `Delete`, `Drag`, `Sign out`, etc.).
+  - Removed corrupted punctuation and placeholder artifacts from key UI copy.
+- [x] Add consistent retry actions for failed API views.
+  - Completed 2026-03-04: Class, Exam, Owner, and Calendar views now show a consistent load-failure card with `Retry`.
+  - Each failure path also shows a toast and re-calls the view renderer on retry.
+  - Calendar session detail panel now includes `Retry details` when loading selected-session details fails.
+- [x] Add button busy states and long-request progress feedback.
+  - Logic guard shipped: duplicate-clicks are blocked in workflow actions.
+  - Visual spinner/disabled treatment added to all long-running buttons:
+    - Workflow: Create Unit, PDF Upload label, Start Session, End Session, Save Attendance, Close Unit, Reopen Unit, Resume Extraction, Extract from PDF label
+    - Exam: Create Exam
+    - Class: Create Class
+- [x] Add accessibility pass (focus styles, aria labels, table semantics).
+  - Completed 2026-03-04:
+    - stronger keyboard focus-visible styles for custom controls.
+    - semantic table improvements (`caption`, `scope="col"`, sortable-header keyboard support).
+    - keyboard activation + ARIA states for attendance/checklist/chip controls.
+- [x] Add mobile QA pass for workflow and exams views.
+  - Completed 2026-03-04:
+    - touch/mobile action controls in Workflow and Exams are no longer hover-only (`row-hover-actions` now visible on touch/small screens).
+    - small-button tap targets improved for mobile (`.btn-sm` minimum height override on touch/small screens).
+    - Workflow attendance grid now uses responsive mobile columns (`.workflow-attendance-grid`).
+    - Exams stats strip now stacks more cleanly on small screens (search/filter row spans full width).
+- [x] Add UI smoke tests for critical flows.
+  - Completed 2026-03-04:
+    - added `frontend/scripts/ui-smoke.mjs` coverage for critical action IDs across Login/Class/Workflow/Calendar/Exam/Owner views.
+    - added npm scripts: `npm run smoke:ui` and `npm run test:ui` (`smoke + build`).
+- [x] UI guy: run a click-path audit for all action buttons and confirm none are icon-only without visible fallback text.
+  - Completed 2026-03-04:
+    - automated button-label audit added into `ui-smoke.mjs` to fail when visible labels are missing or icon-only without `aria-label`.
+    - all audited view/component files currently pass.
+
+## UI Design Handoff (For UI Guy)
+- [x] Workflow visual hierarchy pass.
+  - Unit type selector adds clear visual grouping above the create form.
+  - Active session controls retain priority through layout/spacing.
+- [x] Extraction modal polish.
+  - Apply-mode cards now use `.extraction-mode-card` with blue border highlight and selected state.
+  - Horizontal divider separates mode selector from item list.
+  - Item rows use emoji-prefixed type picker and denser layout.
+- [x] Workflow action button consistency.
+  - Standardized button sizes, icon spacing, and secondary/ghost contrast across Unit Setup and Session Active tabs.
+- [x] Drag-and-drop affordance polish.
+  - Drag handle (⠿) now visible on hover; drop zone instructions simplified; `group-hover:opacity-100` controls action visibility.
+- [x] Responsive refinement.
+  - Recent Sessions filters wrap correctly on small screens; checklist action buttons hidden by default and revealed on hover;  weekly calendar chip layout improved for dense weeks.
+- [x] Empty/loading/feedback states.
+  - Busy spinners added to all long-running buttons (`.btn-busy`, `.label-btn-busy` CSS classes).
+- [x] Validation visual polish.
+  - `input-error` class (red border + glow) on invalid unit title/planned-hours and class name fields.
+  - Inline error `<p>` messages in edit exam and end-session modals.
+- [x] Session progress viewer polish.
+  - `.progress-type-badge.type-{lesson|activity|exercise}` color-coded pills.
+  - `.progress-item-row` card-style rows with proper spacing.
+- [x] Re-open action polish.
+  - Past-unit list shows unit-type badge + ↩ Re-open pill button with busy state.
+- [x] Weekly calendar polish.
+  - CSS delivered + integrated: `.cal-chip` variants (`.chip-workflow`/`.chip-generic`/`.chip-selected`), `.cal-slot-overflow`, `.cal-drag-ghost`, `.cal-detail-panel`, `.cal-slot.drag-create-range`, `.cal-slot.drag-target-active` all wired up into CalendarView.js.
+
+## Backend Handoff (For API Team)
+- [x] Fallback when OpenAI checklist response is empty.
+  - Delivered: `generate_unit_checklist()` now treats empty OpenAI `items` as non-usable and falls back to deterministic generation.
+  - Prevents creating active units with zero checklist items from empty model output.
+- [x] Add optional merge mode for extraction confirm.
+  - Delivered: `POST /sessions/{id}/confirm-extraction` now supports `mode=replace|append` (default `replace`).
+- [x] Add endpoint to fetch latest extraction payload for a session.
+  - Delivered: `GET /sessions/{id}/uploads/latest` with normalized parsed items for review resume.
+- [x] Return stable extraction item IDs/hints.
+  - Delivered in extraction payload `items[].hint_id` for better FE diff/review handling.
+- [x] Add checklist item reorder endpoint.
+  - Proposed: `POST /workflow/classes/{class_id}/units/{unit_id}/items/reorder`
+  - Payload idea: ordered `[{id, parent_item_id, position}]`
+  - Purpose: persist move-up/move-down and re-parent ordering from UI.
+- [x] Add workflow-aware calendar block create endpoint.
+  - Delivered: `POST /workflow/classes/{class_id}/sessions` supports `unit_id` + `absent_student_ids` on creation.
+  - Coverage: backend test validates happy path plus invalid `unit_id` and unknown absent student validation.
+
+## Recently Completed
+- Workflow extraction review editor with edit/remove/reorder.
+- Workflow controls restored (visible with disabled state, not hidden).
+- Unit PDF download action restored.
+- Session image extraction action wired.
+- Workflow checklist CRUD actions (add root, add child, edit, delete) wired.
+- Workflow checklist reorder controls shipped (`Up/Down/In/Out`) with backend persistence.
+- Fixed workflow parent toggle cascade to children and kept calendar checked-items data consistent on session end.
+- Unit Setup preview now uses effective checked state (ancestor must also be checked).
+- Workflow date visibility restored in Workflow tab (no more hidden dates).
+- Workflow recent sessions section now supports date-window filters (Today/Week/Month/All).
+- Workflow now blocks duplicate actions and shows retry card on initial load failure.
+- Backend delivered extraction append mode + latest-upload resume endpoints and FE wiring is complete.
+- Workflow extraction review now supports apply mode (`replace`/`append`) and resume-latest extraction flow.
+- Backend extraction payloads now include stable `hint_id` for each normalized item.
+- Backend now blocks checklist toggle updates on closed sessions (`409`) to protect historical session integrity.
+- Backend now validates workflow unit creation inputs (`title`, `planned_hours`) and session time range (`end_time >= start_time`).
+- UI now refreshes workflow state automatically when closed-session `409` occurs on toggle/end actions.
+- Workflow unit form now includes optional planned-hours with inline validation.
+- Workflow end-session now uses a validation modal (date/start/end/note) instead of blind close payload.
+- Workflow now shows confirmed session progress items in Session Active tab with load/refresh actions.
+- Workflow now supports reopening the most recent closed unit directly from Workflow tab.
+- Workflow checklist now supports drag-and-drop reordering/re-parenting with root drop zone, while keeping button-based fallback controls.
+- Calendar now uses weekly timetable structure and session click opens detailed absent/headlines/note panel.
+- Calendar now supports drag-create (empty slots) and drag-move (existing chips) session block scaffold with live API wiring.
+- Calendar now supports in-panel session block edit modal (`Edit`) for date/time/note updates.
+- Calendar drag now includes click-vs-drag threshold protection and temporary custom drag ghost feedback.
+- **UI revision pass (2026-03-04):**
+  - Unit type selector (4 tiles: Chapter/Exercises/Exam/Correction) added to workflow create form.
+  - Button busy states (spinner + disabled) added to all long-running buttons across Workflow, Class, and Exam views.
+  - Input validation error highlight (`input-error`) added to workflow unit form and class create form.
+  - Extraction review modal polished: mode-selector cards, separator, emoji-typed item rows.
+  - Session progress viewer polished: color-coded type badges and card-style item rows.
+  - Re-open unit button polished with type badge display and ↩ pill style.
+  - Class create form expanded with Subject and Level optional fields.
+  - Student import template download button added (`/classes/{id}/students/template`).
+  - Exam create form expanded with Date field.
+  - Edit Exam modal added (`PUT /exams/{id}`) for Title, Date, Max Score.
+  - Exam template download button added (`/exams/{id}/template`).
+  - Exam export now tries CSV first, falls back to XLSX.
