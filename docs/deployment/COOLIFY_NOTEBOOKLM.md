@@ -64,14 +64,21 @@ Do not try to perform the Google login inside the server container.
 Use this flow instead:
 
 1. On your local machine, install backend requirements.
-2. Run:
+2. Install the browser dependency NotebookLM uses for login:
+
+```bash
+python -m pip install playwright
+python -m playwright install chromium
+```
+
+3. Run:
 
 ```bash
 python -m notebooklm login
 ```
 
-3. Sign in to the Google account that can access NotebookLM.
-4. Locate the generated auth file:
+4. Sign in to the Google account that can access NotebookLM.
+5. Locate the generated auth file:
 
 Windows:
 
@@ -79,12 +86,12 @@ Windows:
 %USERPROFILE%\.notebooklm\profiles\default\storage_state.json
 ```
 
-5. Open the deployed app.
-6. Log in as owner.
-7. Open `Owner Panel` -> `NotebookLM Setup`.
-8. Click `Upload Auth File`.
-9. Upload the local `storage_state.json`.
-10. Click `Refresh Status`.
+6. Open the deployed app.
+7. Log in as owner.
+8. Open `Owner Panel` -> `NotebookLM Setup`.
+9. Click `Upload Auth File`.
+10. Upload the local `storage_state.json`.
+11. Click `Refresh Status`.
 
 You want the status card to show:
 - `Package Installed`
@@ -119,4 +126,3 @@ SESSION_WRITER_PROVIDER=fallback
 ```
 
 Then switch to NotebookLM after the Owner panel reports `Ready`.
-
