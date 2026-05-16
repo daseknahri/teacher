@@ -1846,6 +1846,20 @@ def test_notebooklm_prompt_omits_noisy_source_hint_when_pdf_is_attached():
     assert "Ne retourne rien d'autre que cette liste indentee." in prompt
 
 
+def test_notebooklm_prompt_omits_slug_like_title_hint():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    prompt = workflow_generation._build_notebooklm_checklist_prompt(
+        unit_type=WorkflowUnitType.CHAPTER,
+        title="introduction-aux-nombres-rationnels-cours-ma",
+        source_hint="",
+        session_count=6,
+    )
+
+    assert "Titre fourni si utile:" not in prompt
+
+
 def test_parse_notebooklm_outline_response_preserves_heading_tree():
     from app.models import WorkflowChecklistItemKind, WorkflowUnitType
     from app.services import workflow_generation
