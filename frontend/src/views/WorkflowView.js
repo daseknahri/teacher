@@ -2865,13 +2865,15 @@ function _bindWorkflowEvents(el, classId) {
         _render(el, classId);
       });
     }
-    const autoWriteupState = _getSessionWriteupState(autoLoadSession.id);
-    if ((autoLoadSession.has_saved_writeup || autoWriteupState.item) && !autoWriteupState.loaded && !autoWriteupState.loading) {
-      _loadSessionWriteup(autoLoadSession.id, classId, { force: false }).then(() => {
-        const latestSession = getActiveSession();
-        if (!latestSession || Number(latestSession.id) !== Number(autoLoadSession.id)) return;
-        _render(el, classId);
-      });
+    if (autoLoadSession?.id) {
+      const autoWriteupState = _getSessionWriteupState(autoLoadSession.id);
+      if ((autoLoadSession.has_saved_writeup || autoWriteupState.item) && !autoWriteupState.loaded && !autoWriteupState.loading) {
+        _loadSessionWriteup(autoLoadSession.id, classId, { force: false }).then(() => {
+          const latestSession = getActiveSession();
+          if (!latestSession || Number(latestSession.id) !== Number(autoLoadSession.id)) return;
+          _render(el, classId);
+        });
+      }
     }
   }
 }
