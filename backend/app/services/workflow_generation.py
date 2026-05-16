@@ -21,6 +21,7 @@ CHAPTER_START_PATTERN = re.compile(r"^\s*(chapter|chapitre|title|titre|lesson|le
 NUMBERED_ROW_START_PATTERN = re.compile(r"(?<!\S)\d+(?:\.\d+)+(?:[)\].:-])?(?:\s+|$)")
 SLUG_LIKE_TITLE_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+){2,}$", re.IGNORECASE)
 INLINE_ENUMERATION_SPLIT_PATTERN = re.compile(r"(?=(?<!\S)\d+\s*[\).:]\s*)")
+NOTEBOOKLM_OUTLINE_BULLET_PATTERN = re.compile(r"^(?P<indent>[ \t]*)(?:[-*•‣▪●○]\s+)?(?P<title>.+?)\s*$")
 CHECKLIST_KEYWORD_SPLIT_PATTERN = re.compile(
     r"(?=\b(?:definition|définition|propriete|propriété|proprietes|propriétés|exemple|exemples|remarque|remarques|application|applications|exercice|exercices|theoreme|théorème|methode|méthode)\b)",
     re.IGNORECASE,
@@ -179,11 +180,13 @@ def generate_unit_checklist_package(
             document_path=document_path,
             outline_hint_lines=outline_hint_lines,
         )
+        response_mode = str((raw_provider_response or {}).get("response_mode") or "").strip().lower()
         if items:
             actual_provider = "notebooklm"
             model = "notebooklm-py"
-            candidates.append(("notebooklm", items))
-        if app_config.OPENAI_API_KEY and _candidate_needs_structural_repair(
+            candidate_source = "notebooklm_outline" if response_mode == "outline" else "notebooklm"
+            candidates.append((candidate_source, items))
+        if app_config.OPENAI_API_KEY and response_mode != "outline" and _candidate_needs_structural_repair(
             items,
             reference_outline=reference_outline,
             unit_type=unit_type,
@@ -208,7 +211,14 @@ def generate_unit_checklist_package(
 
     normalized_candidates: list[tuple[str, list[dict[str, Any]]]] = []
     for source_name, candidate_items in candidates:
-        normalized_candidate = _postprocess_checklist_items(candidate_items, unit_type=unit_type, unit_title=title)
+        if source_name == "notebooklm_outline":
+            normalized_candidate = _normalize_notebooklm_outline_items(
+                candidate_items,
+                unit_type=unit_type,
+                unit_title=title,
+            )
+        else:
+            normalized_candidate = _postprocess_checklist_items(candidate_items, unit_type=unit_type, unit_title=title)
         if normalized_candidate:
             normalized_candidates.append((source_name, normalized_candidate))
 
@@ -223,7 +233,12 @@ def generate_unit_checklist_package(
             unit_type=unit_type,
             unit_title=title,
         )
-        actual_provider = "fallback" if source_name == "reference" else source_name
+        if source_name == "reference":
+            actual_provider = "fallback"
+        elif source_name.startswith("notebooklm"):
+            actual_provider = "notebooklm"
+        else:
+            actual_provider = source_name
         if actual_provider == "openai":
             model = app_config.OPENAI_MODEL
             if requested_provider == "notebooklm" and openai_shadow_raw is not None:
@@ -470,6 +485,8 @@ def _candidate_needs_structural_repair(
 ) -> bool:
     if not items:
         return True
+    candidate_quality = _score_checklist_quality(items, unit_type=unit_type, unit_title=unit_title)
+    baseline_quality = _score_checklist_quality(reference_outline, unit_type=unit_type, unit_title=unit_title)
     candidate_score = _score_checklist_candidate(
         items,
         reference_outline=reference_outline,
@@ -485,6 +502,8 @@ def _candidate_needs_structural_repair(
     coverage = _score_reference_coverage(items, reference_outline)
     reference_titles = _outline_reference_titles(reference_outline)
     minimum_coverage = min(12, max(4, len(reference_titles) * 2))
+    if coverage >= minimum_coverage and candidate_quality + 6 >= baseline_quality:
+        return False
     return candidate_score + 4 < baseline_score or coverage < minimum_coverage
 
 
@@ -577,7 +596,6 @@ async def _notebooklm_generate_checklist_async(
             )
             result = await opened.chat.ask(notebook_id, prompt, source_ids=source_ids or None)
             answer = str(getattr(result, "answer", "") or "").strip()
-            parsed = _json_object_from_text(answer)
             raw_result = {
                 "notebook_id": notebook_id,
                 "source_ids": source_ids,
@@ -592,28 +610,31 @@ async def _notebooklm_generate_checklist_async(
         )
         return None, provider_context, raw_result, f"notebooklm_request_failed:{exc.__class__.__name__}"
 
-    if not isinstance(parsed, dict):
-        provider_context = _build_notebooklm_provider_context(
-            notebook_id=notebook_id,
-            source_ids=raw_result.get("source_ids") if isinstance(raw_result, dict) else [],
-            notebook_title=notebook_title,
-        )
-        return None, provider_context, raw_result, "notebooklm_invalid_json"
-    items = parsed.get("items")
-    if not isinstance(items, list):
-        provider_context = _build_notebooklm_provider_context(
-            notebook_id=notebook_id,
-            source_ids=raw_result.get("source_ids") if isinstance(raw_result, dict) else [],
-            notebook_title=notebook_title,
-        )
-        return None, provider_context, raw_result, "notebooklm_missing_items"
-
-    sanitized = _sanitize_items(items)
+    outline_items = _parse_notebooklm_outline_response(
+        answer,
+        unit_type=unit_type,
+        unit_title=title,
+    )
     provider_context = _build_notebooklm_provider_context(
         notebook_id=notebook_id,
         source_ids=raw_result.get("source_ids") if isinstance(raw_result, dict) else [],
         notebook_title=notebook_title,
     )
+    if outline_items:
+        if isinstance(raw_result, dict):
+            raw_result["response_mode"] = "outline"
+        return outline_items, provider_context, raw_result, None
+
+    parsed = _json_object_from_text(answer)
+    if not isinstance(parsed, dict):
+        return None, provider_context, raw_result, "notebooklm_invalid_json"
+    items = parsed.get("items")
+    if not isinstance(items, list):
+        return None, provider_context, raw_result, "notebooklm_missing_items"
+
+    sanitized = _sanitize_items(items)
+    if isinstance(raw_result, dict):
+        raw_result["response_mode"] = "json"
     if not sanitized:
         return None, provider_context, raw_result, "notebooklm_empty_items"
     return sanitized, provider_context, raw_result, None
@@ -848,59 +869,224 @@ def _build_notebooklm_checklist_prompt(
     session_count: int | None,
     outline_hint_lines: list[str] | None = None,
 ) -> str:
+    del session_count
     task_rules = (
-        "Lis cette unite pedagogique et retourne uniquement un JSON strict avec la cle `items`. "
-        "Chaque element doit respecter exactement ce schema: "
-        "{\"title\":\"...\",\"kind\":\"chapter|section|subsection|property|definition|example|exercise|supervision|correction|other\",\"children\":[...],\"session_number\":1}. "
-        "Utilise uniquement ces cles. "
-        "Le checklist doit contenir uniquement des titres pedagogiques courts, jamais des paragraphes complets, definitions redigees, exemples developpes ou exercices detailles."
+        "Lis cette unite pedagogique comme un manuel scolaire et retourne uniquement son plan pedagogique. "
+        "Je veux seulement les titres et sous-titres, dans l'ordre exact du PDF, avec la bonne indentation."
     )
     if unit_type == WorkflowUnitType.EXERCISE_SERIES:
         specialization = (
-            " L'unite est une serie d'exercices: cree surtout des elements `exercise`, courts, distincts et ordonnes."
+            " L'unite est une serie d'exercices: garde les grandes rubriques puis les exercices ou sous-rubriques visibles."
         )
     else:
         specialization = (
-            " L'unite est un chapitre: construis une hierarchie claire et concise (chapitre, sections, sous-sections, proprietes, definitions, exemples). "
-            "Utilise les vrais titres du document. Si le PDF melange titre et contenu, reduis chaque item a un intitulé bref de type manuel scolaire."
-        )
-    session_rule = ""
-    if session_count is not None and int(session_count) > 0:
-        session_rule = (
-            f" Attribue a chaque element terminal un `session_number` entre 1 et {int(session_count)}. "
-            "Respecte l'ordre du document. Toutes les seances doivent recevoir du contenu. "
-            "Si le contenu est trop court, ajoute des exercices de consolidation dans les dernieres seances."
+            " L'unite est un chapitre: garde toujours le titre du chapitre, puis les grandes parties, sous-parties, definitions, proprietes, activites, remarques, exemples et exercices visibles."
         )
     formatting_rules = (
-        " Regles de qualite: "
-        "1) chaque `title` doit etre court, idealement moins de 90 caracteres; "
-        "2) ne jamais inclure plusieurs notions dans un seul item; "
-        "3) si une ligne contient Definition, Exemple, Remarque, Application ou Exercice, separe-les en items differents; "
-        "4) preserve strictement l'ordre pedagogique du PDF; "
-        "5) ne retourne aucun texte hors JSON."
+        " Format obligatoire: "
+        "1) retourne uniquement une liste en texte brut, une ligne par titre; "
+        "2) commence chaque ligne par `- `; "
+        "3) indente chaque niveau enfant avec exactement deux espaces; "
+        "4) conserve le texte des titres du document; "
+        "5) si un titre est coupe sur deux lignes dans le PDF, reconstitue-le proprement; "
+        "6) ignore tous les paragraphes, explications, exemples developpes, corrections, noms de professeur, niveau, annee, pagination, en-tetes et pieds de page; "
+        "7) n'invente pas de nouveaux titres; "
+        "8) si le PDF est visuellement ambigu, complete seulement les liens de structure evidents pour garder un plan pedagogique coherent; "
+        "9) ne retourne aucun commentaire avant ou apres la liste."
     )
     source_block = ""
     trimmed_hint = str(source_hint or "").strip()
     if trimmed_hint:
-        source_block = f"\nIndice textuel de secours si utile:\n{trimmed_hint}"
+        source_block = f"\nTexte source de secours si le PDF est indisponible:\n{trimmed_hint}"
     outline_block = ""
     if outline_hint_lines:
         outline_rows = "\n".join(str(row).strip() for row in outline_hint_lines if str(row).strip())
         if outline_rows:
             outline_block = (
-                "\nStructure detectee automatiquement dans le PDF (prioritaire sauf si le PDF la contredit):\n"
+                "\nReperes de structure detectes automatiquement dans le PDF (a utiliser seulement pour confirmer l'ordre):\n"
                 f"{outline_rows}\n"
                 "Ignore les entetes de couverture, nom du professeur, niveau, annee, seance, en-tetes d'etablissement et autres metadonnees."
             )
     return (
-        f"{task_rules}{specialization}{session_rule}{formatting_rules}\n"
+        f"{task_rules}{specialization}{formatting_rules}\n"
         f"Titre de l'unite: {title}\n"
         f"Type: {unit_type.value}\n"
-        "Ne retourne aucun texte hors JSON."
-        " Pour un chapitre, privilegie toujours: titre principal, grandes sections numerotees, puis definition/propriete/activite/exemple/exercice comme enfants."
+        "Exemple de sortie attendue:\n"
+        "- Chapitre 5 : Les nombres relatifs\n"
+        "  - 5.1 Somme de deux nombres relatifs\n"
+        "    - 5.1.1 Les deux nombres sont de meme signe\n"
+        "      - Propriete\n"
+        "      - Exemples\n"
+        "    - 5.1.2 Les deux nombres sont de signes contraires\n"
+        "      - Exemples\n"
+        "Ne retourne rien d'autre que cette liste indentee."
         f"{source_block}"
         f"{outline_block}"
     )
+
+
+def _parse_notebooklm_outline_response(
+    answer: str,
+    *,
+    unit_type: WorkflowUnitType,
+    unit_title: str,
+) -> list[dict[str, Any]] | None:
+    text = str(answer or "").strip()
+    if not text:
+        return None
+    if text.lstrip().startswith(("{", "[")):
+        return None
+
+    roots: list[dict[str, Any]] = []
+    stack: list[tuple[int, dict[str, Any]]] = []
+    parsed_any = False
+
+    for depth, title in _extract_notebooklm_outline_lines(text):
+        parsed_any = True
+        kind = _infer_notebooklm_outline_kind(
+            title,
+            depth=depth,
+            unit_type=unit_type,
+            is_first_root=not roots and depth <= 0,
+        )
+        node: dict[str, Any] = {"title": title, "kind": kind.value, "children": []}
+        while stack and stack[-1][0] >= depth:
+            stack.pop()
+        if stack:
+            stack[-1][1]["children"].append(node)
+        else:
+            roots.append(node)
+        stack.append((depth, node))
+
+    if not parsed_any:
+        return None
+    normalized = _normalize_notebooklm_outline_items(roots, unit_type=unit_type, unit_title=unit_title)
+    return normalized or None
+
+
+def _extract_notebooklm_outline_lines(text: str) -> list[tuple[int, str]]:
+    output: list[tuple[int, str]] = []
+    for raw_line in str(text or "").splitlines():
+        line = str(raw_line or "").rstrip()
+        if not line:
+            continue
+        stripped = line.strip()
+        if not stripped or stripped.startswith("```"):
+            continue
+        match = NOTEBOOKLM_OUTLINE_BULLET_PATTERN.match(line)
+        if not match:
+            continue
+        indent_text = str(match.group("indent") or "")
+        candidate = str(match.group("title") or "").strip()
+        had_bullet = bool(re.match(r"^[ \t]*[-*•‣▪●○]\s+", line))
+        candidate = _normalize_outline_title(candidate)
+        if not candidate:
+            continue
+        lowered = _fold_text_key(candidate)
+        if lowered in {"plan", "outline", "checklist", "liste des titres", "liste des headlines"}:
+            continue
+        if _is_metadata_noise_line(candidate):
+            continue
+        if (
+            not had_bullet
+            and not _line_has_structural_marker(candidate)
+            and _keyword_kind_from_line(candidate) is None
+            and _looks_like_body_sentence(candidate)
+        ):
+            continue
+        indent_width = len(indent_text.expandtabs(2))
+        depth = max(0, indent_width // 2)
+        output.append((depth, candidate))
+    return output
+
+
+def _infer_notebooklm_outline_kind(
+    title: str,
+    *,
+    depth: int,
+    unit_type: WorkflowUnitType,
+    is_first_root: bool,
+) -> WorkflowChecklistItemKind:
+    normalized_title = _normalize_outline_title(title)
+    if CHAPTER_START_PATTERN.match(normalized_title):
+        return WorkflowChecklistItemKind.CHAPTER
+    keyword_kind = _keyword_kind_from_line(normalized_title)
+    if keyword_kind is not None:
+        return keyword_kind
+    if NUMBERED_HEADING_PATTERN.match(normalized_title):
+        return _infer_kind_from_text(normalized_title, default=WorkflowChecklistItemKind.SECTION)
+    if ROMAN_HEADING_PATTERN.match(normalized_title) or ALPHA_HEADING_PATTERN.match(normalized_title):
+        return WorkflowChecklistItemKind.SECTION if depth <= 1 else WorkflowChecklistItemKind.SUBSECTION
+    if unit_type == WorkflowUnitType.CHAPTER and is_first_root:
+        return WorkflowChecklistItemKind.CHAPTER
+    if depth <= 0:
+        if unit_type == WorkflowUnitType.EXERCISE_SERIES:
+            return WorkflowChecklistItemKind.EXERCISE
+        return WorkflowChecklistItemKind.SECTION
+    if depth == 1:
+        return WorkflowChecklistItemKind.SECTION
+    return WorkflowChecklistItemKind.SUBSECTION
+
+
+def _normalize_notebooklm_outline_items(
+    items: list[dict[str, Any]],
+    *,
+    unit_type: WorkflowUnitType,
+    unit_title: str,
+) -> list[dict[str, Any]]:
+    def walk(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        output: list[dict[str, Any]] = []
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            title = _normalize_outline_title(node.get("title"))
+            if not title or _is_metadata_noise_line(title):
+                continue
+            if _looks_like_body_sentence(title) and not _line_has_structural_marker(title) and _keyword_kind_from_line(title) is None:
+                continue
+            raw_kind = str(node.get("kind") or WorkflowChecklistItemKind.OTHER.value).strip().lower()
+            allowed = {kind.value for kind in WorkflowChecklistItemKind}
+            kind = raw_kind if raw_kind in allowed else WorkflowChecklistItemKind.OTHER.value
+            children = walk(node.get("children") if isinstance(node.get("children"), list) else [])
+            output.append({"title": title, "kind": kind, "children": children})
+        return _dedupe_sibling_nodes(output)
+
+    normalized = walk(items)
+    if unit_type != WorkflowUnitType.CHAPTER or not normalized:
+        return normalized
+    return _ensure_notebooklm_chapter_root(normalized, unit_title=unit_title)
+
+
+def _ensure_notebooklm_chapter_root(items: list[dict[str, Any]], *, unit_title: str) -> list[dict[str, Any]]:
+    if not items:
+        return []
+    first = dict(items[0])
+    if str(first.get("kind") or "").strip().lower() == WorkflowChecklistItemKind.CHAPTER.value:
+        if len(items) == 1:
+            return [first]
+        first["children"] = [
+            *(first.get("children") if isinstance(first.get("children"), list) else []),
+            *items[1:],
+        ]
+        return [first]
+    if len(items) == 1:
+        first["kind"] = WorkflowChecklistItemKind.CHAPTER.value
+        return [first]
+    if len(str(first.get("title") or "").split()) >= 2:
+        first["kind"] = WorkflowChecklistItemKind.CHAPTER.value
+        first["children"] = [
+            *(first.get("children") if isinstance(first.get("children"), list) else []),
+            *items[1:],
+        ]
+        return [first]
+    chapter_title = _normalize_outline_title(unit_title) or "Chapter"
+    return [
+        {
+            "title": chapter_title,
+            "kind": WorkflowChecklistItemKind.CHAPTER.value,
+            "children": items,
+        }
+    ]
 
 
 def _build_notebooklm_session_writeup_prompt(
@@ -1590,10 +1776,9 @@ def _infer_kind_from_text(text: str, *, default: WorkflowChecklistItemKind) -> W
             if remainder_folded.startswith(_fold_text_key(keyword)):
                 return kind
         depth = max(0, match.group(1).count("."))
-        if depth <= 0:
+        if depth <= 1:
             return WorkflowChecklistItemKind.SECTION
-        if depth == 1:
-            return WorkflowChecklistItemKind.SUBSECTION
+        return WorkflowChecklistItemKind.SUBSECTION
     for keyword, kind in CHECKLIST_KIND_KEYWORDS:
         if keyword in lowered:
             return kind

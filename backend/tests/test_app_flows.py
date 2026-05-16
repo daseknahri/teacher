@@ -1841,8 +1841,48 @@ def test_notebooklm_prompt_omits_noisy_source_hint_when_pdf_is_attached():
     )
 
     assert "Indice textuel de secours" not in prompt
-    assert "jamais des paragraphes complets" in prompt
-    assert "moins de 90 caracteres" in prompt
+    assert "retourne uniquement une liste en texte brut" in prompt
+    assert "indente chaque niveau enfant avec exactement deux espaces" in prompt
+    assert "Ne retourne rien d'autre que cette liste indentee." in prompt
+
+
+def test_parse_notebooklm_outline_response_preserves_heading_tree():
+    from app.models import WorkflowChecklistItemKind, WorkflowUnitType
+    from app.services import workflow_generation
+
+    answer = "\n".join(
+        [
+            "- Chapitre 5 : Les nombres relatifs",
+            "  - 5.1 Somme de deux nombres relatifs",
+            "    - 5.1.1 Les deux nombres sont de même signe",
+            "      - Propriete",
+            "      - Exemples",
+            "    - 5.1.2 Les deux nombres sont de signes contraires",
+            "      - Exemples",
+            "  - 5.2 Différence de deux nombres relatifs",
+            "    - Activités",
+        ]
+    )
+
+    items = workflow_generation._parse_notebooklm_outline_response(
+        answer,
+        unit_type=WorkflowUnitType.CHAPTER,
+        unit_title="Les nombres relatifs",
+    )
+
+    assert items
+    assert len(items) == 1
+    chapter = items[0]
+    assert chapter["kind"] == WorkflowChecklistItemKind.CHAPTER.value
+    assert "Chapitre 5" in chapter["title"]
+    assert len(chapter["children"]) == 2
+    assert chapter["children"][0]["kind"] == WorkflowChecklistItemKind.SECTION.value
+    assert chapter["children"][0]["title"].startswith("5.1")
+    assert chapter["children"][0]["children"][0]["kind"] == WorkflowChecklistItemKind.SUBSECTION.value
+    assert chapter["children"][0]["children"][0]["title"].startswith("5.1.1")
+    assert chapter["children"][0]["children"][0]["children"][0]["kind"] == WorkflowChecklistItemKind.PROPERTY.value
+    assert chapter["children"][0]["children"][0]["children"][1]["kind"] == WorkflowChecklistItemKind.EXAMPLE.value
+    assert chapter["children"][1]["children"][0]["title"] == "Activités"
 
 
 def test_pdf_text_extraction_preserves_line_break_structure():
@@ -2035,6 +2075,53 @@ def test_generate_unit_checklist_package_promotes_openai_shadow_when_notebooklm_
     assert any("chapitre 5" in title.lower() for title in titles)
     assert any("5.1" in title.lower() and "somme de deux nombres relatifs" in title.lower() for title in titles)
     assert not any("5) heures" in title.lower() for title in titles)
+
+
+def test_generate_unit_checklist_package_trusts_notebooklm_outline_without_openai_shadow(monkeypatch):
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    outline_items = workflow_generation._parse_notebooklm_outline_response(
+        "\n".join(
+            [
+                "- Chapitre 5 : Les nombres relatifs",
+                "  - 5.1 Somme de deux nombres relatifs",
+                "    - 5.1.1 Les deux nombres sont de même signe",
+                "      - Propriete",
+                "      - Exemples",
+                "  - 5.2 Différence de deux nombres relatifs",
+            ]
+        ),
+        unit_type=WorkflowUnitType.CHAPTER,
+        unit_title="Les nombres relatifs",
+    )
+    assert outline_items
+
+    monkeypatch.setattr(workflow_generation.app_config, "OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        workflow_generation,
+        "_notebooklm_generate_checklist",
+        lambda **kwargs: (outline_items, {"provider": "notebooklm"}, {"answer": "outline", "response_mode": "outline"}, None),
+    )
+    monkeypatch.setattr(
+        workflow_generation,
+        "_openai_generate_checklist",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("shadow_should_not_run")),
+    )
+
+    package = workflow_generation.generate_unit_checklist_package(
+        unit_type=WorkflowUnitType.CHAPTER,
+        title="Les nombres relatifs",
+        source_text="Texte source minimal",
+        provider="notebooklm",
+    )
+
+    flat = _flatten_checklist(package["items"])
+    titles = [str(row.get("title", "")) for row in flat]
+    assert package["source"] == "notebooklm"
+    assert titles[0].startswith("Chapitre 5")
+    assert any(title.startswith("5.1") for title in titles)
+    assert any(title == "Exemples" for title in titles)
 
 
 def test_unit_creation_replaces_slug_title_with_first_meaningful_generated_heading(client, monkeypatch):
