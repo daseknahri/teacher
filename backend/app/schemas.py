@@ -626,6 +626,10 @@ class WorkflowUnitOut(BaseModel):
     closed_at: datetime | None
     progress_total: int = 0
     progress_done: int = 0
+    extraction_source: str | None = None
+    extraction_model: str | None = None
+    extraction_status: str | None = None
+    extraction_error: str | None = None
     checklist: list[WorkflowChecklistItemOut] = Field(default_factory=list)
 
 

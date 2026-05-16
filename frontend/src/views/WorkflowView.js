@@ -755,6 +755,17 @@ function _render(el, classId) {
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
   const r = 36, circ = 2 * Math.PI * r;
   const offset = circ - (pct / 100) * circ;
+  const extractionSource = String(unit?.extraction_source || '').trim().toLowerCase();
+  const extractionStatus = String(unit?.extraction_status || '').trim().toLowerCase();
+  const extractionError = String(unit?.extraction_error || '').trim();
+  const extractionBadgeClass = extractionSource === 'notebooklm'
+    ? 'badge-green'
+    : extractionSource === 'openai'
+      ? 'badge-blue'
+      : extractionSource
+        ? 'badge-amber'
+        : 'badge-gray';
+  const extractionLabel = extractionSource || 'unknown';
 
   const tabs = [
     { label: 'Unit Setup', disabled: false },
@@ -807,7 +818,13 @@ function _render(el, classId) {
                 <div>
                   <h2 class="text-lg font-bold text-slate-800">${unit.title || unit.name || ''}</h2>
                   <p class="text-[12px] text-slate-500 mt-0.5">Created ${fmtDate(unit.created_at || unit.createdAt)}</p>
-                  ${unit.unit_type ? `<span class="badge badge-blue mt-1">${unit.unit_type}</span>` : ''}
+                  <div class="flex items-center gap-2 flex-wrap mt-1">
+                    ${unit.unit_type ? `<span class="badge badge-blue">${unit.unit_type}</span>` : ''}
+                    <span class="badge ${extractionBadgeClass}">Extraction ${_escapeHtml(extractionLabel)}</span>
+                    ${unit.extraction_model ? `<span class="badge badge-gray">${_escapeHtml(String(unit.extraction_model))}</span>` : ''}
+                    ${extractionStatus ? `<span class="badge badge-gray">${_escapeHtml(extractionStatus)}</span>` : ''}
+                  </div>
+                  ${extractionError ? `<p class="text-[11px] text-amber-700 mt-1">Provider note: ${_escapeHtml(extractionError)}</p>` : ''}
                 </div>
                 <div class="flex gap-2 flex-wrap mt-auto">
                   ${!session ? `<button id="btn-start-session" class="btn btn-success">Start Session</button>` : ''}

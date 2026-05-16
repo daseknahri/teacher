@@ -444,6 +444,10 @@ def _safe_serialize_unit(db: Session, unit: WorkflowUnit, *, class_id: int) -> W
                 closed_at=getattr(unit, "closed_at", None),
                 progress_total=0,
                 progress_done=0,
+                extraction_source=str(getattr(getattr(unit, "blueprint", None), "provider", "") or "").strip() or None,
+                extraction_model=getattr(getattr(unit, "blueprint", None), "model", None),
+                extraction_status=str(getattr(getattr(unit, "blueprint", None), "status", "") or "").strip() or None,
+                extraction_error=str(getattr(getattr(unit, "blueprint", None), "error_message", "") or "").strip() or None,
                 checklist=[],
             )
         except Exception:
@@ -491,6 +495,7 @@ def _serialize_unit(db: Session, unit: WorkflowUnit) -> WorkflowUnitOut:
     ).all()
     progress_total = len(items)
     progress_done = sum(1 for item in items if item.is_completed)
+    blueprint = unit.blueprint
     return WorkflowUnitOut(
         id=unit.id,
         class_id=unit.class_id,
@@ -503,6 +508,10 @@ def _serialize_unit(db: Session, unit: WorkflowUnit) -> WorkflowUnitOut:
         closed_at=unit.closed_at,
         progress_total=progress_total,
         progress_done=progress_done,
+        extraction_source=str(getattr(blueprint, "provider", "") or "").strip() or None,
+        extraction_model=getattr(blueprint, "model", None),
+        extraction_status=str(getattr(blueprint, "status", "") or "").strip() or None,
+        extraction_error=str(getattr(blueprint, "error_message", "") or "").strip() or None,
         checklist=_serialize_checklist(items),
     )
 
