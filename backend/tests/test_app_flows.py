@@ -1845,6 +1845,105 @@ def test_notebooklm_prompt_omits_noisy_source_hint_when_pdf_is_attached():
     assert "moins de 90 caracteres" in prompt
 
 
+def test_pdf_text_extraction_preserves_line_break_structure():
+    from app.services import workflow as workflow_service
+
+    pdf_bytes = _build_pdf_file(
+        [
+            "Chapitre 1 : Operations sur les nombres relatifs",
+            "1) Pour additionner deux nombres relatifs de meme signe",
+            "Exemples - Somme de deux nombres positifs",
+            "2) Pour additionner deux nombres de signes contraires",
+        ]
+    )
+    with NamedTemporaryFile(suffix=".pdf", delete=False) as temp:
+        temp.write(pdf_bytes)
+        temp_path = temp.name
+    try:
+        extracted = workflow_service.extract_text_from_document(temp_path)
+    finally:
+        os.remove(temp_path)
+
+    rows = [row.strip() for row in extracted.splitlines() if row.strip()]
+    assert any("Chapitre 1" in row for row in rows)
+    assert any("Pour additionner deux nombres relatifs de meme signe" in row for row in rows)
+    assert any("Exemples - Somme de deux nombres positifs" in row for row in rows)
+    assert len(rows) >= 4
+
+
+def test_outline_seed_filters_metadata_and_keeps_teaching_structure():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    source_text = "\n".join(
+        [
+            "Exemples - Mathématiques",
+            "Exemples - 3eme Annee College Seance 1 (Operations sur les nombres relatifs) Professeur : MR BENGHANI",
+            "1) Pour additionner deux nombres relatifs de meme signe : On garde le signe commun",
+            "Exemples - Somme de deux nombres positifs",
+            "2) Pour additionner deux nombres de signes contraires",
+            "Exemples - On ecrit le signe du nombre qui a la plus grande distance a zero",
+            "1) Pour multiplier deux nombres relatifs",
+            "On effectue le produit des distances a zero",
+        ]
+    )
+
+    items = workflow_generation._build_outline_seed(
+        unit_type=WorkflowUnitType.CHAPTER,
+        title="Operations sur les nombres relatifs",
+        source_text=source_text,
+    )
+    flat = _flatten_checklist(items)
+    titles = [str(row.get("title", "")) for row in flat]
+    lower_titles = [title.lower() for title in titles]
+
+    assert not any("prof" in title for title in lower_titles)
+    assert not any("math" in title for title in lower_titles)
+    assert any("pour additionner deux nombres relatifs de meme signe" in title.lower() for title in titles)
+    assert any(title.startswith("Exemples -") for title in titles)
+    assert any(title.startswith("Propriete -") for title in titles)
+
+
+def test_generate_unit_checklist_package_prefers_structured_outline_over_noisy_provider(monkeypatch):
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    noisy_items = [
+        {"title": "Exemples - Mathématiques", "kind": "example", "children": []},
+        {
+            "title": "Exemples - 3eme Annee College Seance 1 (Operations sur les nombres relatifs) Professeur : MR BENGHANI",
+            "kind": "example",
+            "children": [],
+        },
+    ]
+
+    monkeypatch.setattr(
+        workflow_generation,
+        "_notebooklm_generate_checklist",
+        lambda **kwargs: (noisy_items, {"provider": "notebooklm"}, {"answer": "{}"}, None),
+    )
+
+    package = workflow_generation.generate_unit_checklist_package(
+        unit_type=WorkflowUnitType.CHAPTER,
+        title="Operations sur les nombres relatifs",
+        source_text="\n".join(
+            [
+                "1) Pour additionner deux nombres relatifs de meme signe : On garde le signe commun",
+                "Exemples - Somme de deux nombres positifs",
+                "2) Pour additionner deux nombres de signes contraires",
+                "Exemples - On ecrit le signe du nombre qui a la plus grande distance a zero",
+            ]
+        ),
+        provider="notebooklm",
+    )
+
+    flat = _flatten_checklist(package["items"])
+    titles = [str(row.get("title", "")) for row in flat]
+    assert any("pour additionner deux nombres relatifs de meme signe" in title.lower() for title in titles)
+    assert not any("prof" in title.lower() for title in titles)
+    assert not any(title.lower().startswith("exemples - mathematiques") for title in titles)
+
+
 def test_unit_creation_replaces_slug_title_with_first_meaningful_generated_heading(client, monkeypatch):
     import app.routers.workflow as workflow_router
 

@@ -359,10 +359,9 @@ def _extract_pdf_text(source: Path) -> str:
 
         reader = PdfReader(str(source))
         for page in reader.pages:
-            text = (page.extract_text() or "").strip()
-            if text:
-                base_lines.append(text)
-        base_lines.extend(_extract_pdf_outline_titles(reader))
+            text = page.extract_text() or ""
+            base_lines.extend(_split_text_blocks_into_lines([text]))
+        base_lines.extend(_split_text_blocks_into_lines(_extract_pdf_outline_titles(reader)))
     except Exception:
         base_lines = []
 
@@ -371,7 +370,7 @@ def _extract_pdf_text(source: Path) -> str:
     if len(combined) >= MIN_PDF_TEXT_CHARS:
         return combined
 
-    ocr_lines = _ocr_pdf_pages(source, max_pages=MAX_PDF_OCR_PAGES)
+    ocr_lines = _split_text_blocks_into_lines(_ocr_pdf_pages(source, max_pages=MAX_PDF_OCR_PAGES))
     merged = _unique_lines([*normalized, *ocr_lines])
     return "\n".join(merged).strip()
 
@@ -449,6 +448,19 @@ def _ocr_pdf_pages(source: Path, *, max_pages: int) -> list[str]:
         except Exception:
             continue
     return lines
+
+
+def _split_text_blocks_into_lines(blocks: list[str]) -> list[str]:
+    output: list[str] = []
+    for block in blocks:
+        raw = str(block or "")
+        if not raw.strip():
+            continue
+        for line in re.split(r"[\r\n]+", raw):
+            value = re.sub(r"\s+", " ", str(line or "")).strip(" \t\r\n;,-")
+            if value:
+                output.append(value)
+    return output
 
 
 def _unique_lines(lines: list[str]) -> list[str]:

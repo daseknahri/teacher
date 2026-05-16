@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import re
 from typing import Any
+import unicodedata
 
 import httpx
 
@@ -30,12 +31,55 @@ CHECKLIST_KIND_KEYWORDS: tuple[tuple[str, WorkflowChecklistItemKind], ...] = (
     ("propriété", WorkflowChecklistItemKind.PROPERTY),
     ("proprietes", WorkflowChecklistItemKind.PROPERTY),
     ("propriétés", WorkflowChecklistItemKind.PROPERTY),
+    ("regle", WorkflowChecklistItemKind.PROPERTY),
+    ("regles", WorkflowChecklistItemKind.PROPERTY),
+    ("remarque", WorkflowChecklistItemKind.PROPERTY),
+    ("remarques", WorkflowChecklistItemKind.PROPERTY),
+    ("methode", WorkflowChecklistItemKind.PROPERTY),
+    ("méthode", WorkflowChecklistItemKind.PROPERTY),
+    ("theoreme", WorkflowChecklistItemKind.PROPERTY),
+    ("théorème", WorkflowChecklistItemKind.PROPERTY),
     ("exemple", WorkflowChecklistItemKind.EXAMPLE),
     ("exemples", WorkflowChecklistItemKind.EXAMPLE),
     ("application", WorkflowChecklistItemKind.EXERCISE),
     ("applications", WorkflowChecklistItemKind.EXERCISE),
     ("exercice", WorkflowChecklistItemKind.EXERCISE),
     ("exercices", WorkflowChecklistItemKind.EXERCISE),
+)
+STRUCTURAL_KEYWORD_PREFIXES: tuple[tuple[str, WorkflowChecklistItemKind], ...] = (
+    ("activite", WorkflowChecklistItemKind.OTHER),
+    ("definition", WorkflowChecklistItemKind.DEFINITION),
+    ("propriete", WorkflowChecklistItemKind.PROPERTY),
+    ("regle", WorkflowChecklistItemKind.PROPERTY),
+    ("remarque", WorkflowChecklistItemKind.PROPERTY),
+    ("methode", WorkflowChecklistItemKind.PROPERTY),
+    ("theoreme", WorkflowChecklistItemKind.PROPERTY),
+    ("exemple", WorkflowChecklistItemKind.EXAMPLE),
+    ("application", WorkflowChecklistItemKind.EXERCISE),
+    ("exercice", WorkflowChecklistItemKind.EXERCISE),
+)
+METADATA_NOISE_TERMS: tuple[str, ...] = (
+    "professeur",
+    "prof",
+    "college",
+    "annee",
+    "seance",
+    "math",
+    "mathematique",
+    "academie",
+    "lycee",
+    "ecole",
+)
+RULE_CONTINUATION_PREFIXES: tuple[str, ...] = (
+    "on ",
+    "il faut ",
+    "on garde ",
+    "on ecrit ",
+    "on effectue ",
+    "on ajoute ",
+    "on soustrait ",
+    "on multiplie ",
+    "on divise ",
 )
 
 
@@ -86,6 +130,8 @@ def generate_unit_checklist_package(
         supported=SUPPORTED_UNIT_PLANNER_PROVIDERS,
         default="fallback",
     )
+    outline_seed = _build_outline_seed(unit_type=unit_type, title=title, source_text=source_text)
+    outline_hint_lines = _outline_hint_lines(outline_seed)
     items: list[dict[str, Any]] | None = None
     raw_provider_response: dict[str, Any] | None = None
     error_message: str | None = None
@@ -99,6 +145,7 @@ def generate_unit_checklist_package(
             title=title,
             source_text=source_text,
             session_count=session_count,
+            outline_hint_lines=outline_hint_lines,
         )
         if items:
             model = app_config.OPENAI_MODEL
@@ -109,17 +156,28 @@ def generate_unit_checklist_package(
             source_text=source_text,
             session_count=session_count,
             document_path=document_path,
+            outline_hint_lines=outline_hint_lines,
         )
         if items:
             actual_provider = "notebooklm"
             model = "notebooklm-py"
 
+    if items:
+        items = _postprocess_checklist_items(items, unit_type=unit_type, unit_title=title)
+
+    if outline_seed:
+        items = _prefer_outline_seed(
+            provider_items=items,
+            outline_seed=outline_seed,
+            unit_type=unit_type,
+            unit_title=title,
+        )
+
     if not items:
         actual_provider = "fallback"
-        fallback_items = _fallback_generate_checklist(unit_type=unit_type, title=title, source_text=source_text)
+        fallback_items = outline_seed or _fallback_generate_checklist(unit_type=unit_type, title=title, source_text=source_text)
         items = fallback_items
 
-    items = _postprocess_checklist_items(items, unit_type=unit_type, unit_title=title)
     items = _apply_session_numbers(items, session_count=session_count)
     if unit_type in {WorkflowUnitType.CHAPTER, WorkflowUnitType.EXERCISE_SERIES}:
         items = _ensure_session_coverage_with_exercises(items, session_count=session_count)
@@ -228,6 +286,59 @@ def _normalize_provider_name(name: str | None, *, supported: set[str], default: 
     return default
 
 
+def _build_outline_seed(
+    *,
+    unit_type: WorkflowUnitType,
+    title: str,
+    source_text: str,
+) -> list[dict[str, Any]]:
+    base_items = _fallback_generate_checklist(unit_type=unit_type, title=title, source_text=source_text)
+    return _postprocess_checklist_items(base_items, unit_type=unit_type, unit_title=title)
+
+
+def _outline_hint_lines(items: list[dict[str, Any]]) -> list[str]:
+    output: list[str] = []
+
+    def walk(nodes: list[dict[str, Any]], depth: int) -> None:
+        for node in nodes:
+            title = _normalize_outline_title(node.get("title"))
+            if not title:
+                continue
+            kind = str(node.get("kind") or "other").strip().lower() or "other"
+            output.append(f"{'  ' * max(0, depth)}- [{kind}] {title}")
+            children = node.get("children") if isinstance(node.get("children"), list) else []
+            if children:
+                walk(children, depth + 1)
+
+    walk(items, 0)
+    return output[:60]
+
+
+def _render_outline_hint_block(outline_hint_lines: list[str] | None) -> str:
+    if not outline_hint_lines:
+        return "Detected outline: none"
+    rows = [str(row).strip() for row in outline_hint_lines if str(row).strip()]
+    if not rows:
+        return "Detected outline: none"
+    return "Detected outline:\n" + "\n".join(rows[:60])
+
+
+def _prefer_outline_seed(
+    *,
+    provider_items: list[dict[str, Any]] | None,
+    outline_seed: list[dict[str, Any]],
+    unit_type: WorkflowUnitType,
+    unit_title: str,
+) -> list[dict[str, Any]]:
+    seed_quality = _score_checklist_quality(outline_seed, unit_type=unit_type, unit_title=unit_title)
+    if not provider_items:
+        return outline_seed
+    provider_quality = _score_checklist_quality(provider_items, unit_type=unit_type, unit_title=unit_title)
+    if seed_quality >= provider_quality:
+        return outline_seed
+    return provider_items
+
+
 def _notebooklm_generate_checklist(
     *,
     unit_type: WorkflowUnitType,
@@ -235,6 +346,7 @@ def _notebooklm_generate_checklist(
     source_text: str,
     session_count: int | None,
     document_path: str | None,
+    outline_hint_lines: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]] | None, dict[str, Any] | None, dict[str, Any] | None, str | None]:
     try:
         return asyncio.run(
@@ -244,6 +356,7 @@ def _notebooklm_generate_checklist(
                 source_text=source_text,
                 session_count=session_count,
                 document_path=document_path,
+                outline_hint_lines=outline_hint_lines,
             )
         )
     except Exception as exc:
@@ -257,6 +370,7 @@ async def _notebooklm_generate_checklist_async(
     source_text: str,
     session_count: int | None,
     document_path: str | None,
+    outline_hint_lines: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]] | None, dict[str, Any] | None, dict[str, Any] | None, str | None]:
     client = await _create_notebooklm_client()
     if client is None:
@@ -281,6 +395,7 @@ async def _notebooklm_generate_checklist_async(
                 title=title,
                 source_hint="" if str(document_path or "").strip() else source_text,
                 session_count=session_count,
+                outline_hint_lines=outline_hint_lines,
             )
             result = await opened.chat.ask(notebook_id, prompt, source_ids=source_ids or None)
             answer = str(getattr(result, "answer", "") or "").strip()
@@ -553,6 +668,7 @@ def _build_notebooklm_checklist_prompt(
     title: str,
     source_hint: str,
     session_count: int | None,
+    outline_hint_lines: list[str] | None = None,
 ) -> str:
     task_rules = (
         "Lis cette unite pedagogique et retourne uniquement un JSON strict avec la cle `items`. "
@@ -589,12 +705,23 @@ def _build_notebooklm_checklist_prompt(
     trimmed_hint = str(source_hint or "").strip()
     if trimmed_hint:
         source_block = f"\nIndice textuel de secours si utile:\n{trimmed_hint}"
+    outline_block = ""
+    if outline_hint_lines:
+        outline_rows = "\n".join(str(row).strip() for row in outline_hint_lines if str(row).strip())
+        if outline_rows:
+            outline_block = (
+                "\nStructure detectee automatiquement dans le PDF (prioritaire sauf si le PDF la contredit):\n"
+                f"{outline_rows}\n"
+                "Ignore les entetes de couverture, nom du professeur, niveau, annee, seance, en-tetes d'etablissement et autres metadonnees."
+            )
     return (
         f"{task_rules}{specialization}{session_rule}{formatting_rules}\n"
         f"Titre de l'unite: {title}\n"
         f"Type: {unit_type.value}\n"
         "Ne retourne aucun texte hors JSON."
+        " Pour un chapitre, privilegie toujours: titre principal, grandes sections numerotees, puis definition/propriete/activite/exemple/exercice comme enfants."
         f"{source_block}"
+        f"{outline_block}"
     )
 
 
@@ -631,6 +758,7 @@ def _openai_generate_checklist(
     title: str,
     source_text: str,
     session_count: int | None = None,
+    outline_hint_lines: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]] | None, dict[str, Any] | None, str | None]:
     if not app_config.OPENAI_API_KEY:
         return None, None, "openai_api_key_not_set"
@@ -672,6 +800,8 @@ def _openai_generate_checklist(
         f"Unit type: {unit_type.value}\n\n"
         f"Requested session count: {int(session_count) if session_count is not None else 'not provided'}\n"
         f"{session_rule}\n\n"
+        "Prefer this extracted structural outline when it matches the PDF. Ignore teacher names, class/year headers, cover metadata, and page furniture.\n"
+        f"{_render_outline_hint_block(outline_hint_lines)}\n\n"
         "Source text (may include OCR noise):\n"
         f"{source_text.strip() if source_text.strip() else '(empty)'}"
     )
@@ -986,9 +1116,14 @@ def _collapse_redundant_root(items: list[dict[str, Any]], *, unit_title: str) ->
         if not isinstance(children, list) or not children:
             break
         title = str(root.get("title") or "").strip()
+        kind = str(root.get("kind") or "").strip().lower()
         if _looks_like_slug_title(title) or _titles_equivalent(title, unit_title):
-            current = children
-            continue
+            if _looks_like_slug_title(unit_title) and _titles_equivalent(title, unit_title):
+                current = children
+                continue
+            if kind != WorkflowChecklistItemKind.CHAPTER.value or _looks_like_slug_title(title):
+                current = children
+                continue
         if len(title) > 110:
             current = children
             continue
@@ -1046,7 +1181,29 @@ def _split_verbose_outline_segments(text: str) -> list[str]:
                 output.append(right)
             continue
         output.append(piece)
-    return [row for row in output if row]
+    return _coalesce_verbose_segments([row for row in output if row])
+
+
+def _coalesce_verbose_segments(segments: list[str]) -> list[str]:
+    output: list[str] = []
+    index = 0
+    while index < len(segments):
+        current = str(segments[index] or "").strip()
+        if not current:
+            index += 1
+            continue
+        next_value = str(segments[index + 1] or "").strip() if index + 1 < len(segments) else ""
+        if current.lower() in {"chapitre", "chapter", "section", "lesson"} and next_value:
+            output.append(f"{current} {next_value}".strip())
+            index += 2
+            continue
+        if re.fullmatch(r"\d+\s*[:.]?", current) and next_value:
+            output.append(f"{current} {next_value}".strip())
+            index += 2
+            continue
+        output.append(current)
+        index += 1
+    return output
 
 
 def _compact_outline_segment(
@@ -1062,6 +1219,15 @@ def _compact_outline_segment(
     if match:
         number = match.group(1)
         remainder = _trim_heading_phrase(match.group(2))
+        remainder_kind = _infer_kind_from_text(match.group(2), default=default_kind)
+        if remainder and remainder_kind not in {
+            WorkflowChecklistItemKind.SECTION,
+            WorkflowChecklistItemKind.SUBSECTION,
+            WorkflowChecklistItemKind.CHAPTER,
+        }:
+            keyword_heading = _keyword_heading(match.group(2), kind=remainder_kind, ancestor_titles=ancestor_titles)
+            if keyword_heading:
+                return keyword_heading
         if remainder:
             return f"{number}) {remainder}"
     chapter_match = re.match(
@@ -1091,18 +1257,49 @@ def _compact_outline_segment(
 
 
 def _keyword_heading(text: str, *, kind: WorkflowChecklistItemKind, ancestor_titles: list[str]) -> str:
-    lowered = text.lower()
+    lowered = _fold_text_key(text)
     topic_hint = _derive_topic_hint([*ancestor_titles, text])
+    label = _keyword_title_label(text, kind=kind)
+    explicit_tail = ""
+    for separator in (":", " - ", "-"):
+        if separator in str(text or ""):
+            explicit_tail = _trim_heading_phrase(str(text).split(separator, 1)[1])
+            break
+    if explicit_tail and not _is_metadata_noise_line(explicit_tail):
+        return f"{label} - {explicit_tail}" if label else explicit_tail
     if kind == WorkflowChecklistItemKind.DEFINITION:
-        return f"Definition - {topic_hint}" if topic_hint else "Definition"
+        return f"{label} - {topic_hint}" if topic_hint else label
     if kind == WorkflowChecklistItemKind.PROPERTY:
-        return f"Propriete - {topic_hint}" if topic_hint else "Propriete"
+        return f"{label} - {topic_hint}" if topic_hint else label
     if kind == WorkflowChecklistItemKind.EXAMPLE:
-        return f"Exemples - {topic_hint}" if topic_hint else "Exemples"
+        return f"{label} - {topic_hint}" if topic_hint else label
+    if kind == WorkflowChecklistItemKind.EXERCISE:
+        return f"{label} - {topic_hint}" if topic_hint else label
+    return ""
+
+
+def _keyword_title_label(text: str, *, kind: WorkflowChecklistItemKind) -> str:
+    lowered = _fold_text_key(text)
+    if kind == WorkflowChecklistItemKind.DEFINITION:
+        return "Definition"
+    if kind == WorkflowChecklistItemKind.PROPERTY:
+        if lowered.startswith("remarque") or lowered.startswith("remarques"):
+            return "Remarques"
+        if lowered.startswith("regle") or lowered.startswith("regles"):
+            return "Regle"
+        if lowered.startswith("methode"):
+            return "Methode"
+        if lowered.startswith("theoreme"):
+            return "Theoreme"
+        return "Propriete"
+    if kind == WorkflowChecklistItemKind.EXAMPLE:
+        return "Exemples"
     if kind == WorkflowChecklistItemKind.EXERCISE:
         if "application" in lowered or "applications" in lowered:
-            return f"Applications - {topic_hint}" if topic_hint else "Applications"
-        return f"Exercices - {topic_hint}" if topic_hint else "Exercices"
+            return "Applications"
+        return "Exercices"
+    if kind == WorkflowChecklistItemKind.OTHER:
+        return "Activite"
     return ""
 
 
@@ -1113,7 +1310,7 @@ def _derive_topic_hint(values: list[str]) -> str:
             continue
         if _looks_like_slug_title(value):
             continue
-        lowered = value.lower()
+        lowered = _fold_text_key(value)
         if any(keyword in lowered for keyword, _ in CHECKLIST_KIND_KEYWORDS):
             continue
         value = re.sub(r"^\s*(chapitre|chapter|section|lesson)\s*\d*\s*[:.-]?\s*", "", value, flags=re.IGNORECASE)
@@ -1159,19 +1356,24 @@ def _titles_equivalent(left: str, right: str) -> bool:
 
 
 def _title_key(value: str) -> str:
-    text = _normalize_outline_title(value).lower()
-    text = re.sub(r"[^a-z0-9à-ÿ]+", "", text)
+    text = _fold_text_key(_normalize_outline_title(value))
+    text = re.sub(r"[^a-z0-9]+", "", text)
     return text
 
 
 def _infer_kind_from_text(text: str, *, default: WorkflowChecklistItemKind) -> WorkflowChecklistItemKind:
-    lowered = str(text or "").strip().lower()
+    lowered = _fold_text_key(text)
     if not lowered:
         return default
     if re.match(r"^\s*(chapter|chapitre)\b", lowered):
         return WorkflowChecklistItemKind.CHAPTER
     match = NUMBERED_HEADING_PATTERN.match(str(text or "").strip())
     if match:
+        remainder = str(match.group(2) or "").strip()
+        remainder_folded = _fold_text_key(remainder)
+        for keyword, kind in CHECKLIST_KIND_KEYWORDS:
+            if remainder_folded.startswith(_fold_text_key(keyword)):
+                return kind
         depth = max(0, match.group(1).count("."))
         if depth <= 0:
             return WorkflowChecklistItemKind.SECTION
@@ -1317,80 +1519,294 @@ def _collect_leaf_nodes(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return leaves
 
 
+def _flatten_checklist_nodes(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        output.append(item)
+        children = item.get("children") if isinstance(item.get("children"), list) else []
+        output.extend(_flatten_checklist_nodes(children))
+    return output
+
+
+def _score_checklist_quality(
+    items: list[dict[str, Any]] | None,
+    *,
+    unit_type: WorkflowUnitType,
+    unit_title: str,
+) -> int:
+    flat = _flatten_checklist_nodes(items or [])
+    if not flat:
+        return -100
+
+    score = min(16, len(flat) * 2)
+    roots = [row for row in (items or []) if isinstance(row, dict)]
+    if unit_type == WorkflowUnitType.CHAPTER and roots:
+        first_kind = str(roots[0].get("kind") or "").strip().lower()
+        if first_kind == WorkflowChecklistItemKind.CHAPTER.value:
+            score += 6
+    for node in flat:
+        title = _normalize_outline_title(node.get("title"))
+        kind = str(node.get("kind") or "").strip().lower()
+        folded = _fold_text_key(title)
+        if not title:
+            score -= 5
+            continue
+        if kind in {
+            WorkflowChecklistItemKind.SECTION.value,
+            WorkflowChecklistItemKind.SUBSECTION.value,
+            WorkflowChecklistItemKind.PROPERTY.value,
+            WorkflowChecklistItemKind.DEFINITION.value,
+            WorkflowChecklistItemKind.EXAMPLE.value,
+            WorkflowChecklistItemKind.EXERCISE.value,
+        }:
+            score += 2
+        if len(title) > 95:
+            score -= 4
+        if _looks_like_slug_title(title):
+            score -= 5
+        if _is_metadata_noise_line(title):
+            score -= 6
+        if len(re.findall(r"[.;!?]", title)) >= 2:
+            score -= 3
+        if folded.startswith(("examples - mathematique", "exemples - mathematique", "exercices - seance", "examples - seance")):
+            score -= 6
+        if _title_key(title) == _title_key(unit_title):
+            score -= 2
+    return score
+
+
 def _fallback_generate_checklist(
     *,
     unit_type: WorkflowUnitType,
     title: str,
     source_text: str,
 ) -> list[dict[str, Any]]:
-    lines = [line.strip() for line in (source_text or "").splitlines() if line.strip()]
+    lines = _extract_structural_source_lines(source_text)
     if unit_type == WorkflowUnitType.EXERCISE_SERIES:
         exercises = []
         for line in lines:
-            low = line.lower()
-            if "exercise" in low or "exercice" in low or "ex " in low:
+            low = _fold_text_key(line)
+            if "exercise" in low or "exercice" in low or low.startswith("ex "):
                 exercises.append(line)
         if not exercises:
             exercises = [f"Exercise {idx}" for idx in range(1, 6)]
         return [{"title": item, "kind": WorkflowChecklistItemKind.EXERCISE.value, "children": []} for item in exercises[:80]]
 
-    nodes: list[dict[str, Any]] = []
-    stack: list[tuple[int, dict[str, Any]]] = []
+    root_title = _normalize_outline_title(title) or "Chapter"
+    root_node: dict[str, Any] = {
+        "title": root_title,
+        "kind": WorkflowChecklistItemKind.CHAPTER.value,
+        "children": [],
+    }
+    stack: list[tuple[int, dict[str, Any]]] = [(0, root_node)]
+    current_topic_depth = 0
 
     def append_node(depth: int, node: dict[str, Any]) -> None:
         while stack and stack[-1][0] >= depth:
             stack.pop()
-        if stack:
-            stack[-1][1]["children"].append(node)
-        else:
-            nodes.append(node)
+        parent = stack[-1][1] if stack else root_node
+        parent["children"].append(node)
         stack.append((depth, node))
 
-    chapter_found = False
     for line in lines:
         if CHAPTER_START_PATTERN.match(line):
-            node = {"title": line, "kind": WorkflowChecklistItemKind.CHAPTER.value, "children": []}
-            append_node(0, node)
-            chapter_found = True
+            chapter_title = _compact_outline_segment(
+                line,
+                default_kind=WorkflowChecklistItemKind.CHAPTER,
+                ancestor_titles=[title],
+            )
+            if chapter_title:
+                root_node["title"] = chapter_title
             continue
-        match = NUMBERED_HEADING_PATTERN.match(line)
-        if match:
-            number = match.group(1)
-            depth = max(0, number.count("."))
-            if depth == 0:
-                kind = WorkflowChecklistItemKind.SECTION.value
-            elif depth == 1:
-                kind = WorkflowChecklistItemKind.SUBSECTION.value
-            else:
-                kind = WorkflowChecklistItemKind.OTHER.value
-            node = {"title": line, "kind": kind, "children": []}
-            append_node(depth + 1, node)
-            continue
-        lower = line.lower()
-        if "definition" in lower:
-            kind = WorkflowChecklistItemKind.DEFINITION.value
-        elif "property" in lower or "propriete" in lower:
-            kind = WorkflowChecklistItemKind.PROPERTY.value
-        elif "example" in lower or "exemple" in lower:
-            kind = WorkflowChecklistItemKind.EXAMPLE.value
-        else:
-            continue
-        node = {"title": line, "kind": kind, "children": []}
-        append_node(3, node)
 
-    if not nodes:
-        default_chapter_title = title.strip() or "Chapter"
-        nodes = [{"title": default_chapter_title, "kind": WorkflowChecklistItemKind.CHAPTER.value, "children": []}]
-    elif not chapter_found:
-        existing_nodes = list(nodes)
-        nodes = [
-            {
-                "title": title.strip() or "Chapter",
-                "kind": WorkflowChecklistItemKind.CHAPTER.value,
-                "children": existing_nodes,
-            }
-        ]
-    return nodes
+        section_depth = _numbered_heading_depth(line)
+        if section_depth is not None:
+            kind = _infer_kind_from_text(line, default=WorkflowChecklistItemKind.SECTION)
+            node_title, section_children = _split_numbered_heading_children(
+                line,
+                default_kind=kind,
+                root_title=str(root_node["title"]),
+            )
+            if not node_title or _is_trivial_outline_fragment(node_title):
+                continue
+            node = {"title": node_title, "kind": kind.value, "children": section_children}
+            append_node(section_depth, node)
+            current_topic_depth = section_depth
+            continue
+
+        keyword_kind = _keyword_kind_from_line(line)
+        if keyword_kind is not None:
+            node_title = _normalize_keyword_outline_title(
+                line,
+                kind=keyword_kind,
+                current_topic_title=str(stack[-1][1].get("title") or root_node["title"]),
+            )
+            if not node_title:
+                continue
+            append_node(max(1, current_topic_depth + 1), {"title": node_title, "kind": keyword_kind.value, "children": []})
+            continue
+
+        if current_topic_depth > 0 and _looks_like_rule_continuation(line):
+            node_title = _normalize_rule_outline_title(
+                line,
+                current_topic_title=str(stack[-1][1].get("title") or root_node["title"]),
+            )
+            if node_title:
+                append_node(
+                    max(1, current_topic_depth + 1),
+                    {"title": node_title, "kind": WorkflowChecklistItemKind.PROPERTY.value, "children": []},
+                )
+
+    if not root_node["children"]:
+        return [{"title": root_title, "kind": WorkflowChecklistItemKind.CHAPTER.value, "children": []}]
+    return [root_node]
+
+
+def _extract_structural_source_lines(source_text: str) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for raw in _split_rows(source_text):
+        line = _normalize_outline_title(raw)
+        if not line:
+            continue
+        if _is_metadata_noise_line(line):
+            continue
+        if _is_trivial_outline_fragment(line):
+            continue
+        key = _title_key(line)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        output.append(line)
+    return output
+
+
+def _fold_text_key(value: Any) -> str:
+    raw = str(value or "")
+    folded = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode("ascii")
+    folded = re.sub(r"\s+", " ", folded).strip().lower()
+    return folded
+
+
+def _numbered_heading_depth(text: str) -> int | None:
+    match = NUMBERED_HEADING_PATTERN.match(str(text or "").strip())
+    if not match:
+        return None
+    depth = int(match.group(1).count(".")) + 1
+    return max(1, depth)
+
+
+def _keyword_kind_from_line(text: str) -> WorkflowChecklistItemKind | None:
+    folded = _fold_text_key(text)
+    for prefix, kind in STRUCTURAL_KEYWORD_PREFIXES:
+        if folded.startswith(prefix):
+            return kind
+    return None
+
+
+def _is_metadata_noise_line(text: str) -> bool:
+    folded = _fold_text_key(text)
+    if not folded:
+        return True
+    if NUMBERED_HEADING_PATTERN.match(str(text or "").strip()) or CHAPTER_START_PATTERN.match(str(text or "").strip()):
+        return False
+    metadata_hits = sum(1 for token in METADATA_NOISE_TERMS if token in folded)
+    if metadata_hits >= 2:
+        return True
+    if folded.startswith(("exemples -", "exercices -", "example -", "exercise -")) and metadata_hits >= 1:
+        return True
+    if re.sub(r"[^a-z]+", "", folded) == "":
+        return True
+    return False
+
+
+def _is_trivial_outline_fragment(text: str) -> bool:
+    folded = _fold_text_key(text)
+    if len(re.sub(r"[^a-z]+", "", folded)) < 3:
+        return True
+    if len(folded) <= 3:
+        return True
+    if re.fullmatch(r"\d+\s*[/.-]?\s*\d*", folded):
+        return True
+    return False
+
+
+def _looks_like_rule_continuation(text: str) -> bool:
+    folded = _fold_text_key(text)
+    if any(folded.startswith(prefix) for prefix in RULE_CONTINUATION_PREFIXES):
+        return True
+    if ":" in str(text or "") and len(str(text or "").split()) <= 16:
+        return True
+    return False
+
+
+def _normalize_keyword_outline_title(
+    text: str,
+    *,
+    kind: WorkflowChecklistItemKind,
+    current_topic_title: str,
+) -> str:
+    raw = _normalize_outline_title(text)
+    if not raw:
+        return ""
+    if kind == WorkflowChecklistItemKind.OTHER and _fold_text_key(raw).startswith("activite"):
+        return _compact_outline_segment(raw, default_kind=WorkflowChecklistItemKind.SECTION, ancestor_titles=[current_topic_title])
+    label = _keyword_title_label(raw, kind=kind)
+    if ":" in raw:
+        _, remainder = raw.split(":", 1)
+    elif " - " in raw:
+        _, remainder = raw.split(" - ", 1)
+    elif "-" in raw:
+        _, remainder = raw.split("-", 1)
+    else:
+        remainder = raw
+    remainder = _trim_heading_phrase(remainder)
+    if not remainder or _is_metadata_noise_line(remainder):
+        topic_hint = _trim_heading_phrase(current_topic_title)
+        remainder = topic_hint
+    if not remainder:
+        return ""
+    return f"{label} - {remainder}"
+
+
+def _normalize_rule_outline_title(text: str, *, current_topic_title: str) -> str:
+    remainder = _trim_heading_phrase(text)
+    if not remainder or _is_metadata_noise_line(remainder):
+        remainder = _trim_heading_phrase(current_topic_title)
+    if not remainder:
+        return ""
+    return f"Propriete - {remainder}"
+
+
+def _split_numbered_heading_children(
+    text: str,
+    *,
+    default_kind: WorkflowChecklistItemKind,
+    root_title: str,
+) -> tuple[str, list[dict[str, Any]]]:
+    raw = _normalize_outline_title(text)
+    if not raw:
+        return "", []
+    if ":" not in raw:
+        return (
+            _compact_outline_segment(raw, default_kind=default_kind, ancestor_titles=[root_title]),
+            [],
+        )
+    left, right = raw.split(":", 1)
+    left_title = _compact_outline_segment(left, default_kind=default_kind, ancestor_titles=[root_title])
+    right_title = _trim_heading_phrase(right)
+    if not left_title:
+        left_title = _compact_outline_segment(raw, default_kind=default_kind, ancestor_titles=[root_title])
+    if not right_title or _is_metadata_noise_line(right_title):
+        return left_title, []
+    child = {
+        "title": f"Propriete - {right_title}",
+        "kind": WorkflowChecklistItemKind.PROPERTY.value,
+        "children": [],
+    }
+    return left_title, [child]
 
 
 def _json_object_from_text(text: str) -> dict | None:
