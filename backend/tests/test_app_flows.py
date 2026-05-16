@@ -1618,8 +1618,12 @@ def test_workflow_confirm_can_generate_saved_session_writeup(client):
 
 def test_workflow_blueprint_records_requested_provider_when_falling_back(client, monkeypatch):
     from app import config as app_config
+    from app.services import workflow_generation
 
     monkeypatch.setattr(app_config, "UNIT_PLANNER_PROVIDER", "notebooklm")
+    async def _fake_client_unavailable():
+        return None
+    monkeypatch.setattr(workflow_generation, "_create_notebooklm_client", _fake_client_unavailable)
     headers = _auth_headers(client)
     class_resp = client.post("/classes", json={"name": "Blueprint Provider Class", "subject": "Math"}, headers=headers)
     assert class_resp.status_code == 201
@@ -1641,8 +1645,37 @@ def test_workflow_blueprint_records_requested_provider_when_falling_back(client,
     assert blueprint_resp.status_code == 200
     blueprint = blueprint_resp.json()
     assert blueprint["provider"] == "fallback"
+    assert blueprint["status"] == "degraded"
+    assert blueprint["error_message"] == "notebooklm_client_unavailable"
     assert blueprint["raw_provider_response"]["requested_provider"] == "notebooklm"
     assert blueprint["raw_provider_response"]["error_message"] == "notebooklm_client_unavailable"
+
+
+def test_owner_can_run_notebooklm_smoke_test(client, monkeypatch):
+    from app.routers import ops as ops_router
+
+    headers = _auth_headers(client)
+    monkeypatch.setattr(
+        ops_router,
+        "notebooklm_smoke_test",
+        lambda: {
+            "ok": True,
+            "provider": "notebooklm",
+            "model": "notebooklm-py",
+            "error_message": None,
+            "answer": "OK",
+            "notebook_id": "nb-test",
+            "source_ids": ["src-test"],
+        },
+    )
+
+    resp = client.post("/ops/notebooklm/smoke-test", headers=headers)
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert "status" in payload
+    assert "smoke" in payload
+    assert payload["smoke"]["ok"] is True
+    assert payload["smoke"]["answer"] == "OK"
 
 
 def test_workflow_writeup_records_requested_provider_when_falling_back(client, monkeypatch):

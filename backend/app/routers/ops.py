@@ -29,6 +29,7 @@ from ..config import (
 )
 from ..models import User
 from ..security import require_owner
+from ..services.workflow_generation import notebooklm_smoke_test
 
 
 router = APIRouter(prefix="/ops", tags=["ops"])
@@ -182,6 +183,17 @@ def ops_status(
 @router.get("/notebooklm/status")
 def notebooklm_status(_: User = Depends(require_owner)) -> dict:
     return _notebooklm_status_payload()
+
+
+@router.post("/notebooklm/smoke-test")
+def notebooklm_smoke_test_endpoint(_: User = Depends(require_owner)) -> dict:
+    status_payload = _notebooklm_status_payload()
+    smoke = notebooklm_smoke_test()
+    return {
+        "ready": bool(status_payload.get("ready")),
+        "status": status_payload,
+        "smoke": smoke,
+    }
 
 
 @router.post("/notebooklm/auth/upload")

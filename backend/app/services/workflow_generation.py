@@ -127,6 +127,76 @@ def notebooklm_provider_ready() -> bool:
     return isinstance(cookies, list) and isinstance(origins, list)
 
 
+def notebooklm_smoke_test() -> dict[str, Any]:
+    try:
+        return asyncio.run(_notebooklm_smoke_test_async())
+    except Exception as exc:
+        return {
+            "ok": False,
+            "provider": "notebooklm",
+            "model": "notebooklm-py" if find_spec("notebooklm") is not None else None,
+            "error_message": f"notebooklm_smoke_runtime_error:{exc.__class__.__name__}",
+            "answer": None,
+            "notebook_id": None,
+            "source_ids": [],
+        }
+
+
+async def _notebooklm_smoke_test_async() -> dict[str, Any]:
+    client = await _create_notebooklm_client()
+    if client is None:
+        return {
+            "ok": False,
+            "provider": "notebooklm",
+            "model": None,
+            "error_message": "notebooklm_client_unavailable",
+            "answer": None,
+            "notebook_id": None,
+            "source_ids": [],
+        }
+
+    notebook_id = ""
+    source_ids: list[str] = []
+    raw_answer = None
+    try:
+        async with client as opened:
+            notebook = await opened.notebooks.create("Teacher Progress Smoke Test")
+            notebook_id = str(getattr(notebook, "id", "") or "").strip()
+            source = await opened.sources.add_text(
+                notebook_id,
+                "Smoke Test Source",
+                "Chapitre 1\nActivite 1\nExercice 1",
+                wait=True,
+                wait_timeout=120.0,
+            )
+            source_id = str(getattr(source, "id", "") or "").strip()
+            if source_id:
+                source_ids = [source_id]
+            result = await opened.chat.ask(notebook_id, "Reponds exactement OK", source_ids=source_ids or None)
+            raw_answer = str(getattr(result, "answer", "") or "").strip()
+            await opened.notebooks.delete(notebook_id)
+    except Exception as exc:
+        return {
+            "ok": False,
+            "provider": "notebooklm",
+            "model": "notebooklm-py",
+            "error_message": f"notebooklm_smoke_request_failed:{exc.__class__.__name__}",
+            "answer": raw_answer,
+            "notebook_id": notebook_id or None,
+            "source_ids": source_ids,
+        }
+
+    return {
+        "ok": raw_answer.upper() == "OK",
+        "provider": "notebooklm",
+        "model": "notebooklm-py",
+        "error_message": None if raw_answer.upper() == "OK" else "notebooklm_smoke_unexpected_answer",
+        "answer": raw_answer,
+        "notebook_id": notebook_id or None,
+        "source_ids": source_ids,
+    }
+
+
 def generate_unit_checklist_package(
     *,
     unit_type: WorkflowUnitType,
@@ -204,6 +274,8 @@ def generate_unit_checklist_package(
             _outline_hint_lines(layout_seed),
             _outline_hint_lines(outline_seed),
         )
+
+    status = "ready"
 
     if requested_provider == "openai":
         ensure_reference_outline_context()
@@ -284,13 +356,18 @@ def generate_unit_checklist_package(
             model = "notebooklm-py"
         else:
             model = None
-            raw_provider_response = None
-            error_message = None
+            if requested_provider != "notebooklm":
+                raw_provider_response = None
+                error_message = None
 
     if not items:
         actual_provider = "fallback"
         fallback_items = reference_outline or _fallback_generate_checklist(unit_type=unit_type, title=title, source_text=source_text)
         items = fallback_items
+    if requested_provider == "notebooklm" and actual_provider != "notebooklm":
+        status = "degraded"
+    elif error_message:
+        status = "degraded"
 
     items = _apply_session_numbers(items, session_count=session_count)
     if unit_type in {WorkflowUnitType.CHAPTER, WorkflowUnitType.EXERCISE_SERIES}:
@@ -300,7 +377,7 @@ def generate_unit_checklist_package(
         "source": actual_provider,
         "requested_provider": requested_provider,
         "model": model,
-        "status": "ready",
+        "status": status,
         "items": items,
         "raw_provider_response": raw_provider_response,
         "error_message": error_message,

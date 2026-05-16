@@ -18,6 +18,7 @@ let _classTeachers = {}; // map classId  teacher_user_id
 let _holidayYear = new Date().getFullYear();
 let _ownerHolidays = [];
 let _notebooklmStatus = null;
+let _notebooklmSmoke = null;
 
 function _escapeHtml(value) {
   return String(value ?? '')
@@ -127,6 +128,7 @@ function _renderOwner(el) {
       ? '<span class="badge badge-blue">Package Installed</span>'
       : '<span class="badge badge-red">Package Missing</span>'}
             <button id="btn-owner-notebooklm-refresh" class="btn btn-secondary btn-sm">Refresh Status</button>
+            <button id="btn-owner-notebooklm-smoke" class="btn btn-secondary btn-sm">Run Smoke Test</button>
             <button id="btn-owner-notebooklm-upload-auth" class="btn btn-primary btn-sm">Upload Auth File</button>
             <button id="btn-owner-notebooklm-clear-auth" class="btn btn-ghost btn-sm">Clear Auth</button>
           </div>
@@ -140,6 +142,14 @@ function _renderOwner(el) {
             <p><span class="font-semibold text-slate-700">Context file:</span> <span class="font-mono break-all">${_escapeHtml(_notebooklmStatus?.context_path || 'unknown')}</span></p>
             <p><span class="font-semibold text-slate-700">Saved notebook context:</span> ${_notebooklmStatus?.context_notebook_id ? _escapeHtml(_notebooklmStatus.context_notebook_id) : 'None'}</p>
           </div>
+          ${_notebooklmSmoke ? `
+          <div class="rounded-2xl border ${_notebooklmSmoke?.smoke?.ok ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'} px-3 py-3 text-[12px] text-slate-700 flex flex-col gap-1">
+            <p class="font-semibold text-slate-800">Live NotebookLM smoke test</p>
+            <p><span class="font-semibold">Result:</span> ${_notebooklmSmoke?.smoke?.ok ? 'Success' : 'Failed'}</p>
+            <p><span class="font-semibold">Server ready:</span> ${_notebooklmSmoke?.ready ? 'Yes' : 'No'}</p>
+            <p><span class="font-semibold">Answer:</span> ${_escapeHtml(_notebooklmSmoke?.smoke?.answer || '-')}</p>
+            ${_notebooklmSmoke?.smoke?.error_message ? `<p class="text-amber-700"><span class="font-semibold">Error:</span> ${_escapeHtml(_notebooklmSmoke.smoke.error_message)}</p>` : ''}
+          </div>` : ''}
           <div class="rounded-2xl border border-blue-100 bg-blue-50 px-3 py-3 text-[12px] text-slate-700 flex flex-col gap-1">
             <p class="font-semibold text-slate-800">First-time Windows setup</p>
             <p>1. On your own Windows machine, run <span class="font-mono">python -m notebooklm login</span>.</p>
@@ -389,6 +399,18 @@ function _bindOwnerEvents(el) {
       showToast(_notebooklmStatus?.ready ? 'NotebookLM is ready.' : 'NotebookLM status refreshed.', 'ok');
     } catch (err) {
       showToast(err.message || 'Failed to refresh NotebookLM status.', 'error');
+      this.classList.remove('btn-busy'); this.disabled = false;
+    }
+  });
+  el.querySelector('#btn-owner-notebooklm-smoke')?.addEventListener('click', async function () {
+    this.classList.add('btn-busy'); this.disabled = true;
+    try {
+      _notebooklmSmoke = await api('/ops/notebooklm/smoke-test', { method: 'POST' });
+      if (_notebooklmSmoke?.status) _notebooklmStatus = _notebooklmSmoke.status;
+      _renderOwner(el);
+      showToast(_notebooklmSmoke?.smoke?.ok ? 'NotebookLM smoke test passed.' : 'NotebookLM smoke test failed.', _notebooklmSmoke?.smoke?.ok ? 'ok' : 'warning');
+    } catch (err) {
+      showToast(err.message || 'Failed to run NotebookLM smoke test.', 'error');
       this.classList.remove('btn-busy'); this.disabled = false;
     }
   });
