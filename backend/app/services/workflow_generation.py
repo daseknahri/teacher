@@ -17,6 +17,26 @@ SUPPORTED_SESSION_WRITER_PROVIDERS = {"openai", "fallback", "notebooklm"}
 NUMBERED_HEADING_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)*)(?:\s*[-.):]\s*|\s+)(.+)$")
 CHAPTER_START_PATTERN = re.compile(r"^\s*(chapter|chapitre|title|titre|lesson|lecon)\b", re.IGNORECASE)
 NUMBERED_ROW_START_PATTERN = re.compile(r"(?<!\S)\d+(?:\.\d+)+(?:[)\].:-])?(?:\s+|$)")
+SLUG_LIKE_TITLE_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+){2,}$", re.IGNORECASE)
+INLINE_ENUMERATION_SPLIT_PATTERN = re.compile(r"(?=(?<!\S)\d+\s*[\).:]\s*)")
+CHECKLIST_KEYWORD_SPLIT_PATTERN = re.compile(
+    r"(?=\b(?:definition|définition|propriete|propriété|proprietes|propriétés|exemple|exemples|remarque|remarques|application|applications|exercice|exercices|theoreme|théorème|methode|méthode)\b)",
+    re.IGNORECASE,
+)
+CHECKLIST_KIND_KEYWORDS: tuple[tuple[str, WorkflowChecklistItemKind], ...] = (
+    ("definition", WorkflowChecklistItemKind.DEFINITION),
+    ("définition", WorkflowChecklistItemKind.DEFINITION),
+    ("propriete", WorkflowChecklistItemKind.PROPERTY),
+    ("propriété", WorkflowChecklistItemKind.PROPERTY),
+    ("proprietes", WorkflowChecklistItemKind.PROPERTY),
+    ("propriétés", WorkflowChecklistItemKind.PROPERTY),
+    ("exemple", WorkflowChecklistItemKind.EXAMPLE),
+    ("exemples", WorkflowChecklistItemKind.EXAMPLE),
+    ("application", WorkflowChecklistItemKind.EXERCISE),
+    ("applications", WorkflowChecklistItemKind.EXERCISE),
+    ("exercice", WorkflowChecklistItemKind.EXERCISE),
+    ("exercices", WorkflowChecklistItemKind.EXERCISE),
+)
 
 
 def generate_unit_checklist_package(
@@ -99,6 +119,7 @@ def generate_unit_checklist_package(
         fallback_items = _fallback_generate_checklist(unit_type=unit_type, title=title, source_text=source_text)
         items = fallback_items
 
+    items = _postprocess_checklist_items(items, unit_type=unit_type, unit_title=title)
     items = _apply_session_numbers(items, session_count=session_count)
     if unit_type in {WorkflowUnitType.CHAPTER, WorkflowUnitType.EXERCISE_SERIES}:
         items = _ensure_session_coverage_with_exercises(items, session_count=session_count)
@@ -258,7 +279,7 @@ async def _notebooklm_generate_checklist_async(
             prompt = _build_notebooklm_checklist_prompt(
                 unit_type=unit_type,
                 title=title,
-                source_text=source_text,
+                source_hint="" if str(document_path or "").strip() else source_text,
                 session_count=session_count,
             )
             result = await opened.chat.ask(notebook_id, prompt, source_ids=source_ids or None)
@@ -530,22 +551,24 @@ def _build_notebooklm_checklist_prompt(
     *,
     unit_type: WorkflowUnitType,
     title: str,
-    source_text: str,
+    source_hint: str,
     session_count: int | None,
 ) -> str:
     task_rules = (
-        "Lis cette unite pedagogique et retourne uniquement un JSON strict avec la cle `items`."
-        " Chaque element doit respecter exactement ce schema: "
-        "{\"title\":\"...\",\"kind\":\"chapter|section|subsection|property|definition|example|exercise|supervision|correction|other\",\"children\":[...],\"session_number\":1}."
-        " Utilise uniquement ces cles."
+        "Lis cette unite pedagogique et retourne uniquement un JSON strict avec la cle `items`. "
+        "Chaque element doit respecter exactement ce schema: "
+        "{\"title\":\"...\",\"kind\":\"chapter|section|subsection|property|definition|example|exercise|supervision|correction|other\",\"children\":[...],\"session_number\":1}. "
+        "Utilise uniquement ces cles. "
+        "Le checklist doit contenir uniquement des titres pedagogiques courts, jamais des paragraphes complets, definitions redigees, exemples developpes ou exercices detailles."
     )
     if unit_type == WorkflowUnitType.EXERCISE_SERIES:
         specialization = (
-            " L'unite est une serie d'exercices: cree surtout des elements `exercise`, courts et ordonnes."
+            " L'unite est une serie d'exercices: cree surtout des elements `exercise`, courts, distincts et ordonnes."
         )
     else:
         specialization = (
-            " L'unite est un chapitre: construis une hierarchie claire et concise (chapitre, sections, sous-sections, proprietes, definitions, exemples)."
+            " L'unite est un chapitre: construis une hierarchie claire et concise (chapitre, sections, sous-sections, proprietes, definitions, exemples). "
+            "Utilise les vrais titres du document. Si le PDF melange titre et contenu, reduis chaque item a un intitulé bref de type manuel scolaire."
         )
     session_rule = ""
     if session_count is not None and int(session_count) > 0:
@@ -554,12 +577,24 @@ def _build_notebooklm_checklist_prompt(
             "Respecte l'ordre du document. Toutes les seances doivent recevoir du contenu. "
             "Si le contenu est trop court, ajoute des exercices de consolidation dans les dernieres seances."
         )
+    formatting_rules = (
+        " Regles de qualite: "
+        "1) chaque `title` doit etre court, idealement moins de 90 caracteres; "
+        "2) ne jamais inclure plusieurs notions dans un seul item; "
+        "3) si une ligne contient Definition, Exemple, Remarque, Application ou Exercice, separe-les en items differents; "
+        "4) preserve strictement l'ordre pedagogique du PDF; "
+        "5) ne retourne aucun texte hors JSON."
+    )
+    source_block = ""
+    trimmed_hint = str(source_hint or "").strip()
+    if trimmed_hint:
+        source_block = f"\nIndice textuel de secours si utile:\n{trimmed_hint}"
     return (
-        f"{task_rules}{specialization}{session_rule}\n"
+        f"{task_rules}{specialization}{session_rule}{formatting_rules}\n"
         f"Titre de l'unite: {title}\n"
         f"Type: {unit_type.value}\n"
         "Ne retourne aucun texte hors JSON."
-        f"\nRappel de reference si utile:\n{source_text.strip() if source_text.strip() else '(aucun texte additionnel)'}"
+        f"{source_block}"
     )
 
 
@@ -867,6 +902,315 @@ def _normalize_writeup_payload(
         "raw_provider_response": raw_provider_response,
         "error_message": error_message,
     }
+
+
+def _postprocess_checklist_items(
+    items: list[dict[str, Any]],
+    *,
+    unit_type: WorkflowUnitType,
+    unit_title: str,
+) -> list[dict[str, Any]]:
+    normalized = _normalize_checklist_nodes(
+        items,
+        unit_type=unit_type,
+        unit_title=unit_title,
+        ancestor_titles=[unit_title],
+    )
+    return _collapse_redundant_root(normalized, unit_title=unit_title)
+
+
+def _normalize_checklist_nodes(
+    items: list[dict[str, Any]],
+    *,
+    unit_type: WorkflowUnitType,
+    unit_title: str,
+    ancestor_titles: list[str],
+) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        raw_title = _normalize_outline_title(item.get("title"))
+        if not raw_title:
+            continue
+        raw_kind = str(item.get("kind", WorkflowChecklistItemKind.OTHER.value)).strip().lower()
+        kind_values = {kind.value for kind in WorkflowChecklistItemKind}
+        kind = WorkflowChecklistItemKind(raw_kind if raw_kind in kind_values else WorkflowChecklistItemKind.OTHER.value)
+        kind = _infer_kind_from_text(raw_title, default=kind)
+        session_number = _normalize_session_number(item.get("session_number"))
+        children_raw = item.get("children") if isinstance(item.get("children"), list) else []
+        children = _normalize_checklist_nodes(
+            children_raw,
+            unit_type=unit_type,
+            unit_title=unit_title,
+            ancestor_titles=[*ancestor_titles, raw_title],
+        )
+
+        if children:
+            node_title = _compact_outline_segment(raw_title, default_kind=kind, ancestor_titles=ancestor_titles)
+            if not node_title:
+                output.extend(children)
+                continue
+            node = {"title": node_title, "kind": kind.value, "children": children}
+            if session_number is not None:
+                node["session_number"] = session_number
+            output.append(node)
+            continue
+
+        verbose_nodes = _explode_verbose_leaf(
+            raw_title,
+            default_kind=kind,
+            session_number=session_number,
+            ancestor_titles=ancestor_titles,
+        )
+        if verbose_nodes:
+            output.extend(verbose_nodes)
+            continue
+
+        compact_title = _compact_outline_segment(raw_title, default_kind=kind, ancestor_titles=ancestor_titles)
+        if not compact_title:
+            continue
+        node = {"title": compact_title, "kind": kind.value, "children": []}
+        if session_number is not None:
+            node["session_number"] = session_number
+        output.append(node)
+
+    return _dedupe_sibling_nodes(output)
+
+
+def _collapse_redundant_root(items: list[dict[str, Any]], *, unit_title: str) -> list[dict[str, Any]]:
+    current = list(items)
+    while len(current) == 1:
+        root = current[0]
+        children = root.get("children")
+        if not isinstance(children, list) or not children:
+            break
+        title = str(root.get("title") or "").strip()
+        if _looks_like_slug_title(title) or _titles_equivalent(title, unit_title):
+            current = children
+            continue
+        if len(title) > 110:
+            current = children
+            continue
+        break
+    return current
+
+
+def _explode_verbose_leaf(
+    raw_title: str,
+    *,
+    default_kind: WorkflowChecklistItemKind,
+    session_number: int | None,
+    ancestor_titles: list[str],
+) -> list[dict[str, Any]]:
+    segments = _split_verbose_outline_segments(raw_title)
+    if len(segments) <= 1 and not _is_verbose_outline(raw_title):
+        return []
+
+    output: list[dict[str, Any]] = []
+    for segment in segments:
+        compact_title = _compact_outline_segment(segment, default_kind=default_kind, ancestor_titles=ancestor_titles)
+        if not compact_title:
+            continue
+        kind = _infer_kind_from_text(segment, default=default_kind)
+        node: dict[str, Any] = {"title": compact_title, "kind": kind.value, "children": []}
+        if session_number is not None:
+            node["session_number"] = session_number
+        output.append(node)
+    return _dedupe_sibling_nodes(output)
+
+
+def _split_verbose_outline_segments(text: str) -> list[str]:
+    normalized = _normalize_outline_title(text)
+    if not normalized:
+        return []
+    working = re.sub(r"\b(Chapitre|Chapter|Section|Lesson)(\d+)\b", r"\1 \2", normalized, flags=re.IGNORECASE)
+    pieces = [working]
+    for splitter in (CHECKLIST_KEYWORD_SPLIT_PATTERN, INLINE_ENUMERATION_SPLIT_PATTERN):
+        next_pieces: list[str] = []
+        for piece in pieces:
+            split_rows = [part.strip(" ;,-") for part in splitter.split(piece) if part and part.strip(" ;,-")]
+            next_pieces.extend(split_rows or [piece])
+        pieces = next_pieces
+    output: list[str] = []
+    for piece in pieces:
+        if not piece:
+            continue
+        if len(piece) > 160 and ":" in piece:
+            left, right = piece.split(":", 1)
+            left = left.strip()
+            right = right.strip()
+            if left:
+                output.append(left)
+            if right:
+                output.append(right)
+            continue
+        output.append(piece)
+    return [row for row in output if row]
+
+
+def _compact_outline_segment(
+    text: str,
+    *,
+    default_kind: WorkflowChecklistItemKind,
+    ancestor_titles: list[str],
+) -> str:
+    value = _normalize_outline_title(text)
+    if not value:
+        return ""
+    match = NUMBERED_HEADING_PATTERN.match(value)
+    if match:
+        number = match.group(1)
+        remainder = _trim_heading_phrase(match.group(2))
+        if remainder:
+            return f"{number}) {remainder}"
+    chapter_match = re.match(
+        r"^\s*(chapitre|chapter)\s*(\d+)?\s*[:.-]?\s*([^.]{3,120}?)(?=(?:\b(?:definition|définition|exemples?|remarques?|applications?|exercices?)\b|$))",
+        value,
+        re.IGNORECASE,
+    )
+    if chapter_match:
+        label = chapter_match.group(1).capitalize()
+        number = str(chapter_match.group(2) or "").strip()
+        topic = _trim_heading_phrase(chapter_match.group(3))
+        prefix = f"{label} {number}".strip()
+        return f"{prefix}: {topic}" if topic else prefix
+
+    kind = _infer_kind_from_text(value, default=default_kind)
+    keyword_heading = _keyword_heading(value, kind=kind, ancestor_titles=ancestor_titles)
+    if keyword_heading:
+        return keyword_heading
+
+    if ":" in value:
+        left = _trim_heading_phrase(value.split(":", 1)[0])
+        if 2 <= len(left.split()) <= 10 and len(left) <= 90:
+            return left
+
+    summary = _trim_heading_phrase(value)
+    return summary[:120].rstrip(" -,:;")
+
+
+def _keyword_heading(text: str, *, kind: WorkflowChecklistItemKind, ancestor_titles: list[str]) -> str:
+    lowered = text.lower()
+    topic_hint = _derive_topic_hint([*ancestor_titles, text])
+    if kind == WorkflowChecklistItemKind.DEFINITION:
+        return f"Definition - {topic_hint}" if topic_hint else "Definition"
+    if kind == WorkflowChecklistItemKind.PROPERTY:
+        return f"Propriete - {topic_hint}" if topic_hint else "Propriete"
+    if kind == WorkflowChecklistItemKind.EXAMPLE:
+        return f"Exemples - {topic_hint}" if topic_hint else "Exemples"
+    if kind == WorkflowChecklistItemKind.EXERCISE:
+        if "application" in lowered or "applications" in lowered:
+            return f"Applications - {topic_hint}" if topic_hint else "Applications"
+        return f"Exercices - {topic_hint}" if topic_hint else "Exercices"
+    return ""
+
+
+def _derive_topic_hint(values: list[str]) -> str:
+    for raw in reversed(values):
+        value = _normalize_outline_title(raw)
+        if not value:
+            continue
+        if _looks_like_slug_title(value):
+            continue
+        lowered = value.lower()
+        if any(keyword in lowered for keyword, _ in CHECKLIST_KIND_KEYWORDS):
+            continue
+        value = re.sub(r"^\s*(chapitre|chapter|section|lesson)\s*\d*\s*[:.-]?\s*", "", value, flags=re.IGNORECASE)
+        value = re.sub(r"^\d+(?:\.\d+)*\s*[\)\].:-]?\s*", "", value)
+        value = _trim_heading_phrase(value)
+        if value:
+            return value
+    return ""
+
+
+def _trim_heading_phrase(text: str) -> str:
+    value = _normalize_outline_title(text)
+    if not value:
+        return ""
+    value = re.sub(r"\b(est|sont|peut|peuvent|exprimer|determine|détermine|noter|note|appelle|appelé|appelée)\b.*$", "", value, flags=re.IGNORECASE).strip(" ;,-:")
+    value = re.sub(r"^\d+\s*[\).:]\s*", "", value)
+    words = value.split()
+    if len(words) > 14:
+        value = " ".join(words[:14]).strip(" ;,-:")
+    return value[:120]
+
+
+def _normalize_outline_title(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if _looks_like_slug_title(text):
+        text = text.replace("-", " ")
+    text = text.replace("_", " ")
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"\b(Chapitre|Chapter|Section|Lesson)(\d+)\b", r"\1 \2", text, flags=re.IGNORECASE)
+    text = re.sub(r"\b([A-Za-zÀ-ÿ]+)(\d+)\s*:", r"\1 \2:", text)
+    return text.strip(" \t\r\n;,-")
+
+
+def _looks_like_slug_title(text: str) -> bool:
+    value = str(text or "").strip()
+    return bool(value and SLUG_LIKE_TITLE_PATTERN.match(value))
+
+
+def _titles_equivalent(left: str, right: str) -> bool:
+    return _title_key(left) == _title_key(right)
+
+
+def _title_key(value: str) -> str:
+    text = _normalize_outline_title(value).lower()
+    text = re.sub(r"[^a-z0-9à-ÿ]+", "", text)
+    return text
+
+
+def _infer_kind_from_text(text: str, *, default: WorkflowChecklistItemKind) -> WorkflowChecklistItemKind:
+    lowered = str(text or "").strip().lower()
+    if not lowered:
+        return default
+    if re.match(r"^\s*(chapter|chapitre)\b", lowered):
+        return WorkflowChecklistItemKind.CHAPTER
+    match = NUMBERED_HEADING_PATTERN.match(str(text or "").strip())
+    if match:
+        depth = max(0, match.group(1).count("."))
+        if depth <= 0:
+            return WorkflowChecklistItemKind.SECTION
+        if depth == 1:
+            return WorkflowChecklistItemKind.SUBSECTION
+    for keyword, kind in CHECKLIST_KIND_KEYWORDS:
+        if keyword in lowered:
+            return kind
+    return default
+
+
+def _is_verbose_outline(text: str) -> bool:
+    value = _normalize_outline_title(text)
+    if not value:
+        return False
+    if len(value) > 120:
+        return True
+    if len(re.findall(r"\b(?:definition|définition|propriete|propriété|exemple|exemples|remarque|remarques|application|applications|exercice|exercices)\b", value, flags=re.IGNORECASE)) >= 2:
+        return True
+    if len(re.findall(r"\d+\s*[\).:]", value)) >= 2:
+        return True
+    sentence_count = len(re.findall(r"[.;!?]", value))
+    return sentence_count >= 2
+
+
+def _dedupe_sibling_nodes(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for item in items:
+        title = str(item.get("title") or "").strip()
+        kind = str(item.get("kind") or "").strip().lower()
+        if not title:
+            continue
+        key = (_title_key(title), kind)
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(item)
+    return output
 
 
 def _sanitize_items(items: list[Any]) -> list[dict[str, Any]]:

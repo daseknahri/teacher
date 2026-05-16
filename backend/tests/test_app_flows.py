@@ -1730,6 +1730,106 @@ def test_owner_can_upload_and_clear_notebooklm_auth_file(client, monkeypatch, tm
     assert auth_path.exists() is False
 
 
+def test_checklist_postprocess_splits_verbose_extraction_items():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    raw_items = [
+        {
+            "title": "introduction-aux-nombres-rationnels-cours-ma",
+            "kind": "chapter",
+            "children": [
+                {
+                    "title": (
+                        "Chapitre1:Introduction des nombres rationnels Nombre rationnel 1: "
+                        "Définition Un nombre rationnel est un nombre qui peut s'exprimer sous la forme "
+                        "du quotient de deux nombres entiers. 2.Exemples les nombres 7-3 et 7/3. "
+                        "3.Remarques: Tout nombre entier relatif est un nombre rationnel."
+                    ),
+                    "kind": "example",
+                    "children": [],
+                }
+            ],
+        }
+    ]
+
+    normalized = workflow_generation._postprocess_checklist_items(
+        raw_items,
+        unit_type=WorkflowUnitType.CHAPTER,
+        unit_title="introduction-aux-nombres-rationnels-cours-ma",
+    )
+
+    assert normalized
+    titles = [str(item["title"]) for item in normalized]
+    assert titles[0] != "introduction-aux-nombres-rationnels-cours-ma"
+    assert any("Definition" in title for title in titles)
+    assert any("Exemples" in title for title in titles)
+    assert any("Remarques" in title for title in titles)
+    assert all(len(title) <= 120 for title in titles)
+
+
+def test_notebooklm_prompt_omits_noisy_source_hint_when_pdf_is_attached():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    prompt = workflow_generation._build_notebooklm_checklist_prompt(
+        unit_type=WorkflowUnitType.CHAPTER,
+        title="Nombres rationnels",
+        source_hint="",
+        session_count=6,
+    )
+
+    assert "Indice textuel de secours" not in prompt
+    assert "jamais des paragraphes complets" in prompt
+    assert "moins de 90 caracteres" in prompt
+
+
+def test_unit_creation_replaces_slug_title_with_first_meaningful_generated_heading(client, monkeypatch):
+    import app.routers.workflow as workflow_router
+
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Slug Title Class", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    monkeypatch.setattr(
+        workflow_router,
+        "generate_unit_checklist",
+        lambda **kwargs: {
+            "source": "notebooklm",
+            "requested_provider": "notebooklm",
+            "model": "notebooklm-py",
+            "status": "ready",
+            "items": [
+                {
+                    "title": "Chapitre 1: Introduction des nombres rationnels",
+                    "kind": "chapter",
+                    "children": [
+                        {"title": "Definition - Nombre rationnel", "kind": "definition", "children": []},
+                    ],
+                }
+            ],
+            "raw_provider_response": {"answer": "{}"},
+            "error_message": None,
+            "provider_context": None,
+        },
+    )
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "introduction-aux-nombres-rationnels-cours-ma",
+            "source_text": "dummy source",
+        },
+    )
+
+    assert unit_resp.status_code == 201
+    payload = unit_resp.json()
+    assert payload["title"] == "Chapitre 1: Introduction des nombres rationnels"
+
+
 def test_workflow_notebooklm_provider_persists_context_and_writeup(client, monkeypatch):
     from app import config as app_config
     from app.services import workflow_generation

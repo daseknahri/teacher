@@ -139,6 +139,7 @@ ALLOWED_TIMETABLE_IMPORT_MIME_TYPES = {
 router = APIRouter(prefix="/workflow", tags=["workflow"], dependencies=[Depends(require_teacher)])
 NON_WORKING_WEEKDAYS: set[int] = {7}  # Sunday
 NUMBERED_ROW_START_PATTERN = re.compile(r"(?<!\S)\d+(?:\.\d+)+(?:[)\].:-])?(?:\s+|$)")
+SLUG_LIKE_TITLE_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+){2,}$", re.IGNORECASE)
 
 
 def _utc_now_naive() -> datetime:
@@ -604,6 +605,32 @@ def _split_session_content_rows(text: str) -> list[str]:
         seen.add(key)
         deduped.append(value)
     return deduped
+
+
+def _title_looks_like_slug(value: str | None) -> bool:
+    text = str(value or "").strip()
+    return bool(text and SLUG_LIKE_TITLE_PATTERN.match(text))
+
+
+def _first_meaningful_generated_title(nodes: list[dict] | None) -> str | None:
+    if not isinstance(nodes, list):
+        return None
+
+    def walk(items: list[dict]) -> str | None:
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            title = " ".join(str(item.get("title") or "").split()).strip()
+            if title and not _title_looks_like_slug(title):
+                return title
+            children = item.get("children")
+            if isinstance(children, list) and children:
+                nested = walk(children)
+                if nested:
+                    return nested
+        return None
+
+    return walk(nodes)
 
 
 def _collect_unit_leaf_item_ids(db: Session, unit_id: int) -> list[int]:
@@ -1903,6 +1930,10 @@ def _create_unit_with_generated_checklist(
         document_path=unit.document_path,
     )
     nodes = generated.get("items") or []
+    if _title_looks_like_slug(unit.title):
+        better_title = _first_meaningful_generated_title(nodes)
+        if better_title:
+            unit.title = better_title[:255]
     position_counter = 1
 
     def create_items(
