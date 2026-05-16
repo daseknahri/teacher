@@ -83,6 +83,29 @@ function _renderOwner(el) {
         <h1 class="text-2xl font-bold text-slate-800 tracking-tight">Owner Panel</h1>
       </div>
 
+      <div class="rounded-3xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div class="max-w-3xl">
+            <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Role Boundary</p>
+            <h2 class="mt-1 text-lg font-bold text-slate-800">Owner manages the platform. Teachers manage teaching progress.</h2>
+            <p class="mt-2 text-[13px] leading-6 text-slate-500">
+              This area is intentionally limited to technical setup, teacher accounts, class assignment, holiday rules, and AI connectivity.
+              Teaching workflow, lesson completion, and class progress stay inside the teacher workspace.
+            </p>
+          </div>
+          <div class="grid gap-2 text-[12px] text-slate-600 sm:grid-cols-2 lg:min-w-[320px]">
+            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+              <p class="font-semibold text-slate-800">Owner responsibilities</p>
+              <p class="mt-1">Accounts, access, AI setup, calendars, and platform reliability.</p>
+            </div>
+            <div class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3">
+              <p class="font-semibold text-slate-800">Teacher responsibilities</p>
+              <p class="mt-1">Complete sessions, track real progress, and run the class workflow.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Analytics KPI strip -->
       <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
         ${_kpi('T', active.length, 'Active Teachers', 'border-l-blue-500')}
@@ -93,7 +116,7 @@ function _renderOwner(el) {
 
       <div class="card">
         <div class="card-header">
-          <h3 class="font-semibold text-slate-700 text-[14px]">NotebookLM Setup</h3>
+          <h3 class="font-semibold text-slate-700 text-[14px]">AI & NotebookLM Setup</h3>
         </div>
         <div class="card-body flex flex-col gap-3">
           <div class="flex items-center gap-2 flex-wrap">
@@ -131,7 +154,7 @@ function _renderOwner(el) {
       <!-- Holiday controls -->
       <div class="card">
         <div class="card-header">
-          <h3 class="font-semibold text-slate-700 text-[14px]">Morocco Holidays</h3>
+          <h3 class="font-semibold text-slate-700 text-[14px]">Academic Calendar Controls</h3>
         </div>
         <div class="card-body flex flex-col gap-3">
           <div class="flex items-end gap-2 flex-wrap">
@@ -170,7 +193,7 @@ function _renderOwner(el) {
       <!-- Teacher management -->
       <div class="card">
         <div class="card-header">
-          <h3 class="font-semibold text-slate-700 text-[14px]">Teachers</h3>
+          <h3 class="font-semibold text-slate-700 text-[14px]">Teacher Accounts</h3>
         </div>
         <div id="teacher-list" class="divide-y divide-slate-100">
           ${_teachers.length ? _teachers.map(t => _teacherRow(t)).join('') : `
@@ -184,7 +207,7 @@ function _renderOwner(el) {
       <!-- Create teacher form -->
       <div class="card">
         <div class="card-header">
-          <h3 class="font-semibold text-slate-700 text-[14px]"> Add Teacher</h3>
+          <h3 class="font-semibold text-slate-700 text-[14px]">Create Teacher Account</h3>
         </div>
         <div class="card-body flex flex-col gap-3">
           <div class="grid sm:grid-cols-2 gap-3">
@@ -218,7 +241,7 @@ function _renderOwner(el) {
       ${_allClasses.length ? `
       <div class="card">
         <div class="card-header">
-          <h3 class="font-semibold text-slate-700 text-[14px]">Class-Teacher Assignments</h3>
+          <h3 class="font-semibold text-slate-700 text-[14px]">Class Ownership Assignments</h3>
         </div>
         <div class="card-body flex flex-col gap-2">
           ${_allClasses.map(c => {
@@ -240,34 +263,6 @@ function _renderOwner(el) {
         </div>
       </div>
 
-      <!-- Per-Teacher Class Details -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="font-semibold text-slate-700 text-[14px]"> Teacher Workload & Quick Links</h3>
-        </div>
-        <div class="card-body flex flex-col gap-4">
-          ${_teachers.filter(t => t.is_active !== false).map(t => {
-    const assigned = _allClasses.filter(c => _classTeachers[c.id] === t.id);
-    return `
-            <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl">
-              <div class="flex items-center justify-between border-b border-slate-200 pb-2 mb-3">
-                <h4 class="font-bold text-slate-800">${t.full_name}</h4>
-                <span class="text-[11px] font-semibold text-slate-400 bg-white px-2 py-0.5 rounded-full border border-slate-200 shadow-sm">${assigned.length} class${assigned.length === 1 ? '' : 'es'}</span>
-              </div>
-              ${assigned.length ? `
-              <div class="grid sm:grid-cols-2 gap-2">
-                ${assigned.map(c => `
-                <div class="flex items-center justify-between p-2 bg-white rounded-lg border border-slate-100 shadow-sm hover:border-blue-200 transition-colors">
-                  <span class="text-[12px] font-medium text-slate-700 truncate">${c.name}</span>
-                </div>
-                `).join('')}
-              </div>
-              ` : '<p class="text-[12px] text-slate-400 italic">No classes assigned.</p>'}
-            </div>
-            `;
-  }).join('') || '<p class="text-[12px] text-slate-400">No active teachers.</p>'}
-        </div>
-      </div>
       ` : ''}
 
       <!-- Archived classes restore -->
@@ -289,7 +284,7 @@ function _renderOwner(el) {
       <!-- Change Password -->
       <div class="card">
         <div class="card-header">
-          <h3 class="font-semibold text-slate-700 text-[14px]">Change Password</h3>
+          <h3 class="font-semibold text-slate-700 text-[14px]">Owner Password</h3>
         </div>
         <div class="card-body flex flex-col gap-3">
           <div class="grid sm:grid-cols-2 gap-3">

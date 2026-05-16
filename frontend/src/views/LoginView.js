@@ -178,7 +178,7 @@ export function renderLoginView() {
       refreshShell();
       const classes = await api('/classes');
       setClasses(classes || []);
-      navigate('class');
+      navigate(String(me?.role || '').toLowerCase() === 'owner' ? 'owner' : 'class');
     } catch (err) {
       // HTTP 423 = account locked
       if (err.status === 423 || String(err.message).toLowerCase().includes('lock')) {

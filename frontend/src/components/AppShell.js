@@ -11,11 +11,15 @@ import { clearWorkflowState } from '../state/workflow.js';
 import { clearExamState } from '../state/exam.js';
 import { navigate, currentRoute } from '../router.js';
 
-const NAV_ROUTES = [
+const TEACHER_NAV_ROUTES = [
   { id: 'class', icon: 'DB', label: 'Dashboard' },
   { id: 'workflow', icon: 'WF', label: 'Workflow' },
   { id: 'calendar', icon: 'CL', label: 'Calendar' },
   { id: 'exams', icon: 'EX', label: 'Exams' },
+];
+
+const OWNER_NAV_ROUTES = [
+  { id: 'owner', icon: 'AD', label: 'Owner Panel' },
 ];
 
 const _classChangeListeners = [];
@@ -33,19 +37,14 @@ function _getUserPresentation() {
 }
 
 function _navMarkup() {
+  const navRoutes = isOwner() ? OWNER_NAV_ROUTES : TEACHER_NAV_ROUTES;
   return `
-      <p class="text-[9px] font-bold uppercase tracking-[0.12em] text-white/25 px-3 pt-1 pb-2.5">Main</p>
-      ${NAV_ROUTES.map(r => `
+      <p class="text-[9px] font-bold uppercase tracking-[0.12em] text-white/25 px-3 pt-1 pb-2.5">${isOwner() ? 'Admin' : 'Main'}</p>
+      ${navRoutes.map(r => `
         <button data-nav="${r.id}" class="nav-link" onclick="window.location.hash='${r.id}'">
           <span class="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center text-[14px] flex-shrink-0">${r.icon}</span>
           <span class="text-[13px]">${r.label}</span>
         </button>`).join('')}
-      ${isOwner() ? `
-      <p class="text-[9px] font-bold uppercase tracking-[0.12em] text-white/25 px-3 pt-5 pb-2.5">Admin</p>
-      <button data-nav="owner" class="nav-link" onclick="window.location.hash='owner'">
-        <span class="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center text-[10px] font-bold flex-shrink-0">AD</span>
-        <span class="text-[13px]">Owner Panel</span>
-      </button>` : ''}
   `;
 }
 
@@ -85,10 +84,12 @@ function _applyRouteChrome() {
   const classSection = document.getElementById('topbar-class-section');
   const quickPlanner = document.getElementById('btn-open-quick-planner');
   const topbarTitle = document.getElementById('topbar-context-title');
+  const bottomTabs = document.getElementById('bottom-tabs');
   if (classSection) classSection.style.display = isOwnerRoute ? 'none' : '';
   if (quickPlanner) quickPlanner.style.display = isOwnerRoute ? 'none' : '';
+  if (bottomTabs) bottomTabs.style.display = isOwnerRoute ? 'none' : '';
   if (topbarTitle) {
-    topbarTitle.textContent = isOwnerRoute ? 'Owner Workspace' : 'Teaching Workspace';
+    topbarTitle.textContent = isOwnerRoute ? 'Platform Administration' : 'Teaching Workspace';
   }
 }
 
@@ -96,6 +97,8 @@ export function refreshShell() {
   if (!_shellRendered) return;
   const nav = document.getElementById('sidebar-nav');
   if (nav) nav.innerHTML = _navMarkup();
+  const brandSubtitle = document.getElementById('sidebar-brand-subtitle');
+  if (brandSubtitle) brandSubtitle.textContent = isOwner() ? 'Administration' : 'Teaching';
   const sidebarUser = document.getElementById('sidebar-user-card');
   if (sidebarUser) sidebarUser.innerHTML = _sidebarUserMarkup();
   const topbarUser = document.getElementById('topbar-user-card');
@@ -149,7 +152,7 @@ export function renderShell() {
                   flex-shrink-0">TP</div>
       <div>
         <div class="text-[13px] font-bold text-white tracking-tight leading-tight">Teacher Progress</div>
-        <div class="text-[10px] text-white/35 uppercase tracking-widest font-semibold">Management</div>
+        <div id="sidebar-brand-subtitle" class="text-[10px] text-white/35 uppercase tracking-widest font-semibold">${isOwner() ? 'Administration' : 'Teaching'}</div>
       </div>
     </div>
 
@@ -214,7 +217,7 @@ export function renderShell() {
   const btabs = document.createElement('nav');
   btabs.id = 'bottom-tabs';
   btabs.className = 'bottom-tabs';
-  btabs.innerHTML = NAV_ROUTES.map(r => `
+  btabs.innerHTML = TEACHER_NAV_ROUTES.map(r => `
     <button data-nav="${r.id}" class="tab-item" onclick="window.location.hash='${r.id}'">
       <span class="text-[22px] leading-none">${r.icon}</span>
       <span>${r.label}</span>
