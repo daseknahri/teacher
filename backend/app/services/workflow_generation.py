@@ -871,29 +871,28 @@ def _build_notebooklm_checklist_prompt(
 ) -> str:
     del session_count
     task_rules = (
-        "Lis le PDF entier comme un manuel scolaire et retourne uniquement son plan pedagogique. "
-        "Je veux seulement les titres et sous-titres, dans l'ordre exact du document, avec la bonne indentation."
+        "Lis ce document entier comme un manuel scolaire. "
+        "Retourne uniquement une liste ordonnee de tous les titres et sous-titres visibles."
     )
     if unit_type == WorkflowUnitType.EXERCISE_SERIES:
         specialization = (
-            " L'unite est une serie d'exercices: garde les grandes rubriques puis les exercices ou sous-rubriques visibles."
+            " L'unite est une serie d'exercices: garde les grandes rubriques et les sous-rubriques visibles."
         )
     else:
         specialization = (
-            " L'unite est un chapitre: garde toujours le titre du chapitre, puis les grandes parties, sous-parties, definitions, proprietes, activites, remarques, exemples et exercices visibles."
+            " L'unite est un chapitre: garde seulement les headlines pedagogiques visibles du chapitre."
         )
     formatting_rules = (
-        " Format obligatoire: "
-        "1) retourne uniquement une liste en texte brut, une ligne par titre; "
-        "2) commence chaque ligne par `- `; "
-        "3) indente chaque niveau enfant avec exactement deux espaces; "
-        "4) conserve le texte et le systeme de numerotation visibles dans le PDF (I, II, 1, 1.1, A, etc.); "
-        "5) si un titre est coupe sur deux lignes dans le PDF, reconstitue-le proprement; "
-        "6) ignore tous les paragraphes, explications, exemples developpes, corrections, noms de professeur, niveau, annee, pagination, en-tetes et pieds de page; "
+        " Regles: "
+        "1) garde seulement les headlines pedagogiques visibles; "
+        "2) garde l'ordre exact du document; "
+        "3) garde la hierarchie avec indentation; "
+        "4) conserve le texte et le systeme de numerotation visibles dans le document (I, II, 1, 1.1, A, etc.); "
+        "5) ignore les paragraphes, les explications detaillees et les metadonnees; "
+        "6) si un titre est coupe sur deux lignes, reconstitue-le; "
         "7) n'invente pas de nouveaux titres; "
-        "8) si le PDF est visuellement ambigu, complete seulement les liens de structure evidents pour garder un plan pedagogique coherent; "
-        "9) si un sous-titre pedagogique est implicite mais clairement visible comme rubrique (Definition, Propriete, Activite, Remarque, Exemple, Exercice), garde-le comme ligne propre; "
-        "10) ne retourne aucun commentaire avant ou apres la liste."
+        "8) si le document est ambigu, complete seulement les liens de structure evidents."
+        " Format: une ligne par titre, chaque ligne commence par `- `, deux espaces d'indentation par niveau, aucun commentaire avant ou apres la liste."
     )
     source_block = ""
     trimmed_hint = str(source_hint or "").strip()
@@ -921,8 +920,6 @@ def _build_notebooklm_checklist_prompt(
         "- Titre du chapitre\n"
         "  - Grande partie\n"
         "    - Sous-partie\n"
-        "      - Definition\n"
-        "      - Exemple\n"
         "Ne retourne rien d'autre que cette liste indentee."
         f"{source_block}"
         f"{outline_block}"

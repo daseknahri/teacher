@@ -1841,8 +1841,8 @@ def test_notebooklm_prompt_omits_noisy_source_hint_when_pdf_is_attached():
     )
 
     assert "Indice textuel de secours" not in prompt
-    assert "retourne uniquement une liste en texte brut" in prompt
-    assert "indente chaque niveau enfant avec exactement deux espaces" in prompt
+    assert "Retourne uniquement une liste ordonnee de tous les titres et sous-titres visibles." in prompt
+    assert "deux espaces d'indentation par niveau" in prompt
     assert "Ne retourne rien d'autre que cette liste indentee." in prompt
 
 
