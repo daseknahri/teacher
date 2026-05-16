@@ -4,6 +4,7 @@ import asyncio
 import json
 from pathlib import Path
 import re
+from statistics import median
 from typing import Any
 import unicodedata
 
@@ -81,6 +82,12 @@ RULE_CONTINUATION_PREFIXES: tuple[str, ...] = (
     "on multiplie ",
     "on divise ",
 )
+ROMAN_HEADING_PATTERN = re.compile(r"^\s*[IVXLCM]+(?:\s*[-.):/]\s*|\s+).+", re.IGNORECASE)
+ALPHA_HEADING_PATTERN = re.compile(r"^\s*[a-z]\s*[-.):/]\s*.+", re.IGNORECASE)
+PDF_LAYOUT_LINE_GAP = 2.8
+PDF_LAYOUT_HEADING_WORD_LIMIT = 18
+PDF_LAYOUT_HEADING_MAX_CHARS = 120
+PDF_LAYOUT_MIN_SIZE_DELTA = 1.0
 
 
 def generate_unit_checklist_package(
@@ -130,14 +137,27 @@ def generate_unit_checklist_package(
         supported=SUPPORTED_UNIT_PLANNER_PROVIDERS,
         default="fallback",
     )
+    layout_seed = _build_pdf_layout_outline_seed(unit_type=unit_type, title=title, document_path=document_path)
     outline_seed = _build_outline_seed(unit_type=unit_type, title=title, source_text=source_text)
-    outline_hint_lines = _outline_hint_lines(outline_seed)
+    reference_outline = _select_reference_outline_seed(
+        layout_seed=layout_seed,
+        outline_seed=outline_seed,
+        unit_type=unit_type,
+        unit_title=title,
+    )
+    outline_hint_lines = _merge_outline_hint_lines(
+        _outline_hint_lines(layout_seed),
+        _outline_hint_lines(outline_seed),
+    )
     items: list[dict[str, Any]] | None = None
     raw_provider_response: dict[str, Any] | None = None
     error_message: str | None = None
     actual_provider = requested_provider
     model: str | None = None
     provider_context: dict[str, Any] | None = None
+    candidates: list[tuple[str, list[dict[str, Any]]]] = []
+    openai_shadow_raw: dict[str, Any] | None = None
+    openai_shadow_error: str | None = None
 
     if requested_provider == "openai":
         items, raw_provider_response, error_message = _openai_generate_checklist(
@@ -149,6 +169,7 @@ def generate_unit_checklist_package(
         )
         if items:
             model = app_config.OPENAI_MODEL
+            candidates.append(("openai", items))
     elif requested_provider == "notebooklm":
         items, provider_context, raw_provider_response, error_message = _notebooklm_generate_checklist(
             unit_type=unit_type,
@@ -161,21 +182,63 @@ def generate_unit_checklist_package(
         if items:
             actual_provider = "notebooklm"
             model = "notebooklm-py"
+            candidates.append(("notebooklm", items))
+        if app_config.OPENAI_API_KEY and _candidate_needs_structural_repair(
+            items,
+            reference_outline=reference_outline,
+            unit_type=unit_type,
+            unit_title=title,
+        ):
+            shadow_items, shadow_raw, shadow_error = _openai_generate_checklist(
+                unit_type=unit_type,
+                title=title,
+                source_text=source_text,
+                session_count=session_count,
+                outline_hint_lines=outline_hint_lines,
+            )
+            if shadow_items:
+                candidates.append(("openai", shadow_items))
+                openai_shadow_raw = shadow_raw
+                openai_shadow_error = shadow_error
+                if not items:
+                    raw_provider_response = shadow_raw
+                    error_message = shadow_error
+                    actual_provider = "openai"
+                    model = app_config.OPENAI_MODEL
 
-    if items:
-        items = _postprocess_checklist_items(items, unit_type=unit_type, unit_title=title)
+    normalized_candidates: list[tuple[str, list[dict[str, Any]]]] = []
+    for source_name, candidate_items in candidates:
+        normalized_candidate = _postprocess_checklist_items(candidate_items, unit_type=unit_type, unit_title=title)
+        if normalized_candidate:
+            normalized_candidates.append((source_name, normalized_candidate))
 
-    if outline_seed:
-        items = _prefer_outline_seed(
-            provider_items=items,
-            outline_seed=outline_seed,
+    selection_pool = list(normalized_candidates)
+    if reference_outline:
+        selection_pool.append(("reference", reference_outline))
+
+    if selection_pool:
+        source_name, items = _select_best_checklist_candidate(
+            selection_pool,
+            reference_outline=reference_outline,
             unit_type=unit_type,
             unit_title=title,
         )
+        actual_provider = "fallback" if source_name == "reference" else source_name
+        if actual_provider == "openai":
+            model = app_config.OPENAI_MODEL
+            if requested_provider == "notebooklm" and openai_shadow_raw is not None:
+                raw_provider_response = openai_shadow_raw
+                error_message = openai_shadow_error
+        elif actual_provider == "notebooklm":
+            model = "notebooklm-py"
+        else:
+            model = None
+            raw_provider_response = None
+            error_message = None
 
     if not items:
         actual_provider = "fallback"
-        fallback_items = outline_seed or _fallback_generate_checklist(unit_type=unit_type, title=title, source_text=source_text)
+        fallback_items = reference_outline or _fallback_generate_checklist(unit_type=unit_type, title=title, source_text=source_text)
         items = fallback_items
 
     items = _apply_session_numbers(items, session_count=session_count)
@@ -296,6 +359,25 @@ def _build_outline_seed(
     return _postprocess_checklist_items(base_items, unit_type=unit_type, unit_title=title)
 
 
+def _build_pdf_layout_outline_seed(
+    *,
+    unit_type: WorkflowUnitType,
+    title: str,
+    document_path: str | None,
+) -> list[dict[str, Any]]:
+    path_value = str(document_path or "").strip()
+    if not path_value:
+        return []
+    source = Path(path_value)
+    if source.suffix.lower() != ".pdf" or not source.exists():
+        return []
+    candidate_lines = _extract_pdf_heading_candidate_lines(source, unit_type=unit_type)
+    if not candidate_lines:
+        return []
+    base_items = _fallback_generate_checklist(unit_type=unit_type, title=title, source_text="\n".join(candidate_lines))
+    return _postprocess_checklist_items(base_items, unit_type=unit_type, unit_title=title)
+
+
 def _outline_hint_lines(items: list[dict[str, Any]]) -> list[str]:
     output: list[str] = []
 
@@ -323,6 +405,22 @@ def _render_outline_hint_block(outline_hint_lines: list[str] | None) -> str:
     return "Detected outline:\n" + "\n".join(rows[:60])
 
 
+def _merge_outline_hint_lines(*groups: list[str]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for group in groups:
+        for row in group:
+            value = str(row or "").strip()
+            if not value:
+                continue
+            key = _title_key(value)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            output.append(value)
+    return output[:80]
+
+
 def _prefer_outline_seed(
     *,
     provider_items: list[dict[str, Any]] | None,
@@ -337,6 +435,86 @@ def _prefer_outline_seed(
     if seed_quality >= provider_quality:
         return outline_seed
     return provider_items
+
+
+def _select_reference_outline_seed(
+    *,
+    layout_seed: list[dict[str, Any]],
+    outline_seed: list[dict[str, Any]],
+    unit_type: WorkflowUnitType,
+    unit_title: str,
+) -> list[dict[str, Any]]:
+    if layout_seed and outline_seed:
+        layout_score = _score_checklist_candidate(
+            layout_seed,
+            reference_outline=outline_seed,
+            unit_type=unit_type,
+            unit_title=unit_title,
+        )
+        outline_score = _score_checklist_candidate(
+            outline_seed,
+            reference_outline=layout_seed,
+            unit_type=unit_type,
+            unit_title=unit_title,
+        )
+        return layout_seed if layout_score >= outline_score else outline_seed
+    return layout_seed or outline_seed
+
+
+def _candidate_needs_structural_repair(
+    items: list[dict[str, Any]] | None,
+    *,
+    reference_outline: list[dict[str, Any]],
+    unit_type: WorkflowUnitType,
+    unit_title: str,
+) -> bool:
+    if not items:
+        return True
+    candidate_score = _score_checklist_candidate(
+        items,
+        reference_outline=reference_outline,
+        unit_type=unit_type,
+        unit_title=unit_title,
+    )
+    baseline_score = _score_checklist_candidate(
+        reference_outline,
+        reference_outline=reference_outline,
+        unit_type=unit_type,
+        unit_title=unit_title,
+    )
+    coverage = _score_reference_coverage(items, reference_outline)
+    reference_titles = _outline_reference_titles(reference_outline)
+    minimum_coverage = min(12, max(4, len(reference_titles) * 2))
+    return candidate_score + 4 < baseline_score or coverage < minimum_coverage
+
+
+def _select_best_checklist_candidate(
+    candidates: list[tuple[str, list[dict[str, Any]]]],
+    *,
+    reference_outline: list[dict[str, Any]],
+    unit_type: WorkflowUnitType,
+    unit_title: str,
+) -> tuple[str, list[dict[str, Any]]]:
+    best_source = candidates[0][0]
+    best_items = candidates[0][1]
+    best_score = _score_checklist_candidate(
+        best_items,
+        reference_outline=reference_outline,
+        unit_type=unit_type,
+        unit_title=unit_title,
+    )
+    for source_name, items in candidates[1:]:
+        score = _score_checklist_candidate(
+            items,
+            reference_outline=reference_outline,
+            unit_type=unit_type,
+            unit_title=unit_title,
+        )
+        if score > best_score:
+            best_source = source_name
+            best_items = items
+            best_score = score
+    return best_source, best_items
 
 
 def _notebooklm_generate_checklist(
@@ -1218,13 +1396,13 @@ def _compact_outline_segment(
     match = NUMBERED_HEADING_PATTERN.match(value)
     if match:
         number = match.group(1)
-        remainder = _trim_heading_phrase(match.group(2))
+        remainder = _trim_section_heading_phrase(match.group(2))
         remainder_kind = _infer_kind_from_text(match.group(2), default=default_kind)
         if remainder and remainder_kind not in {
             WorkflowChecklistItemKind.SECTION,
             WorkflowChecklistItemKind.SUBSECTION,
             WorkflowChecklistItemKind.CHAPTER,
-        }:
+        } and not _is_generic_kind_label(remainder, remainder_kind):
             keyword_heading = _keyword_heading(match.group(2), kind=remainder_kind, ancestor_titles=ancestor_titles)
             if keyword_heading:
                 return keyword_heading
@@ -1260,6 +1438,8 @@ def _keyword_heading(text: str, *, kind: WorkflowChecklistItemKind, ancestor_tit
     lowered = _fold_text_key(text)
     topic_hint = _derive_topic_hint([*ancestor_titles, text])
     label = _keyword_title_label(text, kind=kind)
+    if _is_generic_kind_label(text, kind):
+        return label
     explicit_tail = ""
     for separator in (":", " - ", "-"):
         if separator in str(text or ""):
@@ -1303,6 +1483,28 @@ def _keyword_title_label(text: str, *, kind: WorkflowChecklistItemKind) -> str:
     return ""
 
 
+def _is_generic_kind_label(text: str, kind: WorkflowChecklistItemKind) -> bool:
+    folded = _fold_text_key(text)
+    generic_values: dict[WorkflowChecklistItemKind, tuple[str, ...]] = {
+        WorkflowChecklistItemKind.DEFINITION: ("definition",),
+        WorkflowChecklistItemKind.PROPERTY: ("propriete", "proprietes", "remarque", "remarques", "regle", "regles", "methode", "theoreme"),
+        WorkflowChecklistItemKind.EXAMPLE: ("exemple", "exemples"),
+        WorkflowChecklistItemKind.EXERCISE: ("exercice", "exercices", "application", "applications"),
+        WorkflowChecklistItemKind.OTHER: ("activite", "activites"),
+    }
+    if folded in generic_values.get(kind, ()):
+        return True
+    tokens = folded.replace("'", " ").split()
+    if not tokens:
+        return False
+    first = tokens[0]
+    if kind == WorkflowChecklistItemKind.EXERCISE and first in {"exercice", "exercices", "application", "applications"} and len(tokens) <= 3:
+        return True
+    if kind == WorkflowChecklistItemKind.PROPERTY and first in {"propriete", "proprietes", "remarque", "remarques", "regle", "regles", "methode", "theoreme"} and len(tokens) <= 3:
+        return True
+    return False
+
+
 def _derive_topic_hint(values: list[str]) -> str:
     for raw in reversed(values):
         value = _normalize_outline_title(raw)
@@ -1333,6 +1535,17 @@ def _trim_heading_phrase(text: str) -> str:
     return value[:120]
 
 
+def _trim_section_heading_phrase(text: str) -> str:
+    value = _normalize_outline_title(text)
+    if not value:
+        return ""
+    value = re.sub(r"^\d+\s*[\).:]\s*", "", value)
+    words = value.split()
+    if len(words) > 18:
+        value = " ".join(words[:18]).strip(" ;,-:")
+    return value[:120].strip(" ;,-:")
+
+
 def _normalize_outline_title(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
@@ -1343,6 +1556,8 @@ def _normalize_outline_title(value: Any) -> str:
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"\b(Chapitre|Chapter|Section|Lesson)(\d+)\b", r"\1 \2", text, flags=re.IGNORECASE)
     text = re.sub(r"\b([A-Za-zÀ-ÿ]+)(\d+)\s*:", r"\1 \2:", text)
+    text = re.sub(r"(?i)^\s*\d+\s*(chapitre|chapter)\b", r"\1", text)
+    text = re.sub(r"(?<=[A-Za-zÀ-ÿ\)])(\d{1,3})\s*$", "", text).strip()
     return text.strip(" \t\r\n;,-")
 
 
@@ -1577,6 +1792,77 @@ def _score_checklist_quality(
     return score
 
 
+def _score_checklist_candidate(
+    items: list[dict[str, Any]] | None,
+    *,
+    reference_outline: list[dict[str, Any]],
+    unit_type: WorkflowUnitType,
+    unit_title: str,
+) -> int:
+    score = _score_checklist_quality(items, unit_type=unit_type, unit_title=unit_title)
+    score += _score_reference_coverage(items, reference_outline)
+    return score
+
+
+def _score_reference_coverage(
+    items: list[dict[str, Any]] | None,
+    reference_outline: list[dict[str, Any]] | None,
+) -> int:
+    candidate_titles = _outline_reference_titles(items or [])
+    reference_titles = _outline_reference_titles(reference_outline or [])
+    if not candidate_titles or not reference_titles:
+        return 0
+    score = 0
+    for reference in reference_titles:
+        if any(_semantic_titles_match(reference, candidate) for candidate in candidate_titles):
+            score += 3
+        else:
+            score -= 1
+    return score
+
+
+def _outline_reference_titles(items: list[dict[str, Any]]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for node in _flatten_checklist_nodes(items):
+        title = _semantic_title_key(node.get("title"))
+        if not title or title in seen:
+            continue
+        seen.add(title)
+        output.append(title)
+    return output
+
+
+def _semantic_title_key(value: Any) -> str:
+    text = _fold_text_key(_normalize_outline_title(value))
+    text = re.sub(
+        r"^(?:chapitre|chapter)\s*\d+\s*[:.-]?\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"^(?:definition|propriete|regle|remarques?|methode|theoreme|exemples?|exercices?|applications?|activite)\s*[-:]\s*",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(r"^\d+(?:\.\d+)*\s*[)\].:/-]?\s*", "", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text).strip()
+    return text
+
+
+def _semantic_titles_match(left: str, right: str) -> bool:
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    shorter, longer = (left, right) if len(left) <= len(right) else (right, left)
+    if len(shorter) < 6:
+        return False
+    return shorter in longer
+
+
 def _fallback_generate_checklist(
     *,
     unit_type: WorkflowUnitType,
@@ -1664,6 +1950,213 @@ def _fallback_generate_checklist(
     return [root_node]
 
 
+def _extract_pdf_heading_candidate_lines(source: Path, *, unit_type: WorkflowUnitType) -> list[str]:
+    rows = _extract_pdf_layout_rows(source)
+    if not rows:
+        return []
+    heading_rows = _select_pdf_heading_rows(rows, unit_type=unit_type)
+    output: list[str] = []
+    seen: set[str] = set()
+    for row in heading_rows:
+        text = _normalize_outline_title(row.get("text"))
+        if not text or _is_metadata_noise_line(text):
+            continue
+        key = _semantic_title_key(text) or _title_key(text)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        output.append(text)
+    return output
+
+
+def _extract_pdf_layout_rows(source: Path) -> list[dict[str, Any]]:
+    try:
+        from pypdf import PdfReader
+    except Exception:
+        return []
+
+    try:
+        reader = PdfReader(str(source))
+    except Exception:
+        return []
+
+    rows: list[dict[str, Any]] = []
+    for page_index, page in enumerate(reader.pages):
+        fragments: list[dict[str, Any]] = []
+
+        def visitor(text, cm, tm, font_dict, font_size):
+            value = str(text or "")
+            if not value.strip():
+                return
+            fragments.append(
+                {
+                    "page": page_index + 1,
+                    "x": float(tm[4]),
+                    "y": round(float(tm[5]), 2),
+                    "size": float(font_size or 0.0),
+                    "font": str((font_dict or {}).get("/BaseFont") or ""),
+                    "text": value,
+                }
+            )
+
+        try:
+            page.extract_text(visitor_text=visitor)
+        except Exception:
+            continue
+        if not fragments:
+            continue
+
+        fragments = sorted(fragments, key=lambda row: (-row["y"], row["x"]))
+        line_buckets: list[dict[str, Any]] = []
+        for fragment in fragments:
+            if not line_buckets or abs(float(line_buckets[-1]["y"]) - float(fragment["y"])) > PDF_LAYOUT_LINE_GAP:
+                line_buckets.append({"page": fragment["page"], "y": fragment["y"], "parts": []})
+            line_buckets[-1]["parts"].append(fragment)
+
+        for bucket in line_buckets:
+            parts = sorted(bucket["parts"], key=lambda row: float(row["x"]))
+            text = re.sub(r"\s+", " ", "".join(str(part["text"]) for part in parts)).strip()
+            if not text:
+                continue
+            sizes = [float(part["size"]) for part in parts if float(part["size"]) > 0]
+            fonts = [str(part["font"]) for part in parts]
+            rows.append(
+                {
+                    "page": int(bucket["page"]),
+                    "y": float(bucket["y"]),
+                    "x": min(float(part["x"]) for part in parts),
+                    "text": text,
+                    "max_size": max(sizes) if sizes else 0.0,
+                    "avg_size": sum(sizes) / len(sizes) if sizes else 0.0,
+                    "bold": any("bold" in font.lower() for font in fonts),
+                }
+            )
+    return rows
+
+
+def _select_pdf_heading_rows(rows: list[dict[str, Any]], *, unit_type: WorkflowUnitType) -> list[dict[str, Any]]:
+    sizes = [float(row.get("max_size") or 0.0) for row in rows if float(row.get("max_size") or 0.0) > 0]
+    baseline_size = median(sizes) if sizes else 0.0
+    selected: list[dict[str, Any]] = []
+    for row in rows:
+        text = _normalize_outline_title(row.get("text"))
+        if not text or _is_trivial_outline_fragment(text):
+            continue
+        if _is_metadata_noise_line(text):
+            continue
+        if _looks_like_body_sentence(text):
+            continue
+        size = float(row.get("max_size") or row.get("avg_size") or 0.0)
+        bold = bool(row.get("bold"))
+        short = len(text) <= PDF_LAYOUT_HEADING_MAX_CHARS and len(text.split()) <= PDF_LAYOUT_HEADING_WORD_LIMIT
+        numbered = _line_has_structural_marker(text)
+        keyword = _keyword_kind_from_line(text) is not None
+        prominent = size >= baseline_size + PDF_LAYOUT_MIN_SIZE_DELTA
+        uppercase_title = _looks_like_uppercase_title(text)
+        if text[:1].islower() and not numbered and not keyword and not (prominent and len(text.split()) <= 4):
+            continue
+        if unit_type == WorkflowUnitType.EXERCISE_SERIES:
+            include = short and (keyword or numbered or prominent or uppercase_title or bold)
+        else:
+            include = short and (numbered or keyword or prominent or uppercase_title or bold)
+        if include:
+            selected.append({**row, "text": text})
+    return _merge_pdf_heading_rows(selected)
+
+
+def _merge_pdf_heading_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    index = 0
+    while index < len(rows):
+        current = dict(rows[index])
+        text = str(current.get("text") or "").strip()
+        if not text:
+            index += 1
+            continue
+        if CHAPTER_START_PATTERN.match(text) or _looks_like_uppercase_title(text):
+            parts = [text]
+            next_index = index + 1
+            while next_index < len(rows):
+                next_row = rows[next_index]
+                next_text = str(next_row.get("text") or "").strip()
+                if not next_text:
+                    next_index += 1
+                    continue
+                if _line_has_structural_marker(next_text) or _keyword_kind_from_line(next_text) is not None:
+                    break
+                if int(next_row.get("page") or 0) != int(current.get("page") or 0):
+                    break
+                if abs(float(next_row.get("x") or 0.0) - float(current.get("x") or 0.0)) > 14:
+                    break
+                if float(next_row.get("max_size") or 0.0) + 0.3 < float(current.get("max_size") or 0.0):
+                    break
+                if len(next_text.split()) > PDF_LAYOUT_HEADING_WORD_LIMIT:
+                    break
+                parts.append(next_text)
+                next_index += 1
+            if len(parts) > 1:
+                merged_title = " ".join(parts).strip()
+                separator = ": " if CHAPTER_START_PATTERN.match(text) else " "
+                if CHAPTER_START_PATTERN.match(text):
+                    chapter_prefix = parts[0]
+                    chapter_body = " ".join(parts[1:]).strip(" -:")
+                    merged_title = f"{chapter_prefix}{separator}{chapter_body}".strip()
+                current["text"] = merged_title
+                output.append(current)
+                index = next_index
+                continue
+        output.append(current)
+        index += 1
+    return output
+
+
+def _line_has_structural_marker(text: str) -> bool:
+    value = str(text or "").strip()
+    return bool(
+        value
+        and (
+            CHAPTER_START_PATTERN.match(value)
+            or NUMBERED_HEADING_PATTERN.match(value)
+            or ROMAN_HEADING_PATTERN.match(value)
+            or ALPHA_HEADING_PATTERN.match(value)
+        )
+    )
+
+
+def _looks_like_uppercase_title(text: str) -> bool:
+    letters = [char for char in str(text or "") if char.isalpha()]
+    if len(letters) < 4:
+        return False
+    uppercase_ratio = sum(1 for char in letters if char.isupper()) / max(1, len(letters))
+    return uppercase_ratio >= 0.7 and len(str(text or "").split()) <= 10
+
+
+def _looks_like_body_sentence(text: str) -> bool:
+    value = _normalize_outline_title(text)
+    if not value:
+        return True
+    if _line_has_structural_marker(value) or _keyword_kind_from_line(value) is not None:
+        return False
+    words = value.split()
+    if len(words) > PDF_LAYOUT_HEADING_WORD_LIMIT:
+        return True
+    if len(re.findall(r"[.;!?]", value)) >= 2:
+        return True
+    folded = _fold_text_key(value)
+    body_starters = (
+        "a le ",
+        "pour ",
+        "soit ",
+        "parmi ",
+        "dans ",
+        "on considere ",
+        "la somme ",
+        "le quotient ",
+        "un nombre ",
+        "cette ",
+    )
+    return any(folded.startswith(prefix) for prefix in body_starters)
+
 def _extract_structural_source_lines(source_text: str) -> list[str]:
     output: list[str] = []
     seen: set[str] = set()
@@ -1710,6 +2203,8 @@ def _is_metadata_noise_line(text: str) -> bool:
     folded = _fold_text_key(text)
     if not folded:
         return True
+    if re.match(r"^\d+\s*(chapitre|chapter)\b", folded):
+        return True
     if NUMBERED_HEADING_PATTERN.match(str(text or "").strip()) or CHAPTER_START_PATTERN.match(str(text or "").strip()):
         return False
     metadata_hits = sum(1 for token in METADATA_NOISE_TERMS if token in folded)
@@ -1751,6 +2246,10 @@ def _normalize_keyword_outline_title(
     raw = _normalize_outline_title(text)
     if not raw:
         return ""
+    exercise_match = re.match(r"^\s*(exercice|exercise|application)\s*(\d+)\b", raw, re.IGNORECASE)
+    if kind == WorkflowChecklistItemKind.EXERCISE and exercise_match:
+        label = "Applications" if _fold_text_key(exercise_match.group(1)).startswith("application") else "Exercice"
+        return f"{label} {exercise_match.group(2)}"
     if kind == WorkflowChecklistItemKind.OTHER and _fold_text_key(raw).startswith("activite"):
         return _compact_outline_segment(raw, default_kind=WorkflowChecklistItemKind.SECTION, ancestor_titles=[current_topic_title])
     label = _keyword_title_label(raw, kind=kind)

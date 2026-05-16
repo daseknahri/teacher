@@ -1944,6 +1944,99 @@ def test_generate_unit_checklist_package_prefers_structured_outline_over_noisy_p
     assert not any(title.lower().startswith("exemples - mathematiques") for title in titles)
 
 
+def test_pdf_layout_heading_selection_preserves_outline_order(monkeypatch, tmp_path):
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    fake_rows = [
+        {"page": 1, "y": 640.0, "x": 56.7, "text": "Chapitre 5", "max_size": 24.8, "avg_size": 24.8, "bold": False},
+        {"page": 1, "y": 594.0, "x": 56.7, "text": "Les nombres relatifs : addition et", "max_size": 24.8, "avg_size": 24.8, "bold": False},
+        {"page": 1, "y": 564.0, "x": 56.7, "text": "soustraction", "max_size": 24.8, "avg_size": 24.8, "bold": False},
+        {"page": 1, "y": 502.0, "x": 56.7, "text": "5.1 Somme de deux nombres relatifs", "max_size": 17.2, "avg_size": 17.2, "bold": False},
+        {"page": 1, "y": 472.0, "x": 56.7, "text": "5.1.1 Les deux nombres sont de même signe", "max_size": 14.3, "avg_size": 14.3, "bold": False},
+        {"page": 1, "y": 446.0, "x": 87.8, "text": "La somme de deux nombres positifs est un nombre positif", "max_size": 12.0, "avg_size": 12.0, "bold": False},
+        {"page": 1, "y": 383.0, "x": 56.7, "text": "Exemples", "max_size": 12.0, "avg_size": 12.0, "bold": False},
+        {"page": 1, "y": 323.0, "x": 56.7, "text": "5.1.2 Les deux nombres sont de signes contraires", "max_size": 14.3, "avg_size": 14.3, "bold": False},
+    ]
+
+    monkeypatch.setattr(workflow_generation, "_extract_pdf_layout_rows", lambda source: fake_rows)
+    pdf_path = tmp_path / "outline.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4\n%test")
+
+    items = workflow_generation._build_pdf_layout_outline_seed(
+        unit_type=WorkflowUnitType.CHAPTER,
+        title="Les nombres relatifs",
+        document_path=str(pdf_path),
+    )
+    flat = _flatten_checklist(items)
+    titles = [str(row.get("title", "")) for row in flat]
+
+    assert titles[0].startswith("Chapitre 5")
+    assert "addition et soustraction" in titles[0].lower()
+    assert any(title.startswith("5.1") and "somme de deux nombres relatifs" in title.lower() for title in titles)
+    assert any(title.startswith("5.1.1") and "même signe" in title.lower() for title in titles)
+    assert any(title == "Exemples" for title in titles)
+    assert not any("nombre positif" in title.lower() for title in titles)
+
+
+def test_generate_unit_checklist_package_promotes_openai_shadow_when_notebooklm_is_weaker(monkeypatch):
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    poor_notebook_items = [
+        {"title": "Exemples - Mathématiques", "kind": "example", "children": []},
+        {"title": "5) heures", "kind": "section", "children": []},
+    ]
+    stronger_openai_items = [
+        {
+            "title": "Chapitre 5: Les nombres relatifs",
+            "kind": "chapter",
+            "children": [
+                {"title": "5.1 Somme de deux nombres relatifs", "kind": "section", "children": []},
+                {"title": "Exemples", "kind": "example", "children": []},
+            ],
+        }
+    ]
+
+    monkeypatch.setattr(workflow_generation.app_config, "OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        workflow_generation,
+        "_notebooklm_generate_checklist",
+        lambda **kwargs: (poor_notebook_items, {"provider": "notebooklm"}, {"answer": "poor"}, None),
+    )
+    monkeypatch.setattr(
+        workflow_generation,
+        "_openai_generate_checklist",
+        lambda **kwargs: (stronger_openai_items, {"answer": "strong"}, None),
+    )
+    monkeypatch.setattr(
+        workflow_generation,
+        "_build_pdf_layout_outline_seed",
+        lambda **kwargs: [
+            {
+                "title": "Chapitre 5: Les nombres relatifs",
+                "kind": "chapter",
+                "children": [{"title": "5.1 Somme de deux nombres relatifs", "kind": "section", "children": []}],
+            }
+        ],
+    )
+
+    package = workflow_generation.generate_unit_checklist_package(
+        unit_type=WorkflowUnitType.CHAPTER,
+        title="Les nombres relatifs",
+        source_text="Chapitre 5\n5.1 Somme de deux nombres relatifs\nExemples",
+        provider="notebooklm",
+        document_path="dummy.pdf",
+    )
+
+    flat = _flatten_checklist(package["items"])
+    titles = [str(row.get("title", "")) for row in flat]
+    assert package["source"] == "openai"
+    assert any("chapitre 5" in title.lower() for title in titles)
+    assert any("5.1" in title.lower() and "somme de deux nombres relatifs" in title.lower() for title in titles)
+    assert not any("5) heures" in title.lower() for title in titles)
+
+
 def test_unit_creation_replaces_slug_title_with_first_meaningful_generated_heading(client, monkeypatch):
     import app.routers.workflow as workflow_router
 
