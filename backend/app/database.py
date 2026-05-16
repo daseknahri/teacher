@@ -32,6 +32,7 @@ def ensure_schema_compatibility() -> None:
         time_type = "TIME"
         float_type = "DOUBLE PRECISION" if conn.dialect.name == "postgresql" else "FLOAT"
         json_type = "JSONB" if conn.dialect.name == "postgresql" else "JSON"
+        checklist_kind_default = "OTHER" if conn.dialect.name == "postgresql" else "other"
         column_cache: dict[str, set[str]] = {}
 
         def _columns(table_name: str) -> set[str]:
@@ -85,7 +86,7 @@ def ensure_schema_compatibility() -> None:
             conn.execute(text("UPDATE workflow_units SET order_index = 0 WHERE order_index IS NULL"))
 
         _ensure_column("workflow_checklist_items", "parent_item_id", "INTEGER NULL")
-        _ensure_column("workflow_checklist_items", "item_kind", "VARCHAR(32) DEFAULT 'other'")
+        _ensure_column("workflow_checklist_items", "item_kind", f"VARCHAR(32) DEFAULT '{checklist_kind_default}'")
         _ensure_column("workflow_checklist_items", "position", "INTEGER DEFAULT 0")
         _ensure_column("workflow_checklist_items", "depth", "INTEGER DEFAULT 0")
         _ensure_column("workflow_checklist_items", "is_completed", "BOOLEAN DEFAULT FALSE")
@@ -93,7 +94,9 @@ def ensure_schema_compatibility() -> None:
         _ensure_column("workflow_checklist_items", "completed_at", f"{datetime_type} NULL")
         _ensure_column("workflow_checklist_items", "created_at", f"{datetime_type} NULL")
         if "workflow_checklist_items" in table_names:
-            conn.execute(text("UPDATE workflow_checklist_items SET item_kind = 'other' WHERE item_kind IS NULL"))
+            conn.execute(
+                text(f"UPDATE workflow_checklist_items SET item_kind = '{checklist_kind_default}' WHERE item_kind IS NULL")
+            )
             conn.execute(text("UPDATE workflow_checklist_items SET position = 0 WHERE position IS NULL"))
             conn.execute(text("UPDATE workflow_checklist_items SET depth = 0 WHERE depth IS NULL"))
             conn.execute(text("UPDATE workflow_checklist_items SET is_completed = FALSE WHERE is_completed IS NULL"))
