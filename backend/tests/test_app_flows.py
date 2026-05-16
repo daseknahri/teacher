@@ -1843,7 +1843,7 @@ def test_notebooklm_prompt_omits_noisy_source_hint_when_pdf_is_attached():
     assert "Indice textuel de secours" not in prompt
     assert "Retourne uniquement une liste ordonnee de tous les titres et sous-titres visibles." in prompt
     assert "deux espaces d'indentation par niveau" in prompt
-    assert "Ne retourne rien d'autre que cette liste indentee." in prompt
+    assert "ne retourne aucun commentaire avant ou apres la liste" in prompt
 
 
 def test_notebooklm_prompt_omits_slug_like_title_hint():
@@ -1866,15 +1866,15 @@ def test_parse_notebooklm_outline_response_preserves_heading_tree():
 
     answer = "\n".join(
         [
-            "- Chapitre 5 : Les nombres relatifs",
-            "  - 5.1 Somme de deux nombres relatifs",
-            "    - 5.1.1 Les deux nombres sont de même signe",
-            "      - Propriete",
-            "      - Exemples",
-            "    - 5.1.2 Les deux nombres sont de signes contraires",
-            "      - Exemples",
-            "  - 5.2 Différence de deux nombres relatifs",
-            "    - Activités",
+            "- **Chapitre 5 : Les nombres relatifs** [1]",
+            "  - **5.1 Somme de deux nombres relatifs** [1]",
+            "    - **5.1.1 Les deux nombres sont de même signe** [1]",
+            "      - **Propriete** [1]",
+            "      - **Exemples** [1]",
+            "    - **5.1.2 Les deux nombres sont de signes contraires** [2]",
+            "      - **Exemples** [2]",
+            "  - **5.2 Différence de deux nombres relatifs** [3]",
+            "    - **Activités** [3]",
         ]
     )
 
@@ -1897,6 +1897,8 @@ def test_parse_notebooklm_outline_response_preserves_heading_tree():
     assert chapter["children"][0]["children"][0]["children"][0]["kind"] == WorkflowChecklistItemKind.PROPERTY.value
     assert chapter["children"][0]["children"][0]["children"][1]["kind"] == WorkflowChecklistItemKind.EXAMPLE.value
     assert chapter["children"][1]["children"][0]["title"] == "Activités"
+    assert "**" not in chapter["title"]
+    assert "[" not in chapter["title"]
 
 
 def test_pdf_text_extraction_preserves_line_break_structure():

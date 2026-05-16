@@ -870,60 +870,34 @@ def _build_notebooklm_checklist_prompt(
     outline_hint_lines: list[str] | None = None,
 ) -> str:
     del session_count
-    task_rules = (
-        "Lis ce document entier comme un manuel scolaire. "
-        "Retourne uniquement une liste ordonnee de tous les titres et sous-titres visibles."
-    )
+    prompt_parts = [
+        "Lis ce document entier comme un manuel scolaire.",
+        "Retourne uniquement une liste ordonnee de tous les titres et sous-titres visibles.",
+        "Regles:",
+        "- Garde seulement les headlines pedagogiques visibles.",
+        "- Garde l'ordre exact du document.",
+        "- Garde la hierarchie avec indentation.",
+        "- Conserve le texte et le systeme de numerotation visibles dans le document (I, II, 1, 1.1, A, etc.).",
+        "- Ignore les paragraphes, les explications detaillees et les metadonnees.",
+        "- Si un titre est coupe sur deux lignes, reconstitue-le.",
+        "- N'invente pas de nouveaux titres.",
+        "- Si le document est ambigu, complete seulement les liens de structure evidents.",
+        "- Si une section contient des activites, des exemples, des regles, des proprietes, des definitions ou des exercices visibles comme rubriques, garde-les comme enfants de cette section.",
+        "Format:",
+        "- une ligne par titre",
+        "- chaque ligne commence par -",
+        "- utilise deux espaces d'indentation par niveau",
+        "- ne retourne aucun commentaire avant ou apres la liste",
+    ]
     if unit_type == WorkflowUnitType.EXERCISE_SERIES:
-        specialization = (
-            " L'unite est une serie d'exercices: garde les grandes rubriques et les sous-rubriques visibles."
-        )
-    else:
-        specialization = (
-            " L'unite est un chapitre: garde seulement les headlines pedagogiques visibles du chapitre."
-        )
-    formatting_rules = (
-        " Regles: "
-        "1) garde seulement les headlines pedagogiques visibles; "
-        "2) garde l'ordre exact du document; "
-        "3) garde la hierarchie avec indentation; "
-        "4) conserve le texte et le systeme de numerotation visibles dans le document (I, II, 1, 1.1, A, etc.); "
-        "5) ignore les paragraphes, les explications detaillees et les metadonnees; "
-        "6) si un titre est coupe sur deux lignes, reconstitue-le; "
-        "7) n'invente pas de nouveaux titres; "
-        "8) si le document est ambigu, complete seulement les liens de structure evidents."
-        " Format: une ligne par titre, chaque ligne commence par `- `, deux espaces d'indentation par niveau, aucun commentaire avant ou apres la liste."
-    )
+        prompt_parts.append("- Pour une serie d'exercices, garde les grandes rubriques et les sous-rubriques visibles.")
     source_block = ""
     trimmed_hint = str(source_hint or "").strip()
     if trimmed_hint:
         source_block = f"\nTexte source de secours si le PDF est indisponible:\n{trimmed_hint}"
-    outline_block = ""
-    if outline_hint_lines:
-        outline_rows = "\n".join(str(row).strip() for row in outline_hint_lines if str(row).strip())
-        if outline_rows:
-            outline_block = (
-                "\nReperes de structure detectes automatiquement dans le PDF (a utiliser seulement pour confirmer l'ordre):\n"
-                f"{outline_rows}\n"
-                "Ignore les entetes de couverture, nom du professeur, niveau, annee, seance, en-tetes d'etablissement et autres metadonnees."
-            )
-    title_block = ""
-    raw_title = str(title or "").strip()
-    normalized_title = _normalize_outline_title(raw_title)
-    if normalized_title and not _looks_like_slug_title(raw_title):
-        title_block = f"Titre fourni si utile: {normalized_title}\n"
-    return (
-        f"{task_rules}{specialization}{formatting_rules}\n"
-        f"{title_block}"
-        f"Type: {unit_type.value}\n"
-        "Exemple de sortie attendue:\n"
-        "- Titre du chapitre\n"
-        "  - Grande partie\n"
-        "    - Sous-partie\n"
-        "Ne retourne rien d'autre que cette liste indentee."
-        f"{source_block}"
-        f"{outline_block}"
-    )
+    del title
+    del outline_hint_lines
+    return "\n".join(prompt_parts) + source_block
 
 
 def _parse_notebooklm_outline_response(
@@ -1732,6 +1706,8 @@ def _normalize_outline_title(value: Any) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
+    text = re.sub(r"[*_`#]+", "", text)
+    text = re.sub(r"\s*\[\d+(?:\s*[,/-]\s*\d+)*\]\s*$", "", text)
     if _looks_like_slug_title(text):
         text = text.replace("-", " ")
     text = text.replace("_", " ")
