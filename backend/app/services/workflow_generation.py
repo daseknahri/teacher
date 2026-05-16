@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from importlib.util import find_spec
 from pathlib import Path
 import re
 from statistics import median
@@ -89,6 +90,41 @@ PDF_LAYOUT_LINE_GAP = 2.8
 PDF_LAYOUT_HEADING_WORD_LIMIT = 18
 PDF_LAYOUT_HEADING_MAX_CHARS = 120
 PDF_LAYOUT_MIN_SIZE_DELTA = 1.0
+
+
+def _resolve_notebooklm_home() -> Path:
+    configured = str(app_config.NOTEBOOKLM_HOME or "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    return Path.home() / ".notebooklm"
+
+
+def _resolve_notebooklm_storage_path() -> Path:
+    configured_auth_path = str(app_config.NOTEBOOKLM_AUTH_PATH or "").strip()
+    if configured_auth_path:
+        return Path(configured_auth_path).expanduser()
+    profile = app_config.NOTEBOOKLM_PROFILE or "default"
+    home_dir = _resolve_notebooklm_home()
+    profile_path = home_dir / "profiles" / profile / "storage_state.json"
+    legacy_path = home_dir / "storage_state.json"
+    if profile == "default" and legacy_path.exists() and not profile_path.exists():
+        return legacy_path
+    return profile_path
+
+
+def notebooklm_provider_ready() -> bool:
+    if find_spec("notebooklm") is None:
+        return False
+    storage_path = _resolve_notebooklm_storage_path()
+    if not storage_path.exists():
+        return False
+    try:
+        payload = json.loads(storage_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    cookies = payload.get("cookies") if isinstance(payload, dict) else None
+    origins = payload.get("origins") if isinstance(payload, dict) else None
+    return isinstance(cookies, list) and isinstance(origins, list)
 
 
 def generate_unit_checklist_package(
@@ -587,20 +623,50 @@ async def _notebooklm_generate_checklist_async(
                 source_text=source_text,
                 document_path=document_path,
             )
-            prompt = _build_notebooklm_checklist_prompt(
-                unit_type=unit_type,
-                title=title,
-                source_hint="" if str(document_path or "").strip() else source_text,
-                session_count=session_count,
-                outline_hint_lines=outline_hint_lines,
-            )
-            result = await opened.chat.ask(notebook_id, prompt, source_ids=source_ids or None)
-            answer = str(getattr(result, "answer", "") or "").strip()
+            prompt_variants = [
+                (
+                    "primary",
+                    _build_notebooklm_checklist_prompt(
+                        unit_type=unit_type,
+                        title=title,
+                        source_hint="" if str(document_path or "").strip() else source_text,
+                        session_count=session_count,
+                        outline_hint_lines=outline_hint_lines,
+                    ),
+                )
+            ]
+            if unit_type == WorkflowUnitType.CHAPTER:
+                prompt_variants.append(("completeness_review", _build_notebooklm_checklist_review_prompt()))
+
+            candidate_rows: list[dict[str, Any]] = []
+            for variant_name, prompt in prompt_variants:
+                result = await opened.chat.ask(notebook_id, prompt, source_ids=source_ids or None)
+                answer = str(getattr(result, "answer", "") or "").strip()
+                outline_items = _parse_notebooklm_outline_response(
+                    answer,
+                    unit_type=unit_type,
+                    unit_title=title,
+                )
+                candidate_rows.append(
+                    {
+                        "variant": variant_name,
+                        "prompt": prompt,
+                        "answer": answer,
+                        "conversation_id": str(getattr(result, "conversation_id", "") or "").strip() or None,
+                        "outline_items": outline_items,
+                    }
+                )
             raw_result = {
                 "notebook_id": notebook_id,
                 "source_ids": source_ids,
-                "answer": answer,
-                "conversation_id": str(getattr(result, "conversation_id", "") or "").strip() or None,
+                "responses": [
+                    {
+                        "variant": row["variant"],
+                        "answer": row["answer"],
+                        "conversation_id": row["conversation_id"],
+                    }
+                    for row in candidate_rows
+                ],
             }
     except Exception as exc:
         provider_context = _build_notebooklm_provider_context(
@@ -610,21 +676,38 @@ async def _notebooklm_generate_checklist_async(
         )
         return None, provider_context, raw_result, f"notebooklm_request_failed:{exc.__class__.__name__}"
 
-    outline_items = _parse_notebooklm_outline_response(
-        answer,
-        unit_type=unit_type,
-        unit_title=title,
-    )
     provider_context = _build_notebooklm_provider_context(
         notebook_id=notebook_id,
         source_ids=raw_result.get("source_ids") if isinstance(raw_result, dict) else [],
         notebook_title=notebook_title,
     )
+    outline_candidates = [
+        (str(row.get("variant") or "outline"), row.get("outline_items"))
+        for row in (candidate_rows if "candidate_rows" in locals() else [])
+        if isinstance(row.get("outline_items"), list) and row.get("outline_items")
+    ]
+    selected_variant = None
+    outline_items = None
+    if outline_candidates:
+        selected_variant, outline_items = _select_best_notebooklm_outline_candidate(
+            outline_candidates,
+            source_text=source_text,
+            unit_type=unit_type,
+            unit_title=title,
+        )
+        if isinstance(raw_result, dict):
+            raw_result["selected_variant"] = selected_variant
     if outline_items:
         if isinstance(raw_result, dict):
             raw_result["response_mode"] = "outline"
         return outline_items, provider_context, raw_result, None
 
+    answer = ""
+    if "candidate_rows" in locals():
+        for row in candidate_rows:
+            answer = str(row.get("answer") or "").strip()
+            if answer:
+                break
     parsed = _json_object_from_text(answer)
     if not isinstance(parsed, dict):
         return None, provider_context, raw_result, "notebooklm_invalid_json"
@@ -820,9 +903,13 @@ async def _create_notebooklm_client():
     kwargs: dict[str, Any] = {
         "timeout": float(app_config.NOTEBOOKLM_TIMEOUT_SECONDS),
     }
-    auth_path = str(app_config.NOTEBOOKLM_AUTH_PATH or "").strip()
-    if auth_path:
-        kwargs["path"] = auth_path
+    storage_path = _resolve_notebooklm_storage_path()
+    if storage_path.exists():
+        kwargs["path"] = str(storage_path)
+    else:
+        auth_path = str(app_config.NOTEBOOKLM_AUTH_PATH or "").strip()
+        if auth_path:
+            kwargs["path"] = auth_path
     if app_config.NOTEBOOKLM_PROFILE:
         kwargs["profile"] = app_config.NOTEBOOKLM_PROFILE
     keepalive = int(app_config.NOTEBOOKLM_KEEPALIVE_SECONDS or 0)
@@ -871,23 +958,23 @@ def _build_notebooklm_checklist_prompt(
 ) -> str:
     del session_count
     prompt_parts = [
-        "Lis ce document entier comme un manuel scolaire.",
-        "Retourne uniquement une liste ordonnee de tous les titres et sous-titres visibles.",
+        "Lis ce PDF comme un manuel scolaire de mathematiques.",
+        "Retourne une liste hierarchique complete de tous les titres et sous-titres pedagogiques visibles, dans l'ordre exact du document.",
         "Regles:",
-        "- Garde seulement les headlines pedagogiques visibles.",
-        "- Garde l'ordre exact du document.",
-        "- Garde la hierarchie avec indentation.",
+        "- Garde le titre du chapitre comme racine.",
+        "- Garde chaque grand titre, sous-titre, rubrique, activite, definition, propriete, regle, exemple et exercice visibles.",
         "- Conserve le texte et le systeme de numerotation visibles dans le document (I, II, 1, 1.1, A, etc.).",
-        "- Ignore les paragraphes, les explications detaillees et les metadonnees.",
+        "- Ne saute aucun titre visible, meme s'il y a plusieurs activites ou plusieurs exercices.",
+        "- Si une rubrique contient Activite 1, Activite 2, ... ou Exercice 1, Exercice 2, ..., garde-les tous comme enfants de cette rubrique.",
+        "- Ne garde pas les paragraphes de contenu, les calculs detailles, les reponses, ni les sous-exemples A / B / C / D.",
         "- Si un titre est coupe sur deux lignes, reconstitue-le.",
-        "- N'invente pas de nouveaux titres.",
-        "- Si le document est ambigu, complete seulement les liens de structure evidents.",
-        "- Si une section contient des activites, des exemples, des regles, des proprietes, des definitions ou des exercices visibles comme rubriques, garde-les comme enfants de cette section.",
-        "Format:",
+        "- Ignore seulement les metadonnees de couverture (nom du professeur, etablissement, niveau, pagination isolee).",
+        "- N'invente pas de nouveaux titres; si le document est ambigu, complete seulement les liens de structure evidents.",
+        "Format attendu:",
         "- une ligne par titre",
         "- chaque ligne commence par -",
-        "- utilise deux espaces d'indentation par niveau",
-        "- ne retourne aucun commentaire avant ou apres la liste",
+        "- indentation de deux espaces par niveau",
+        "- aucun commentaire avant ou apres la liste",
     ]
     if unit_type == WorkflowUnitType.EXERCISE_SERIES:
         prompt_parts.append("- Pour une serie d'exercices, garde les grandes rubriques et les sous-rubriques visibles.")
@@ -898,6 +985,26 @@ def _build_notebooklm_checklist_prompt(
     del title
     del outline_hint_lines
     return "\n".join(prompt_parts) + source_block
+
+
+def _build_notebooklm_checklist_review_prompt() -> str:
+    return "\n".join(
+        [
+            "Relis le meme PDF et corrige la liste precedente pour qu'aucun titre pedagogique visible ne manque.",
+            "Je veux la version finale la plus complete et la mieux ordonnee possible.",
+            "Regles:",
+            "- Garde le titre du chapitre comme racine.",
+            "- Verifie surtout toutes les rubriques Activite 1, Activite 2, ..., Exercice 1, Exercice 2, ..., Definition, Propriete, Regle, Exemple, Evaluation.",
+            "- Ne saute aucun titre visible, meme s'il est repetitif ou similaire a un autre.",
+            "- Ne garde pas les paragraphes de contenu, les calculs detailles, les reponses, ni les sous-exemples A / B / C / D.",
+            "- Si une rubrique est coupee sur plusieurs pages, reconstruis la structure pedagogique complete.",
+            "Format attendu:",
+            "- une ligne par titre",
+            "- chaque ligne commence par -",
+            "- indentation de deux espaces par niveau",
+            "- aucun commentaire avant ou apres la liste",
+        ]
+    )
 
 
 def _parse_notebooklm_outline_response(
@@ -937,6 +1044,105 @@ def _parse_notebooklm_outline_response(
         return None
     normalized = _normalize_notebooklm_outline_items(roots, unit_type=unit_type, unit_title=unit_title)
     return normalized or None
+
+
+def _select_best_notebooklm_outline_candidate(
+    candidates: list[tuple[str, list[dict[str, Any]]]],
+    *,
+    source_text: str,
+    unit_type: WorkflowUnitType,
+    unit_title: str,
+) -> tuple[str, list[dict[str, Any]]]:
+    best_name, best_items = candidates[0]
+    best_score = _score_notebooklm_outline_candidate(
+        best_items,
+        source_text=source_text,
+        unit_type=unit_type,
+        unit_title=unit_title,
+    )
+    for name, items in candidates[1:]:
+        score = _score_notebooklm_outline_candidate(
+            items,
+            source_text=source_text,
+            unit_type=unit_type,
+            unit_title=unit_title,
+        )
+        if score > best_score:
+            best_name = name
+            best_items = items
+            best_score = score
+    return best_name, best_items
+
+
+def _score_notebooklm_outline_candidate(
+    items: list[dict[str, Any]],
+    *,
+    source_text: str,
+    unit_type: WorkflowUnitType,
+    unit_title: str,
+) -> int:
+    score = _score_checklist_quality(items, unit_type=unit_type, unit_title=unit_title)
+    reference_titles = _extract_notebooklm_reference_titles(source_text)
+    candidate_titles = _outline_reference_titles(items)
+    for reference in reference_titles:
+        if any(_semantic_titles_match(reference, candidate) for candidate in candidate_titles):
+            score += 5
+        else:
+            score -= 2
+    score -= _count_notebooklm_outline_noise(items) * 3
+    return score
+
+
+def _extract_notebooklm_reference_titles(source_text: str) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    allowed_fixed = {
+        "objectifs d apprentissage",
+        "prerequis",
+        "outils didactiques",
+        "gestion du temps",
+        "activites",
+        "contenu de la lecon",
+        "evaluation",
+    }
+    for raw_line in _extract_structural_source_lines(source_text):
+        line = _normalize_outline_title(raw_line)
+        if not line:
+            continue
+        folded = _fold_text_key(line)
+        include = False
+        if folded in allowed_fixed:
+            include = True
+        elif CHAPTER_START_PATTERN.match(line) or NUMBERED_HEADING_PATTERN.match(line) or ROMAN_HEADING_PATTERN.match(line) or ALPHA_HEADING_PATTERN.match(line):
+            include = True
+        elif re.match(r"^(activite|exercice|exercise)\s*\d+", folded, flags=re.IGNORECASE):
+            include = True
+        elif _keyword_kind_from_line(line) is not None and len(line.split()) <= 8:
+            include = True
+        if not include:
+            continue
+        key = _semantic_title_key(line)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        output.append(key)
+    return output
+
+
+def _count_notebooklm_outline_noise(items: list[dict[str, Any]]) -> int:
+    noise = 0
+    for node in _flatten_checklist_nodes(items):
+        title = _normalize_outline_title(node.get("title"))
+        folded = _fold_text_key(title)
+        if not title or _is_trivial_outline_fragment(title):
+            noise += 1
+            continue
+        if re.match(r"^\d+\)\s+(?:est|car)$", folded):
+            noise += 2
+            continue
+        if re.fullmatch(r"[a-z]", folded):
+            noise += 1
+    return noise
 
 
 def _extract_notebooklm_outline_lines(text: str) -> list[tuple[int, str]]:
@@ -1008,7 +1214,7 @@ def _normalize_notebooklm_outline_items(
             if not isinstance(node, dict):
                 continue
             title = _normalize_outline_title(node.get("title"))
-            if not title or _is_metadata_noise_line(title):
+            if not title or _is_metadata_noise_line(title) or _is_trivial_outline_fragment(title):
                 continue
             raw_kind = str(node.get("kind") or WorkflowChecklistItemKind.OTHER.value).strip().lower()
             allowed = {kind.value for kind in WorkflowChecklistItemKind}

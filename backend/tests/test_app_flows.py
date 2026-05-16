@@ -1841,9 +1841,10 @@ def test_notebooklm_prompt_omits_noisy_source_hint_when_pdf_is_attached():
     )
 
     assert "Indice textuel de secours" not in prompt
-    assert "Retourne uniquement une liste ordonnee de tous les titres et sous-titres visibles." in prompt
-    assert "deux espaces d'indentation par niveau" in prompt
-    assert "ne retourne aucun commentaire avant ou apres la liste" in prompt
+    assert "Retourne une liste hierarchique complete de tous les titres et sous-titres pedagogiques visibles" in prompt
+    assert "Si une rubrique contient Activite 1, Activite 2, ... ou Exercice 1, Exercice 2" in prompt
+    assert "indentation de deux espaces par niveau" in prompt
+    assert "aucun commentaire avant ou apres la liste" in prompt
 
 
 def test_notebooklm_prompt_omits_slug_like_title_hint():
@@ -2138,6 +2139,140 @@ def test_generate_unit_checklist_package_trusts_notebooklm_outline_without_opena
     assert titles[0].startswith("Chapitre 5")
     assert any(title.startswith("5.1") for title in titles)
     assert any(title == "Exemples" for title in titles)
+
+
+def test_select_best_notebooklm_outline_candidate_prefers_more_complete_tree():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    weaker = [
+        {
+            "title": "Les nombres rationnels : Somme et différence",
+            "kind": "chapter",
+            "children": [
+                {"title": "Activités", "kind": "other", "children": [{"title": "Activité 1 : Calculer :", "kind": "other", "children": []}]},
+                {"title": "Evaluation", "kind": "section", "children": [{"title": "Exercice 1 : Calcule puis simplifie :", "kind": "exercise", "children": []}]},
+            ],
+        }
+    ]
+    stronger = [
+        {
+            "title": "Les nombres rationnels : Somme et différence",
+            "kind": "chapter",
+            "children": [
+                {
+                    "title": "Activités",
+                    "kind": "other",
+                    "children": [
+                        {"title": "Activité 1 : Calculer :", "kind": "other", "children": []},
+                        {"title": "Activité 2 : Calculer :", "kind": "other", "children": []},
+                        {"title": "Activité 3 : Calculer :", "kind": "other", "children": []},
+                    ],
+                },
+                {
+                    "title": "Evaluation",
+                    "kind": "section",
+                    "children": [
+                        {"title": "Exercice 1 : Calcule puis simplifie :", "kind": "exercise", "children": []},
+                        {"title": "Exercice 2 : Calcule puis simplifie :", "kind": "exercise", "children": []},
+                        {"title": "Exercice 3 : Calcule puis simplifie :", "kind": "exercise", "children": []},
+                    ],
+                },
+            ],
+        }
+    ]
+    source_text = "\n".join(
+        [
+            "Les nombres rationnels :",
+            "Somme et différence",
+            "Activités",
+            "Activité 1 : Calculer :",
+            "Activité 2 : Calculer :",
+            "Activité 3 : Calculer :",
+            "Evaluation",
+            "Exercice 1 : Calcule puis simplifie :",
+            "Exercice 2 : Calcule puis simplifie :",
+            "Exercice 3 : Calcule puis simplifie :",
+        ]
+    )
+
+    variant, items = workflow_generation._select_best_notebooklm_outline_candidate(
+        [("primary", weaker), ("completeness_review", stronger)],
+        source_text=source_text,
+        unit_type=WorkflowUnitType.CHAPTER,
+        unit_title="Les nombres rationnels : Somme et différence",
+    )
+
+    assert variant == "completeness_review"
+    assert items == stronger
+
+
+def test_generate_unit_checklist_prefers_notebooklm_for_pdf_when_ready(monkeypatch):
+    from app.models import WorkflowUnitType
+    from app.services import workflow as workflow_service
+
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(workflow_service.app_config, "UNIT_PLANNER_PROVIDER", "openai")
+    monkeypatch.setattr(workflow_service, "OPENAI_API_KEY", "")
+    monkeypatch.setattr(workflow_service, "notebooklm_provider_ready", lambda: True)
+
+    def fake_package(**kwargs):
+        captured.update(kwargs)
+        return {
+            "source": "notebooklm",
+            "requested_provider": kwargs.get("provider"),
+            "model": "notebooklm-py",
+            "status": "ready",
+            "items": [{"title": "Chapitre test", "kind": "chapter", "children": []}],
+            "raw_provider_response": {"answer": "- Chapitre test"},
+            "error_message": None,
+            "provider_context": {"provider": "notebooklm"},
+        }
+
+    monkeypatch.setattr(workflow_service, "generate_unit_checklist_package", fake_package)
+
+    payload = workflow_service.generate_unit_checklist(
+        unit_type=WorkflowUnitType.CHAPTER,
+        title="Chapitre test",
+        source_text="Texte source",
+        session_count=4,
+        document_path="dummy.pdf",
+    )
+
+    assert captured["provider"] == "notebooklm"
+    assert payload["source"] == "notebooklm"
+    assert payload["model"] == "notebooklm-py"
+
+
+def test_create_notebooklm_client_uses_resolved_storage_state_path(monkeypatch, tmp_path):
+    import asyncio
+    import sys
+    import types
+
+    from app.services import workflow_generation
+
+    storage_path = tmp_path / "profiles" / "default" / "storage_state.json"
+    storage_path.parent.mkdir(parents=True, exist_ok=True)
+    storage_path.write_text('{"cookies": [], "origins": []}', encoding="utf-8")
+
+    captured: dict[str, object] = {}
+
+    class FakeNotebookLMClient:
+        @classmethod
+        async def from_storage(cls, **kwargs):
+            captured.update(kwargs)
+            return object()
+
+    monkeypatch.setattr(workflow_generation.app_config, "NOTEBOOKLM_HOME", str(tmp_path))
+    monkeypatch.setattr(workflow_generation.app_config, "NOTEBOOKLM_AUTH_PATH", "")
+    monkeypatch.setattr(workflow_generation.app_config, "NOTEBOOKLM_PROFILE", "default")
+    monkeypatch.setitem(sys.modules, "notebooklm", types.SimpleNamespace(NotebookLMClient=FakeNotebookLMClient))
+
+    client = asyncio.run(workflow_generation._create_notebooklm_client())
+
+    assert client is not None
+    assert str(captured.get("path")) == str(storage_path)
 
 
 def test_unit_creation_replaces_slug_title_with_first_meaningful_generated_heading(client, monkeypatch):
