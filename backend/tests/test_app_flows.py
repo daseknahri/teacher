@@ -899,6 +899,67 @@ def test_workflow_auto_plan_unit_dry_run_preview_does_not_create_data(client):
     assert len(calendar_resp.json()) == 0
 
 
+def test_workspace_load_survives_corrupted_checklist_cycle(client):
+    from app.database import SessionLocal
+    from app.models import WorkflowChecklistItem
+
+    owner_headers = _auth_headers(client)
+    _, teacher_headers = _create_teacher_and_login(client, owner_headers)
+
+    class_resp = client.post(
+        "/classes",
+        headers=teacher_headers,
+        json={"name": "APIC 2", "subject": "Math", "level": "2"},
+    )
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    source_pdf = _build_pdf_file(
+        [
+            "Chapitre 1 : Nombres rationnels",
+            "1. Definition d'un nombre rationnel",
+            "2. Exemples et applications",
+        ]
+    )
+    start_unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=teacher_headers,
+        data={"unit_type": "chapter", "title": "Chapitre 1"},
+        files={"file": ("chapter.pdf", source_pdf, "application/pdf")},
+    )
+    assert start_unit_resp.status_code == 201
+    unit_id = int(start_unit_resp.json()["id"])
+
+    workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=teacher_headers)
+    assert workspace_resp.status_code == 200
+    root_id = int(workspace_resp.json()["active_unit"]["checklist"][0]["id"])
+
+    add_item_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/items",
+        headers=teacher_headers,
+        json={"title": "1.1 Exemple guide", "item_kind": "example", "parent_item_id": root_id},
+    )
+    assert add_item_resp.status_code == 201
+    child_id = int(add_item_resp.json()["id"])
+
+    db = SessionLocal()
+    try:
+        row = db.get(WorkflowChecklistItem, child_id)
+        assert row is not None
+        row.parent_item_id = child_id
+        db.commit()
+    finally:
+        db.close()
+
+    repaired_workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=teacher_headers)
+    assert repaired_workspace_resp.status_code == 200
+    payload = repaired_workspace_resp.json()
+    assert payload["active_unit"] is not None
+    assert payload["active_unit"]["id"] == unit_id
+    assert payload["active_unit"]["checklist"]
+    assert int(payload["active_unit"]["checklist"][0]["id"]) == root_id
+
+
 def test_workflow_auto_plan_new_unit_dry_run_respects_active_unit_conflict(client):
     headers = _auth_headers(client)
     class_name = f"AUTO-PLAN-CONFLICT-{uuid.uuid4().hex[:6]}"

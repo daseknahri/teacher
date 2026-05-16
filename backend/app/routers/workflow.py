@@ -4,6 +4,7 @@ from io import BytesIO
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 import json
+import logging
 import re
 import uuid
 
@@ -140,6 +141,7 @@ router = APIRouter(prefix="/workflow", tags=["workflow"], dependencies=[Depends(
 NON_WORKING_WEEKDAYS: set[int] = {7}  # Sunday
 NUMBERED_ROW_START_PATTERN = re.compile(r"(?<!\S)\d+(?:\.\d+)+(?:[)\].:-])?(?:\s+|$)")
 SLUG_LIKE_TITLE_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+){2,}$", re.IGNORECASE)
+logger = logging.getLogger("teacher_progress.workflow")
 
 
 def _utc_now_naive() -> datetime:
@@ -336,27 +338,151 @@ def _build_reorder_maps(
 
 def _serialize_checklist(items: list[WorkflowChecklistItem]) -> list[WorkflowChecklistItemOut]:
     by_parent: dict[int | None, list[WorkflowChecklistItem]] = {}
+    item_ids: set[int] = set()
     for item in items:
-        by_parent.setdefault(item.parent_item_id, []).append(item)
+        item_id = _safe_int(item.id, default=0)
+        if item_id > 0:
+            item_ids.add(item_id)
+        parent_item_id = _safe_optional_int(item.parent_item_id)
+        by_parent.setdefault(parent_item_id, []).append(item)
     for rows in by_parent.values():
-        rows.sort(key=lambda value: value.position)
+        rows.sort(key=lambda value: (_safe_int(value.position, default=0), _safe_int(value.id, default=0)))
 
-    def to_node(row: WorkflowChecklistItem) -> WorkflowChecklistItemOut:
+    root_rows: list[WorkflowChecklistItem] = list(by_parent.get(None, []))
+    seen_root_ids = {_safe_int(row.id, default=0) for row in root_rows}
+    for row in items:
+        row_id = _safe_int(row.id, default=0)
+        parent_item_id = _safe_optional_int(row.parent_item_id)
+        if row_id <= 0 or row_id in seen_root_ids:
+            continue
+        if parent_item_id is not None and parent_item_id not in item_ids:
+            root_rows.append(row)
+            seen_root_ids.add(row_id)
+    root_rows.sort(key=lambda value: (_safe_int(value.position, default=0), _safe_int(value.id, default=0)))
+
+    def to_node(row: WorkflowChecklistItem, lineage: set[int] | None = None) -> WorkflowChecklistItemOut:
+        row_id = _safe_int(row.id, default=0)
+        row_lineage = set(lineage or set())
+        if row_id > 0 and row_id in row_lineage:
+            logger.warning(
+                "workflow.checklist_cycle_detected",
+                extra={"item_id": row_id, "unit_id": _safe_int(row.unit_id, default=0)},
+            )
+            child_nodes: list[WorkflowChecklistItemOut] = []
+        else:
+            next_lineage = set(row_lineage)
+            if row_id > 0:
+                next_lineage.add(row_id)
+            child_nodes = [to_node(child, next_lineage) for child in by_parent.get(row.id, [])]
+
         return WorkflowChecklistItemOut(
-            id=row.id,
-            unit_id=row.unit_id,
-            parent_item_id=row.parent_item_id,
-            item_kind=row.item_kind,
-            title=row.title,
-            position=row.position,
-            depth=row.depth,
-            is_completed=row.is_completed,
-            completed_session_id=row.completed_session_id,
+            id=_safe_int(row.id, default=0),
+            unit_id=_safe_int(row.unit_id, default=0),
+            parent_item_id=_safe_optional_int(row.parent_item_id),
+            item_kind=_safe_checklist_kind(row.item_kind),
+            title=_normalize_workflow_title(row.title, fallback="Checklist item"),
+            position=_safe_int(row.position, default=0),
+            depth=max(0, _safe_int(row.depth, default=0)),
+            is_completed=bool(row.is_completed),
+            completed_session_id=_safe_optional_int(row.completed_session_id),
             completed_at=row.completed_at,
-            children=[to_node(child) for child in by_parent.get(row.id, [])],
+            children=child_nodes,
         )
 
-    return [to_node(root) for root in by_parent.get(None, [])]
+    return [to_node(root) for root in root_rows]
+
+
+def _safe_int(value, *, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_optional_int(value) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_workflow_title(value, *, fallback: str) -> str:
+    normalized = " ".join(str(value or "").split()).strip()
+    return normalized or fallback
+
+
+def _safe_checklist_kind(value) -> WorkflowChecklistItemKind:
+    if isinstance(value, WorkflowChecklistItemKind):
+        return value
+    normalized = str(value or "").strip().lower()
+    try:
+        return WorkflowChecklistItemKind(normalized)
+    except ValueError:
+        return WorkflowChecklistItemKind.OTHER
+
+
+def _safe_serialize_unit(db: Session, unit: WorkflowUnit, *, class_id: int) -> WorkflowUnitOut | None:
+    try:
+        return _serialize_unit(db, unit)
+    except Exception:
+        logger.exception(
+            "workflow.serialize_unit_failed",
+            extra={"class_id": int(class_id), "unit_id": _safe_int(getattr(unit, "id", 0), default=0)},
+        )
+        try:
+            return WorkflowUnitOut(
+                id=_safe_int(getattr(unit, "id", 0), default=0),
+                class_id=_safe_int(getattr(unit, "class_id", class_id), default=int(class_id)),
+                unit_type=getattr(unit, "unit_type", WorkflowUnitType.CHAPTER),
+                status=getattr(unit, "status", WorkflowUnitStatus.ACTIVE),
+                title=_normalize_workflow_title(getattr(unit, "title", None), fallback="Untitled unit"),
+                planned_hours=getattr(unit, "planned_hours", None),
+                document_name=getattr(unit, "document_name", None),
+                created_at=getattr(unit, "created_at", _utc_now_naive()),
+                closed_at=getattr(unit, "closed_at", None),
+                progress_total=0,
+                progress_done=0,
+                checklist=[],
+            )
+        except Exception:
+            logger.exception(
+                "workflow.serialize_unit_fallback_failed",
+                extra={"class_id": int(class_id), "unit_id": _safe_int(getattr(unit, "id", 0), default=0)},
+            )
+            return None
+
+
+def _safe_serialize_session(db: Session, session: ClassSession, *, class_id: int) -> WorkflowSessionOut | None:
+    try:
+        return _serialize_session(db, session)
+    except Exception:
+        logger.exception(
+            "workflow.serialize_session_failed",
+            extra={"class_id": int(class_id), "session_id": _safe_int(getattr(session, "id", 0), default=0)},
+        )
+        try:
+            return WorkflowSessionOut(
+                id=_safe_int(getattr(session, "id", 0), default=0),
+                class_id=_safe_int(getattr(session, "class_id", class_id), default=int(class_id)),
+                unit_id=_safe_optional_int(getattr(session, "unit_id", None)),
+                unit_session_number=_safe_optional_int(getattr(session, "unit_session_number", None)),
+                session_date=getattr(session, "session_date", date.today()),
+                start_time=getattr(session, "start_time", None),
+                end_time=getattr(session, "end_time", None),
+                note=getattr(session, "note", None),
+                absent_count=0,
+                absent_student_ids=[],
+                checked_items_count=0,
+                has_saved_writeup=False,
+            )
+        except Exception:
+            logger.exception(
+                "workflow.serialize_session_fallback_failed",
+                extra={"class_id": int(class_id), "session_id": _safe_int(getattr(session, "id", 0), default=0)},
+            )
+            return None
 
 
 def _serialize_unit(db: Session, unit: WorkflowUnit) -> WorkflowUnitOut:
@@ -2306,33 +2432,50 @@ def get_class_workflow(
     current_user: User = Depends(get_current_user),
 ) -> WorkflowWorkspaceOut:
     _ = ensure_class_access(db, class_id, current_user)
-    units = db.scalars(
-        select(WorkflowUnit).where(WorkflowUnit.class_id == class_id).order_by(WorkflowUnit.order_index.desc(), WorkflowUnit.id.desc())
-    ).all()
+    try:
+        units = db.scalars(
+            select(WorkflowUnit).where(WorkflowUnit.class_id == class_id).order_by(WorkflowUnit.order_index.desc(), WorkflowUnit.id.desc())
+        ).all()
+    except Exception:
+        logger.exception("workflow.workspace_units_query_failed", extra={"class_id": int(class_id)})
+        units = []
     active_unit = next((unit for unit in units if unit.status == WorkflowUnitStatus.ACTIVE), None)
     closed_units = [unit for unit in units if unit.status == WorkflowUnitStatus.CLOSED]
 
-    active_session = db.scalar(
-        select(ClassSession)
-        .where(
-            ClassSession.class_id == class_id,
-            ClassSession.unit_id.is_not(None),
-            ClassSession.end_time.is_(None),
+    try:
+        active_session = db.scalar(
+            select(ClassSession)
+            .where(
+                ClassSession.class_id == class_id,
+                ClassSession.unit_id.is_not(None),
+                ClassSession.end_time.is_(None),
+            )
+            .order_by(ClassSession.id.desc())
         )
-        .order_by(ClassSession.id.desc())
-    )
-    recent_sessions = db.scalars(
-        select(ClassSession)
-        .where(ClassSession.class_id == class_id, ClassSession.unit_id.is_not(None))
-        .order_by(ClassSession.session_date.desc(), ClassSession.id.desc())
-        .limit(20)
-    ).all()
+    except Exception:
+        logger.exception("workflow.workspace_active_session_query_failed", extra={"class_id": int(class_id)})
+        active_session = None
+    try:
+        recent_sessions = db.scalars(
+            select(ClassSession)
+            .where(ClassSession.class_id == class_id, ClassSession.unit_id.is_not(None))
+            .order_by(ClassSession.session_date.desc(), ClassSession.id.desc())
+            .limit(20)
+        ).all()
+    except Exception:
+        logger.exception("workflow.workspace_recent_sessions_query_failed", extra={"class_id": int(class_id)})
+        recent_sessions = []
+
+    active_unit_payload = _safe_serialize_unit(db, active_unit, class_id=class_id) if active_unit else None
+    closed_units_payload = [row for row in (_safe_serialize_unit(db, unit, class_id=class_id) for unit in closed_units) if row is not None]
+    active_session_payload = _safe_serialize_session(db, active_session, class_id=class_id) if active_session else None
+    recent_sessions_payload = [row for row in (_safe_serialize_session(db, session, class_id=class_id) for session in recent_sessions) if row is not None]
     return WorkflowWorkspaceOut(
         class_id=class_id,
-        active_unit=_serialize_unit(db, active_unit) if active_unit else None,
-        closed_units=[_serialize_unit(db, unit) for unit in closed_units],
-        active_session=_serialize_session(db, active_session) if active_session else None,
-        recent_sessions=[_serialize_session(db, session) for session in recent_sessions],
+        active_unit=active_unit_payload,
+        closed_units=closed_units_payload,
+        active_session=active_session_payload,
+        recent_sessions=recent_sessions_payload,
     )
 
 
@@ -2347,16 +2490,20 @@ def list_unit_sessions(
         raise HTTPException(status_code=404, detail="Unit not found.")
     _ = ensure_class_access(db, unit.class_id, current_user)
 
-    sessions = db.scalars(
-        select(ClassSession)
-        .where(ClassSession.unit_id == unit.id)
-        .order_by(
-            ClassSession.session_date.asc(),
-            ClassSession.start_time.asc().nulls_last(),
-            ClassSession.id.asc(),
-        )
-    ).all()
-    return [_serialize_session(db, session) for session in sessions]
+    try:
+        sessions = db.scalars(
+            select(ClassSession)
+            .where(ClassSession.unit_id == unit.id)
+            .order_by(
+                ClassSession.session_date.asc(),
+                ClassSession.start_time.asc().nulls_last(),
+                ClassSession.id.asc(),
+            )
+        ).all()
+    except Exception:
+        logger.exception("workflow.unit_sessions_query_failed", extra={"class_id": int(unit.class_id), "unit_id": int(unit.id)})
+        sessions = []
+    return [row for row in (_safe_serialize_session(db, session, class_id=unit.class_id) for session in sessions) if row is not None]
 
 
 @router.get("/holidays", response_model=list[HolidayDayOut])

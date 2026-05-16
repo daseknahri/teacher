@@ -579,6 +579,16 @@ export async function renderWorkflowView() {
     _render(el, classId);
   } catch (err) {
     console.warn('Workspace load failed', err);
+    const fallbackMessage = 'Unable to load workflow data right now. Retry after checking API connection.';
+    let detailMessage = fallbackMessage;
+    const rawMessage = typeof err?.message === 'string' ? err.message.trim() : '';
+    if (err?.status === 403) {
+      detailMessage = 'You do not have access to this class workflow yet. Ask the owner to confirm class assignment.';
+    } else if (err?.status === 404) {
+      detailMessage = 'This class workflow is not available yet. Start by creating or assigning a unit.';
+    } else if (rawMessage && !/^HTTP\s+\d+$/i.test(rawMessage)) {
+      detailMessage = `Workflow data could not be loaded: ${rawMessage}`;
+    }
     setWorkspace({
       active_unit: null,
       closed_units: [],
@@ -587,11 +597,11 @@ export async function renderWorkflowView() {
     });
     mountRetryCard(el, {
       title: 'Workflow Unavailable',
-      message: 'Unable to load workflow data right now. Retry after checking API connection.',
+      message: detailMessage,
       buttonId: 'btn-retry-workflow-load',
       onRetry: () => renderWorkflowView(),
     });
-    showToast('Failed to load workflow.', 'error');
+    showToast(detailMessage, 'error');
     return;
   }
 }
