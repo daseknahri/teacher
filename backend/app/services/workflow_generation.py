@@ -127,6 +127,36 @@ def notebooklm_provider_ready() -> bool:
     return isinstance(cookies, list) and isinstance(origins, list)
 
 
+NOTEBOOKLM_NO_CONTEXT_PATTERNS: tuple[str, ...] = (
+    "couldn't find enough context",
+    "could not find enough context",
+    "not enough context",
+    "not enough information",
+    "insufficient context",
+    "try giving me more specific keywords",
+)
+
+
+def _looks_like_notebooklm_no_context(answer: str | None) -> bool:
+    text = str(answer or "").strip().lower()
+    if not text:
+        return True
+    return any(pattern in text for pattern in NOTEBOOKLM_NO_CONTEXT_PATTERNS)
+
+
+async def _ask_notebooklm_with_source_retry(*, opened, notebook_id: str, prompt: str, source_ids: list[str] | None, retries: int = 3) -> Any:
+    last_result = None
+    for attempt in range(max(1, int(retries))):
+        result = await opened.chat.ask(notebook_id, prompt, source_ids=source_ids or None)
+        last_result = result
+        answer = str(getattr(result, "answer", "") or "").strip()
+        if not _looks_like_notebooklm_no_context(answer):
+            return result
+        if attempt + 1 < max(1, int(retries)):
+            await asyncio.sleep(2.0)
+    return last_result
+
+
 def notebooklm_smoke_test() -> dict[str, Any]:
     try:
         return asyncio.run(_notebooklm_smoke_test_async())
@@ -165,14 +195,20 @@ async def _notebooklm_smoke_test_async() -> dict[str, Any]:
             source = await opened.sources.add_text(
                 notebook_id,
                 "Smoke Test Source",
-                "Chapitre 1\nActivite 1\nExercice 1",
+                "Code source unique: KAPPA-372\nChapitre 1\nActivite 1\nExercice 1",
                 wait=True,
                 wait_timeout=120.0,
             )
             source_id = str(getattr(source, "id", "") or "").strip()
             if source_id:
                 source_ids = [source_id]
-            result = await opened.chat.ask(notebook_id, "Reponds exactement OK", source_ids=source_ids or None)
+            result = await _ask_notebooklm_with_source_retry(
+                opened=opened,
+                notebook_id=notebook_id,
+                prompt="Quel est le code source unique ? Reponds exactement KAPPA-372",
+                source_ids=source_ids,
+                retries=3,
+            )
             raw_answer = str(getattr(result, "answer", "") or "").strip()
             await opened.notebooks.delete(notebook_id)
     except Exception as exc:
@@ -187,10 +223,10 @@ async def _notebooklm_smoke_test_async() -> dict[str, Any]:
         }
 
     return {
-        "ok": raw_answer.upper() == "OK",
+        "ok": "KAPPA-372" in raw_answer.upper(),
         "provider": "notebooklm",
         "model": "notebooklm-py",
-        "error_message": None if raw_answer.upper() == "OK" else "notebooklm_smoke_unexpected_answer",
+        "error_message": None if "KAPPA-372" in raw_answer.upper() else "notebooklm_smoke_unexpected_answer",
         "answer": raw_answer,
         "notebook_id": notebook_id or None,
         "source_ids": source_ids,
@@ -717,7 +753,13 @@ async def _notebooklm_generate_checklist_async(
 
             candidate_rows: list[dict[str, Any]] = []
             for variant_name, prompt in prompt_variants:
-                result = await opened.chat.ask(notebook_id, prompt, source_ids=source_ids or None)
+                result = await _ask_notebooklm_with_source_retry(
+                    opened=opened,
+                    notebook_id=notebook_id,
+                    prompt=prompt,
+                    source_ids=source_ids,
+                    retries=3,
+                )
                 answer = str(getattr(result, "answer", "") or "").strip()
                 outline_items = _parse_notebooklm_outline_response(
                     answer,
@@ -894,7 +936,13 @@ async def _notebooklm_generate_session_writeup_async(
                 checked_item_titles=checked_item_titles,
                 note_text=note_text,
             )
-            result = await opened.chat.ask(notebook_id, prompt, source_ids=source_ids or None)
+            result = await _ask_notebooklm_with_source_retry(
+                opened=opened,
+                notebook_id=notebook_id,
+                prompt=prompt,
+                source_ids=source_ids,
+                retries=3,
+            )
             answer = str(getattr(result, "answer", "") or "").strip()
             parsed = _json_object_from_text(answer)
             raw_result = {
