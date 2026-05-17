@@ -107,6 +107,7 @@ Excel formats supported:
 - `docs/roadmap/APP-FUNCTIONALITY-WORKFLOWS.md` module-by-module functionality and workflows
 - `docs/roadmap/FUTURE-TODO.md` prioritized next backlog + ready-to-test checklist
 - `docs/roadmap/PROD-ENV-CHECKLIST.md` production env and secret rotation checklist
+- `docs/roadmap/INTEGRATION-AUTH-PATTERNS.md` reusable guide for choosing between API, OAuth, restored-session, and browser-automation integrations
 - `docs/deployment/COOLIFY_APP_SETUP.md` exact Coolify deployment steps for this repo/domain
 - `docs/deployment/COOLIFY_NOTEBOOKLM.md` NotebookLM persistence and auth upload flow
 - `backend/README.md` backend setup and full endpoint list
