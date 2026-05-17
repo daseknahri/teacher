@@ -669,6 +669,7 @@ class WorkflowUnitBlueprintOut(BaseModel):
     document_hash: str | None = None
     source_text_excerpt: str | None = None
     blueprint_json: dict
+    unit_map_json: dict | None = None
     raw_provider_response: dict | None = None
     error_message: str | None = None
     reviewed: bool = False

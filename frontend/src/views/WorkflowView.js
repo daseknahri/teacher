@@ -312,6 +312,7 @@ function _openUnitBlueprintModal(unit, blueprint) {
   const reviewed = blueprint?.reviewed !== false;
   const reviewedAt = blueprint?.reviewed_at || unit?.extraction_reviewed_at || null;
   const blueprintJson = blueprint?.blueprint_json && typeof blueprint.blueprint_json === 'object' ? blueprint.blueprint_json : {};
+  const unitMap = blueprint?.unit_map_json && typeof blueprint.unit_map_json === 'object' ? blueprint.unit_map_json : {};
   const rawPackage = blueprint?.raw_provider_response && typeof blueprint.raw_provider_response === 'object'
     ? blueprint.raw_provider_response
     : {};
@@ -325,6 +326,19 @@ function _openUnitBlueprintModal(unit, blueprint) {
   const selectedVariant = String(rawProviderPayload?.selected_variant || '').trim();
   const responseMode = String(rawProviderPayload?.response_mode || '').trim();
   const sourceIds = Array.isArray(providerContext?.source_ids) ? providerContext.source_ids : [];
+  const unitMapOutline = Array.isArray(unitMap?.ordered_outline) ? unitMap.ordered_outline : [];
+  const renderMapList = (title, rows) => {
+    const values = Array.isArray(rows) ? rows.filter(Boolean) : [];
+    if (!values.length) return '';
+    return `
+      <div>
+        <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">${_escapeHtml(title)}</p>
+        <ul class="list-disc pl-5 text-[12px] text-slate-700 space-y-1">
+          ${values.map(value => `<li>${_escapeHtml(String(value || ''))}</li>`).join('')}
+        </ul>
+      </div>
+    `;
+  };
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -355,6 +369,38 @@ function _openUnitBlueprintModal(unit, blueprint) {
           <p class="text-[12px] text-slate-600"><span class="font-semibold">Reviewed at:</span> ${_escapeHtml(reviewedAt ? fmtDateTime(reviewedAt) : '-')}</p>
           ${responseMode ? `<p class="text-[12px] text-slate-600"><span class="font-semibold">Response mode:</span> ${_escapeHtml(responseMode)}</p>` : ''}
           ${selectedVariant ? `<p class="text-[12px] text-slate-600"><span class="font-semibold">Selected variant:</span> ${_escapeHtml(selectedVariant)}</p>` : ''}
+        </div>
+
+        <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+          <h3 class="text-[14px] font-semibold text-slate-800 mb-2">Unit map</h3>
+          <p class="text-[12px] text-slate-500 mb-3">This is the saved unit understanding layer we can reuse later for checklist quality, teacher help, and future materials.</p>
+          <div class="grid gap-4 md:grid-cols-2">
+            <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+              <p class="text-[12px] text-slate-600"><span class="font-semibold">Unit title:</span> ${_escapeHtml(String(unitMap?.unit_title || blueprintJson?.unit_title || unit?.title || '-'))}</p>
+              <p class="text-[12px] text-slate-600"><span class="font-semibold">Source mode:</span> ${_escapeHtml(String(unitMap?.source_mode || '-'))}</p>
+              <p class="text-[12px] text-slate-600"><span class="font-semibold">Future actions:</span> ${Array.isArray(unitMap?.future_actions) && unitMap.future_actions.length ? _escapeHtml(unitMap.future_actions.join(', ')) : '-'}</p>
+            </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 space-y-3">
+              ${renderMapList('Teaching goals', unitMap?.teaching_goals)}
+              ${renderMapList('Prerequisites', unitMap?.prerequisites)}
+              ${renderMapList('Teacher resources', unitMap?.teacher_resources)}
+              ${renderMapList('Activity blocks', unitMap?.activity_blocks)}
+              ${renderMapList('Assessment blocks', unitMap?.assessment_blocks)}
+              ${renderMapList('Pedagogy notes', unitMap?.pedagogy_notes)}
+              ${(!Array.isArray(unitMap?.teaching_goals) || !unitMap.teaching_goals.length)
+                && (!Array.isArray(unitMap?.prerequisites) || !unitMap.prerequisites.length)
+                && (!Array.isArray(unitMap?.teacher_resources) || !unitMap.teacher_resources.length)
+                && (!Array.isArray(unitMap?.activity_blocks) || !unitMap.activity_blocks.length)
+                && (!Array.isArray(unitMap?.assessment_blocks) || !unitMap.assessment_blocks.length)
+                && (!Array.isArray(unitMap?.pedagogy_notes) || !unitMap.pedagogy_notes.length)
+                ? '<p class="text-[12px] text-slate-500">No structured unit map details were saved for this unit yet.</p>'
+                : ''}
+            </div>
+          </div>
+          <div class="mt-4">
+            <h4 class="text-[13px] font-semibold text-slate-800 mb-2">Ordered unit outline</h4>
+            ${unitMapOutline.length ? _renderBlueprintTree(unitMapOutline) : '<p class="text-[12px] text-slate-500">No ordered outline was saved in the unit map.</p>'}
+          </div>
         </div>
 
         <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">

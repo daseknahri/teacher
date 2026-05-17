@@ -1554,6 +1554,11 @@ def test_workflow_unit_start_persists_blueprint(client):
     assert blueprint["blueprint_json"]["unit_title"] == "Factorisation"
     assert isinstance(blueprint["blueprint_json"]["items"], list)
     assert len(blueprint["blueprint_json"]["items"]) >= 1
+    assert isinstance(blueprint["unit_map_json"], dict)
+    assert blueprint["unit_map_json"]["unit_title"] == "Factorisation"
+    assert blueprint["unit_map_json"]["unit_type"] == "chapter"
+    assert isinstance(blueprint["unit_map_json"]["ordered_outline"], list)
+    assert "ask_unit" in blueprint["unit_map_json"]["future_actions"]
 
     unit_payload = unit_resp.json()
     assert unit_payload["extraction_reviewed"] is False
@@ -1740,6 +1745,35 @@ def test_workflow_unit_reextract_updates_checklist_and_blueprint(client, monkeyp
                 "source_ids": ["src-rerun-1"],
                 "notebook_title": "Teacher Progress - Les nombres rationnels",
             },
+            "unit_map": {
+                "unit_title": "Les nombres rationnels : Somme et difference",
+                "unit_type": "chapter",
+                "source_mode": "notebooklm-unit-map",
+                "teaching_goals": ["Identifier la progression de l'unite"],
+                "prerequisites": [],
+                "teacher_resources": [],
+                "activity_blocks": ["Activites"],
+                "assessment_blocks": ["Evaluation"],
+                "pedagogy_notes": ["Commencer par les activites avant la lecon."],
+                "ordered_outline": [
+                    {
+                        "title": "Les nombres rationnels : Somme et difference",
+                        "kind": "chapter",
+                        "children": [
+                            {"title": "Activites", "kind": "section", "children": []},
+                            {
+                                "title": "Contenu de la lecon",
+                                "kind": "section",
+                                "children": [
+                                    {"title": "I- Addition", "kind": "subsection", "children": []},
+                                    {"title": "Evaluation", "kind": "exercise", "children": []},
+                                ],
+                            },
+                        ],
+                    }
+                ],
+                "future_actions": ["checklist", "session_writeup", "ask_unit", "slide_outline"],
+            },
             "raw_provider_response": {
                 "responses": [
                     {
@@ -1788,6 +1822,8 @@ def test_workflow_unit_reextract_updates_checklist_and_blueprint(client, monkeyp
     assert blueprint["provider"] == "notebooklm"
     assert blueprint["model"] == "notebooklm-py"
     assert blueprint["blueprint_json"]["provider_context"]["notebook_id"] == "nb-rerun-1"
+    assert blueprint["unit_map_json"]["source_mode"] == "notebooklm-unit-map"
+    assert blueprint["unit_map_json"]["activity_blocks"] == ["Activites"]
     assert blueprint["raw_provider_response"]["raw_provider_response"]["responses"][0]["prompt"] == "Extract the pedagogical outline only."
 
 

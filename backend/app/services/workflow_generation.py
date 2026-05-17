@@ -482,6 +482,7 @@ def generate_unit_checklist_package(
         default="fallback",
     )
     items: list[dict[str, Any]] | None = None
+    unit_map: dict[str, Any] | None = None
     raw_provider_response: dict[str, Any] | None = None
     error_message: str | None = None
     actual_provider = requested_provider
@@ -549,12 +550,20 @@ def generate_unit_checklist_package(
                 items = _apply_session_numbers(items, session_count=session_count)
                 if unit_type in {WorkflowUnitType.CHAPTER, WorkflowUnitType.EXERCISE_SERIES}:
                     items = _ensure_session_coverage_with_exercises(items, session_count=session_count)
+                unit_map = _normalize_unit_map_payload(
+                    raw_provider_response.get("unit_map") if isinstance(raw_provider_response, dict) else None,
+                    fallback_outline=items,
+                    unit_title=title,
+                    unit_type=unit_type,
+                    source_mode="notebooklm-unit-map",
+                )
                 return {
                     "source": actual_provider,
                     "requested_provider": requested_provider,
                     "model": model,
                     "status": "ready",
                     "items": items,
+                    "unit_map": unit_map,
                     "raw_provider_response": raw_provider_response,
                     "error_message": error_message,
                     "provider_context": provider_context,
@@ -609,6 +618,22 @@ def generate_unit_checklist_package(
     items = _apply_session_numbers(items, session_count=session_count)
     if unit_type in {WorkflowUnitType.CHAPTER, WorkflowUnitType.EXERCISE_SERIES}:
         items = _ensure_session_coverage_with_exercises(items, session_count=session_count)
+    if actual_provider != "notebooklm":
+        unit_map = _normalize_unit_map_payload(
+            None,
+            fallback_outline=items,
+            unit_title=title,
+            unit_type=unit_type,
+            source_mode=f"{actual_provider}-derived",
+        )
+    elif unit_map is None:
+        unit_map = _normalize_unit_map_payload(
+            None,
+            fallback_outline=items,
+            unit_title=title,
+            unit_type=unit_type,
+            source_mode=f"{actual_provider}-derived",
+        )
 
     return {
         "source": actual_provider,
@@ -616,6 +641,7 @@ def generate_unit_checklist_package(
         "model": model,
         "status": status,
         "items": items,
+        "unit_map": unit_map,
         "raw_provider_response": raw_provider_response,
         "error_message": error_message,
         "provider_context": provider_context,
@@ -939,6 +965,7 @@ async def _notebooklm_generate_checklist_async(
     notebook_id = ""
     notebook_title = f"{app_config.NOTEBOOKLM_NOTEBOOK_PREFIX}{title or 'Unit'}".strip()
     raw_result: dict[str, Any] | None = None
+    unit_map_payload: dict[str, Any] | None = None
     try:
         async with client as opened:
             notebook = await opened.notebooks.create(notebook_title)
@@ -949,6 +976,25 @@ async def _notebooklm_generate_checklist_async(
                 unit_title=title,
                 source_text=source_text,
                 document_path=document_path,
+            )
+            unit_map_prompt = _build_notebooklm_unit_map_prompt(
+                unit_type=unit_type,
+                title=title,
+            )
+            unit_map_result = await _ask_notebooklm_with_source_retry(
+                opened=opened,
+                notebook_id=notebook_id,
+                prompt=unit_map_prompt,
+                source_ids=source_ids,
+                retries=3,
+            )
+            unit_map_answer = str(getattr(unit_map_result, "answer", "") or "").strip()
+            unit_map_payload = _normalize_unit_map_payload(
+                _json_object_from_text(unit_map_answer),
+                fallback_outline=None,
+                unit_title=title,
+                unit_type=unit_type,
+                source_mode="notebooklm-unit-map",
             )
             prompt_variants = [
                 (
@@ -992,7 +1038,15 @@ async def _notebooklm_generate_checklist_async(
             raw_result = {
                 "notebook_id": notebook_id,
                 "source_ids": source_ids,
+                "unit_map": unit_map_payload,
                 "responses": [
+                    {
+                        "variant": "unit_map",
+                        "prompt": unit_map_prompt,
+                        "answer": unit_map_answer,
+                        "conversation_id": str(getattr(unit_map_result, "conversation_id", "") or "").strip() or None,
+                    },
+                ] + [
                     {
                         "variant": row["variant"],
                         "prompt": row["prompt"],
@@ -1032,6 +1086,15 @@ async def _notebooklm_generate_checklist_async(
         if isinstance(raw_result, dict):
             raw_result["selected_variant"] = selected_variant
     if outline_items:
+        unit_map_payload = _normalize_unit_map_payload(
+            unit_map_payload,
+            fallback_outline=outline_items,
+            unit_title=title,
+            unit_type=unit_type,
+            source_mode="notebooklm-unit-map",
+        )
+        if isinstance(raw_result, dict):
+            raw_result["unit_map"] = unit_map_payload
         if isinstance(raw_result, dict):
             raw_result["response_mode"] = "outline"
         return outline_items, provider_context, raw_result, None
@@ -1051,6 +1114,13 @@ async def _notebooklm_generate_checklist_async(
 
     sanitized = _sanitize_items(items)
     if isinstance(raw_result, dict):
+        raw_result["unit_map"] = _normalize_unit_map_payload(
+            unit_map_payload,
+            fallback_outline=sanitized,
+            unit_title=title,
+            unit_type=unit_type,
+            source_mode="notebooklm-unit-map",
+        )
         raw_result["response_mode"] = "json"
     if not sanitized:
         return None, provider_context, raw_result, "notebooklm_empty_items"
@@ -1361,6 +1431,40 @@ def _build_notebooklm_checklist_review_prompt() -> str:
     )
 
 
+def _build_notebooklm_unit_map_prompt(
+    *,
+    unit_type: WorkflowUnitType,
+    title: str,
+) -> str:
+    return "\n".join(
+        [
+            "Lis ce PDF comme une unite pedagogique complete.",
+            "Retourne uniquement un JSON strict avec les cles suivantes:",
+            "{",
+            '  "unit_title": "titre de l\'unite",',
+            '  "teaching_goals": ["objectif 1", "objectif 2"],',
+            '  "prerequisites": ["prerequis 1"],',
+            '  "teacher_resources": ["outil ou support 1"],',
+            '  "activity_blocks": ["activite 1", "activite 2"],',
+            '  "assessment_blocks": ["evaluation 1"],',
+            '  "pedagogy_notes": ["note pedagogique 1"],',
+            '  "ordered_outline": [{"title": "...", "kind": "...", "children": [...]}]',
+            "}",
+            "Contraintes:",
+            "- ordered_outline doit garder uniquement les titres et sous-titres pedagogiques, dans l'ordre du document.",
+            "- Garde le titre du chapitre comme racine si visible.",
+            "- Inclure activites, definitions, proprietes, exemples, exercices et evaluation quand ils sont visibles.",
+            "- teaching_goals doit resumer les objectifs d'apprentissage visibles ou clairement implicites.",
+            "- prerequisites doit lister les prerequis visibles ou tres evidents.",
+            "- teacher_resources doit lister les outils didactiques ou supports visibles.",
+            "- pedagogy_notes doit rester court et utile pour un enseignant.",
+            "- Ne retourne aucun commentaire hors JSON.",
+            f"Type d'unite: {unit_type.value}",
+            f"Titre attendu: {title or 'Unite'}",
+        ]
+    )
+
+
 def _parse_notebooklm_outline_response(
     answer: str,
     *,
@@ -1398,6 +1502,149 @@ def _parse_notebooklm_outline_response(
         return None
     normalized = _normalize_notebooklm_outline_items(roots, unit_type=unit_type, unit_title=unit_title)
     return normalized or None
+
+
+def _normalize_unit_map_payload(
+    payload: dict[str, Any] | None,
+    *,
+    fallback_outline: list[dict[str, Any]] | None,
+    unit_title: str,
+    unit_type: WorkflowUnitType,
+    source_mode: str,
+) -> dict[str, Any]:
+    normalized_outline = _normalize_notebooklm_outline_items(
+        fallback_outline or (payload.get("ordered_outline") if isinstance(payload, dict) and isinstance(payload.get("ordered_outline"), list) else []),
+        unit_type=unit_type,
+        unit_title=unit_title,
+    )
+    if not normalized_outline:
+        normalized_outline = _normalize_notebooklm_outline_items(
+            _build_unit_map_outline_candidates(payload),
+            unit_type=unit_type,
+            unit_title=unit_title,
+        )
+
+    normalized = {
+        "unit_title": _normalize_outline_title((payload or {}).get("unit_title")) if isinstance(payload, dict) else "",
+        "unit_type": unit_type.value,
+        "source_mode": str(source_mode or "derived").strip() or "derived",
+        "teaching_goals": _normalize_string_list((payload or {}).get("teaching_goals") if isinstance(payload, dict) else None),
+        "prerequisites": _normalize_string_list((payload or {}).get("prerequisites") if isinstance(payload, dict) else None),
+        "teacher_resources": _normalize_string_list((payload or {}).get("teacher_resources") if isinstance(payload, dict) else None),
+        "activity_blocks": _normalize_string_list((payload or {}).get("activity_blocks") if isinstance(payload, dict) else None),
+        "assessment_blocks": _normalize_string_list((payload or {}).get("assessment_blocks") if isinstance(payload, dict) else None),
+        "pedagogy_notes": _normalize_string_list((payload or {}).get("pedagogy_notes") if isinstance(payload, dict) else None),
+        "ordered_outline": normalized_outline,
+        "future_actions": ["checklist", "session_writeup", "ask_unit", "slide_outline"],
+    }
+    normalized["unit_title"] = normalized["unit_title"] or _normalize_outline_title(unit_title) or "Unite"
+
+    if not normalized["teaching_goals"]:
+        normalized["teaching_goals"] = _extract_unit_map_section_titles(normalized_outline, keywords=("objectif",))
+    if not normalized["prerequisites"]:
+        normalized["prerequisites"] = _extract_unit_map_section_titles(normalized_outline, keywords=("prerequis",))
+    if not normalized["teacher_resources"]:
+        normalized["teacher_resources"] = _extract_unit_map_section_titles(normalized_outline, keywords=("outil", "support", "ressource"))
+    if not normalized["activity_blocks"]:
+        normalized["activity_blocks"] = _extract_unit_map_section_titles(normalized_outline, keywords=("activite",))
+    if not normalized["assessment_blocks"]:
+        normalized["assessment_blocks"] = _extract_unit_map_section_titles(normalized_outline, keywords=("evaluation", "exercice"))
+    if not normalized["pedagogy_notes"]:
+        normalized["pedagogy_notes"] = _build_default_pedagogy_notes(
+            normalized_outline,
+            activity_blocks=normalized["activity_blocks"],
+            assessment_blocks=normalized["assessment_blocks"],
+        )
+    return normalized
+
+
+def _build_unit_map_from_items(
+    items: list[dict[str, Any]] | None,
+    *,
+    unit_type: WorkflowUnitType,
+    unit_title: str,
+    source_mode: str,
+) -> dict[str, Any]:
+    return _normalize_unit_map_payload(
+        None,
+        fallback_outline=items,
+        unit_title=unit_title,
+        unit_type=unit_type,
+        source_mode=source_mode,
+    )
+
+
+def _build_unit_map_outline_candidates(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    raw_outline = payload.get("ordered_outline")
+    if isinstance(raw_outline, list):
+        candidates = _sanitize_items(raw_outline)
+        if candidates:
+            return candidates
+    ordered_titles = payload.get("ordered_titles")
+    if not isinstance(ordered_titles, list):
+        return []
+    candidates: list[dict[str, Any]] = []
+    for title in ordered_titles:
+        normalized = _normalize_outline_title(title)
+        if not normalized:
+            continue
+        candidates.append({"title": normalized, "kind": WorkflowChecklistItemKind.SECTION.value, "children": []})
+    return candidates
+
+
+def _normalize_string_list(values: Any, *, limit: int = 12) -> list[str]:
+    if isinstance(values, str):
+        values = [values]
+    if not isinstance(values, list):
+        return []
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = _normalize_outline_title(value)
+        if not text:
+            continue
+        key = _semantic_title_key(text)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        output.append(text)
+        if len(output) >= limit:
+            break
+    return output
+
+
+def _extract_unit_map_section_titles(items: list[dict[str, Any]], *, keywords: tuple[str, ...]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for node in _flatten_checklist_nodes(items):
+        title = _normalize_outline_title(node.get("title"))
+        folded = _fold_text_key(title)
+        if not title or not any(keyword in folded for keyword in keywords):
+            continue
+        key = _semantic_title_key(title)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        output.append(title)
+    return output
+
+
+def _build_default_pedagogy_notes(
+    items: list[dict[str, Any]],
+    *,
+    activity_blocks: list[str],
+    assessment_blocks: list[str],
+) -> list[str]:
+    notes: list[str] = []
+    if activity_blocks:
+        notes.append("L'unite s'appuie sur des activites progressives a exploiter en debut ou en cours de seance.")
+    if assessment_blocks:
+        notes.append("Prevoir un temps de verification des acquis a partir des exercices et rubriques d'evaluation visibles.")
+    if _extract_unit_map_section_titles(items, keywords=("propriete", "definition", "regle")):
+        notes.append("Les definitions, proprietes et regles doivent etre traitees avant les applications longues.")
+    return notes[:4]
 
 
 def _select_best_notebooklm_outline_candidate(

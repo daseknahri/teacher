@@ -367,6 +367,7 @@ class WorkflowUnitBlueprint(Base):
     document_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
     source_text_excerpt: Mapped[str | None] = mapped_column(Text, nullable=True)
     blueprint_json: Mapped[dict] = mapped_column(JSON)
+    unit_map_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     raw_provider_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     reviewed: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
