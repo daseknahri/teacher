@@ -2444,6 +2444,77 @@ def test_generate_unit_checklist_package_trusts_notebooklm_outline_without_opena
     assert titles[0].startswith("Chapitre 5")
     assert any(title.startswith("5.1") for title in titles)
     assert any(title == "Exemples" for title in titles)
+    assert package["unit_map"]["selected_outline_source"] in {"outline_response", "unit_map"}
+
+
+def test_generate_unit_checklist_package_aligns_checklist_with_stronger_unit_map_outline(monkeypatch):
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    outline_items = [
+        {
+            "title": "Les nombres rationnels : Somme et difference",
+            "kind": "chapter",
+            "children": [
+                {"title": "Activites", "kind": "section", "children": []},
+                {"title": "Contenu de la lecon", "kind": "section", "children": []},
+            ],
+        }
+    ]
+    stronger_unit_map = {
+        "unit_title": "Les nombres rationnels : Somme et difference",
+        "ordered_outline": [
+            {
+                "title": "Les nombres rationnels : Somme et difference",
+                "kind": "chapter",
+                "children": [
+                    {"title": "Objectifs d'apprentissage", "kind": "section", "children": []},
+                    {"title": "Activites", "kind": "section", "children": []},
+                    {
+                        "title": "Contenu de la lecon",
+                        "kind": "section",
+                        "children": [
+                            {"title": "I- Addition", "kind": "subsection", "children": []},
+                        ],
+                    },
+                    {"title": "Evaluation", "kind": "section", "children": []},
+                ],
+            }
+        ],
+        "teaching_goals": ["Comprendre la progression de l'unite"],
+    }
+
+    monkeypatch.setattr(workflow_generation.app_config, "OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        workflow_generation,
+        "_notebooklm_generate_checklist",
+        lambda **kwargs: (
+            outline_items,
+            {"provider": "notebooklm"},
+            {"response_mode": "outline", "unit_map": stronger_unit_map, "responses": []},
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_generation,
+        "_openai_generate_checklist",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("shadow_should_not_run")),
+    )
+
+    package = workflow_generation.generate_unit_checklist_package(
+        unit_type=WorkflowUnitType.CHAPTER,
+        title="Les nombres rationnels : Somme et difference",
+        source_text="Objectifs d'apprentissage\nActivites\nContenu de la lecon\nI- Addition\nEvaluation",
+        provider="notebooklm",
+    )
+
+    flat = _flatten_checklist(package["items"])
+    titles = [str(row.get("title", "")) for row in flat]
+    assert package["source"] == "notebooklm"
+    assert "Objectifs d'apprentissage" in titles
+    assert "Evaluation" in titles
+    assert package["unit_map"]["selected_outline_source"] == "unit_map"
+    assert package["unit_map"]["ordered_outline"][0]["children"][0]["title"] == "Objectifs d'apprentissage"
 
 
 def test_select_best_notebooklm_outline_candidate_prefers_more_complete_tree():

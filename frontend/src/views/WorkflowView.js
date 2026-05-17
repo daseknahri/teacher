@@ -326,6 +326,7 @@ function _openUnitBlueprintModal(unit, blueprint) {
   const selectedVariant = String(rawProviderPayload?.selected_variant || '').trim();
   const responseMode = String(rawProviderPayload?.response_mode || '').trim();
   const sourceIds = Array.isArray(providerContext?.source_ids) ? providerContext.source_ids : [];
+  const selectedStructureSource = String(rawProviderPayload?.selected_structure_source || unitMap?.selected_outline_source || '').trim();
   const unitMapOutline = Array.isArray(unitMap?.ordered_outline) ? unitMap.ordered_outline : [];
   const renderMapList = (title, rows) => {
     const values = Array.isArray(rows) ? rows.filter(Boolean) : [];
@@ -369,6 +370,7 @@ function _openUnitBlueprintModal(unit, blueprint) {
           <p class="text-[12px] text-slate-600"><span class="font-semibold">Reviewed at:</span> ${_escapeHtml(reviewedAt ? fmtDateTime(reviewedAt) : '-')}</p>
           ${responseMode ? `<p class="text-[12px] text-slate-600"><span class="font-semibold">Response mode:</span> ${_escapeHtml(responseMode)}</p>` : ''}
           ${selectedVariant ? `<p class="text-[12px] text-slate-600"><span class="font-semibold">Selected variant:</span> ${_escapeHtml(selectedVariant)}</p>` : ''}
+          ${selectedStructureSource ? `<p class="text-[12px] text-slate-600"><span class="font-semibold">Selected structure:</span> ${_escapeHtml(selectedStructureSource)}</p>` : ''}
         </div>
 
         <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">

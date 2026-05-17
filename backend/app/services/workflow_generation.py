@@ -546,17 +546,27 @@ def generate_unit_checklist_package(
                 unit_title=title,
             )
             if normalized_items:
-                items = normalized_items
-                items = _apply_session_numbers(items, session_count=session_count)
-                if unit_type in {WorkflowUnitType.CHAPTER, WorkflowUnitType.EXERCISE_SERIES}:
-                    items = _ensure_session_coverage_with_exercises(items, session_count=session_count)
                 unit_map = _normalize_unit_map_payload(
                     raw_provider_response.get("unit_map") if isinstance(raw_provider_response, dict) else None,
-                    fallback_outline=items,
+                    fallback_outline=normalized_items,
                     unit_title=title,
                     unit_type=unit_type,
                     source_mode="notebooklm-unit-map",
                 )
+                selected_outline, unit_map, selected_structure_source = _align_notebooklm_unit_map_with_outline(
+                    parsed_outline=normalized_items,
+                    unit_map=unit_map,
+                    source_text=source_text,
+                    unit_type=unit_type,
+                    unit_title=title,
+                )
+                if isinstance(raw_provider_response, dict):
+                    raw_provider_response["selected_structure_source"] = selected_structure_source
+                    raw_provider_response["unit_map"] = unit_map
+                items = _copy_jsonable(selected_outline)
+                items = _apply_session_numbers(items, session_count=session_count)
+                if unit_type in {WorkflowUnitType.CHAPTER, WorkflowUnitType.EXERCISE_SERIES}:
+                    items = _ensure_session_coverage_with_exercises(items, session_count=session_count)
                 return {
                     "source": actual_provider,
                     "requested_provider": requested_provider,
@@ -1512,8 +1522,9 @@ def _normalize_unit_map_payload(
     unit_type: WorkflowUnitType,
     source_mode: str,
 ) -> dict[str, Any]:
+    payload_outline = payload.get("ordered_outline") if isinstance(payload, dict) and isinstance(payload.get("ordered_outline"), list) else None
     normalized_outline = _normalize_notebooklm_outline_items(
-        fallback_outline or (payload.get("ordered_outline") if isinstance(payload, dict) and isinstance(payload.get("ordered_outline"), list) else []),
+        payload_outline or fallback_outline or [],
         unit_type=unit_type,
         unit_title=unit_title,
     )
@@ -1556,6 +1567,67 @@ def _normalize_unit_map_payload(
             assessment_blocks=normalized["assessment_blocks"],
         )
     return normalized
+
+
+def _align_notebooklm_unit_map_with_outline(
+    *,
+    parsed_outline: list[dict[str, Any]] | None,
+    unit_map: dict[str, Any] | None,
+    source_text: str,
+    unit_type: WorkflowUnitType,
+    unit_title: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any], str]:
+    normalized_map = _normalize_unit_map_payload(
+        unit_map,
+        fallback_outline=parsed_outline,
+        unit_title=unit_title,
+        unit_type=unit_type,
+        source_mode=str((unit_map or {}).get("source_mode") or "notebooklm-unit-map"),
+    )
+    map_outline = normalized_map.get("ordered_outline") if isinstance(normalized_map.get("ordered_outline"), list) else []
+    candidates: list[tuple[str, list[dict[str, Any]]]] = []
+    if parsed_outline:
+        candidates.append(("outline_response", parsed_outline))
+    if map_outline:
+        candidates.append(("unit_map", map_outline))
+    if not candidates:
+        return [], normalized_map, "none"
+    if len(candidates) == 1:
+        selected_source, selected_outline = candidates[0]
+    elif parsed_outline and map_outline:
+        parsed_score = _score_notebooklm_outline_candidate(
+            parsed_outline,
+            source_text=source_text,
+            unit_type=unit_type,
+            unit_title=unit_title,
+        )
+        map_score = _score_notebooklm_outline_candidate(
+            map_outline,
+            source_text=source_text,
+            unit_type=unit_type,
+            unit_title=unit_title,
+        )
+        if map_score + 6 >= parsed_score:
+            selected_source, selected_outline = "unit_map", map_outline
+        else:
+            selected_source, selected_outline = "outline_response", parsed_outline
+    else:
+        selected_source, selected_outline = _select_best_notebooklm_outline_candidate(
+            candidates,
+            source_text=source_text,
+            unit_type=unit_type,
+            unit_title=unit_title,
+        )
+    normalized_map["ordered_outline"] = _copy_jsonable(selected_outline)
+    normalized_map["selected_outline_source"] = selected_source
+    return selected_outline, normalized_map, selected_source
+
+
+def _copy_jsonable(value: Any) -> Any:
+    try:
+        return json.loads(json.dumps(value, ensure_ascii=False))
+    except Exception:
+        return value
 
 
 def _build_unit_map_from_items(
