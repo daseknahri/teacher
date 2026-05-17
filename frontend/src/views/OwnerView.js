@@ -40,6 +40,16 @@ function _fmtStatusTs(value) {
   }
 }
 
+function _tsValue(value) {
+  if (!value) return 0;
+  try {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? 0 : d.getTime();
+  } catch {
+    return 0;
+  }
+}
+
 export async function renderOwnerView() {
   _showChrome();
   if (!isOwner()) { navigate('class'); return; }
@@ -87,6 +97,9 @@ function _renderOwner(el) {
   const locked = _teachers.filter(t => t.is_active === false);
   const runtimeHealth = _notebooklmStatus?.runtime_health || {};
   const refreshRequired = Boolean(runtimeHealth?.refresh_required);
+  const lastSuccessTs = _tsValue(runtimeHealth?.last_success_at);
+  const lastFailureTs = _tsValue(runtimeHealth?.last_error_at);
+  const showActiveError = Boolean(runtimeHealth?.last_error_message) && (refreshRequired || lastFailureTs > lastSuccessTs);
 
   el.innerHTML = `
     <div class="view-container">
@@ -170,7 +183,8 @@ function _renderOwner(el) {
             <p><span class="font-semibold">Last failure:</span> ${_escapeHtml(_fmtStatusTs(runtimeHealth?.last_error_at))}</p>
             <p><span class="font-semibold">Last failure source:</span> ${_escapeHtml(runtimeHealth?.last_error_source || '-')}</p>
             <p><span class="font-semibold">Last manual refresh:</span> ${_escapeHtml(_fmtStatusTs(runtimeHealth?.last_manual_refresh_at))}</p>
-            ${runtimeHealth?.last_error_message ? `<p class="${refreshRequired ? 'text-red-700' : 'text-amber-700'}"><span class="font-semibold">Last error:</span> ${_escapeHtml(runtimeHealth.last_error_message)}</p>` : ''}
+            ${showActiveError ? `<p class="${refreshRequired ? 'text-red-700' : 'text-amber-700'}"><span class="font-semibold">Current auth issue:</span> ${_escapeHtml(runtimeHealth.last_error_message)}</p>` : ''}
+            ${!showActiveError && runtimeHealth?.last_error_message ? `<p class="text-slate-500"><span class="font-semibold">Previous issue:</span> Recovered after ${_escapeHtml(_fmtStatusTs(runtimeHealth?.last_success_at))}.</p>` : ''}
           </div>
           ${_notebooklmSmoke ? `
           <div class="rounded-2xl border ${_notebooklmSmoke?.smoke?.ok ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'} px-3 py-3 text-[12px] text-slate-700 flex flex-col gap-1">
