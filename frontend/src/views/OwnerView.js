@@ -129,6 +129,7 @@ function _renderOwner(el) {
       : '<span class="badge badge-red">Package Missing</span>'}
             <button id="btn-owner-notebooklm-refresh" class="btn btn-secondary btn-sm">Refresh Status</button>
             <button id="btn-owner-notebooklm-smoke" class="btn btn-secondary btn-sm">Run Smoke Test</button>
+            <button id="btn-owner-notebooklm-clean-temp" class="btn btn-secondary btn-sm">Clean Temp Notebooks</button>
             <button id="btn-owner-notebooklm-upload-auth" class="btn btn-primary btn-sm">Upload Auth File</button>
             <button id="btn-owner-notebooklm-clear-auth" class="btn btn-ghost btn-sm">Clear Auth</button>
           </div>
@@ -411,6 +412,20 @@ function _bindOwnerEvents(el) {
       showToast(_notebooklmSmoke?.smoke?.ok ? 'NotebookLM smoke test passed.' : 'NotebookLM smoke test failed.', _notebooklmSmoke?.smoke?.ok ? 'ok' : 'warning');
     } catch (err) {
       showToast(err.message || 'Failed to run NotebookLM smoke test.', 'error');
+      this.classList.remove('btn-busy'); this.disabled = false;
+    }
+  });
+  el.querySelector('#btn-owner-notebooklm-clean-temp')?.addEventListener('click', async function () {
+    this.classList.add('btn-busy'); this.disabled = true;
+    try {
+      const result = await api('/ops/notebooklm/cleanup-temp', { method: 'POST' });
+      if (result?.status) _notebooklmStatus = result.status;
+      _notebooklmSmoke = null;
+      _renderOwner(el);
+      const deletedCount = Number(result?.cleanup?.deleted_count || 0);
+      showToast(deletedCount > 0 ? `Removed ${deletedCount} temporary NotebookLM notebook${deletedCount === 1 ? '' : 's'}.` : 'No temporary NotebookLM notebooks found.', 'ok');
+    } catch (err) {
+      showToast(err.message || 'Failed to clean temporary NotebookLM notebooks.', 'error');
       this.classList.remove('btn-busy'); this.disabled = false;
     }
   });

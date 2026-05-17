@@ -135,6 +135,9 @@ NOTEBOOKLM_NO_CONTEXT_PATTERNS: tuple[str, ...] = (
     "insufficient context",
     "try giving me more specific keywords",
 )
+NOTEBOOKLM_TEMP_NOTEBOOK_TITLES: tuple[str, ...] = (
+    "Teacher Progress Smoke Test",
+)
 
 
 def _looks_like_notebooklm_no_context(answer: str | None) -> bool:
@@ -155,6 +158,17 @@ async def _ask_notebooklm_with_source_retry(*, opened, notebook_id: str, prompt:
         if attempt + 1 < max(1, int(retries)):
             await asyncio.sleep(2.0)
     return last_result
+
+
+async def _safe_delete_notebook_async(notebook_id: str) -> bool:
+    notebook_id = str(notebook_id or "").strip()
+    if not notebook_id:
+        return False
+    try:
+        await _notebooklm_delete_notebook_async(notebook_id)
+        return True
+    except Exception:
+        return False
 
 
 def notebooklm_smoke_test() -> dict[str, Any]:
@@ -210,7 +224,6 @@ async def _notebooklm_smoke_test_async() -> dict[str, Any]:
                 retries=3,
             )
             raw_answer = str(getattr(result, "answer", "") or "").strip()
-            await opened.notebooks.delete(notebook_id)
     except Exception as exc:
         return {
             "ok": False,
@@ -221,6 +234,9 @@ async def _notebooklm_smoke_test_async() -> dict[str, Any]:
             "notebook_id": notebook_id or None,
             "source_ids": source_ids,
         }
+    finally:
+        if notebook_id:
+            await _safe_delete_notebook_async(notebook_id)
 
     return {
         "ok": "KAPPA-372" in raw_answer.upper(),
@@ -230,6 +246,58 @@ async def _notebooklm_smoke_test_async() -> dict[str, Any]:
         "answer": raw_answer,
         "notebook_id": notebook_id or None,
         "source_ids": source_ids,
+    }
+
+
+def notebooklm_cleanup_temp_notebooks() -> dict[str, Any]:
+    try:
+        return asyncio.run(_notebooklm_cleanup_temp_notebooks_async())
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error_message": f"notebooklm_cleanup_runtime_error:{exc.__class__.__name__}",
+            "deleted_count": 0,
+            "deleted_titles": [],
+        }
+
+
+async def _notebooklm_cleanup_temp_notebooks_async() -> dict[str, Any]:
+    client = await _create_notebooklm_client()
+    if client is None:
+        return {
+            "ok": False,
+            "error_message": "notebooklm_client_unavailable",
+            "deleted_count": 0,
+            "deleted_titles": [],
+        }
+
+    deleted_titles: list[str] = []
+    try:
+        async with client as opened:
+            notebooks = await opened.notebooks.list()
+            for notebook in notebooks or []:
+                title = str(getattr(notebook, "title", "") or "").strip()
+                notebook_id = str(getattr(notebook, "id", "") or "").strip()
+                if title not in NOTEBOOKLM_TEMP_NOTEBOOK_TITLES or not notebook_id:
+                    continue
+                try:
+                    await opened.notebooks.delete(notebook_id)
+                    deleted_titles.append(title)
+                except Exception:
+                    continue
+    except Exception as exc:
+        return {
+            "ok": False,
+            "error_message": f"notebooklm_cleanup_request_failed:{exc.__class__.__name__}",
+            "deleted_count": len(deleted_titles),
+            "deleted_titles": deleted_titles,
+        }
+
+    return {
+        "ok": True,
+        "error_message": None,
+        "deleted_count": len(deleted_titles),
+        "deleted_titles": deleted_titles,
     }
 
 
@@ -951,8 +1019,6 @@ async def _notebooklm_generate_session_writeup_async(
                 "answer": answer,
                 "conversation_id": str(getattr(result, "conversation_id", "") or "").strip() or None,
             }
-            if created_temporary_notebook and notebook_id:
-                await opened.notebooks.delete(notebook_id)
     except Exception as exc:
         return {
             "provider": "fallback",
@@ -966,6 +1032,9 @@ async def _notebooklm_generate_session_writeup_async(
             "raw_provider_response": raw_result,
             "error_message": f"notebooklm_request_failed:{exc.__class__.__name__}",
         }
+    finally:
+        if created_temporary_notebook and notebook_id:
+            await _safe_delete_notebook_async(notebook_id)
 
     if not isinstance(parsed, dict):
         return {

@@ -29,7 +29,7 @@ from ..config import (
 )
 from ..models import User
 from ..security import require_owner
-from ..services.workflow_generation import notebooklm_smoke_test
+from ..services.workflow_generation import notebooklm_cleanup_temp_notebooks, notebooklm_smoke_test
 
 
 router = APIRouter(prefix="/ops", tags=["ops"])
@@ -193,6 +193,17 @@ def notebooklm_smoke_test_endpoint(_: User = Depends(require_owner)) -> dict:
         "ready": bool(status_payload.get("ready")),
         "status": status_payload,
         "smoke": smoke,
+    }
+
+
+@router.post("/notebooklm/cleanup-temp")
+def notebooklm_cleanup_temp_endpoint(_: User = Depends(require_owner)) -> dict:
+    status_payload = _notebooklm_status_payload()
+    cleanup = notebooklm_cleanup_temp_notebooks()
+    return {
+        "ready": bool(status_payload.get("ready")),
+        "status": status_payload,
+        "cleanup": cleanup,
     }
 
 

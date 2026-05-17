@@ -1678,6 +1678,30 @@ def test_owner_can_run_notebooklm_smoke_test(client, monkeypatch):
     assert payload["smoke"]["answer"] == "OK"
 
 
+def test_owner_can_cleanup_notebooklm_temp_notebooks(client, monkeypatch):
+    from app.routers import ops as ops_router
+
+    headers = _auth_headers(client)
+    monkeypatch.setattr(
+        ops_router,
+        "notebooklm_cleanup_temp_notebooks",
+        lambda: {
+            "ok": True,
+            "error_message": None,
+            "deleted_count": 2,
+            "deleted_titles": ["Teacher Progress Smoke Test", "Teacher Progress Smoke Test"],
+        },
+    )
+
+    resp = client.post("/ops/notebooklm/cleanup-temp", headers=headers)
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert "status" in payload
+    assert "cleanup" in payload
+    assert payload["cleanup"]["ok"] is True
+    assert payload["cleanup"]["deleted_count"] == 2
+
+
 def test_workflow_writeup_records_requested_provider_when_falling_back(client, monkeypatch):
     from app import config as app_config
 
