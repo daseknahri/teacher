@@ -138,9 +138,11 @@ function _renderOwner(el) {
             <p><span class="font-semibold text-slate-700">Auth file:</span> <span class="font-mono break-all">${_escapeHtml(_notebooklmStatus?.auth_path || 'unknown')}</span></p>
             <p><span class="font-semibold text-slate-700">Auth file found:</span> ${_notebooklmStatus?.auth_file_exists ? 'Yes' : 'No'}</p>
             <p><span class="font-semibold text-slate-700">Auth file valid:</span> ${_notebooklmStatus?.auth_file_valid ? 'Yes' : 'No'}</p>
+            <p><span class="font-semibold text-slate-700">Auth last updated:</span> ${_notebooklmStatus?.auth_file_updated_at ? _escapeHtml(String(_notebooklmStatus.auth_file_updated_at)) : 'Unknown'}</p>
             ${_notebooklmStatus?.auth_file_error ? `<p class="text-red-600"><span class="font-semibold">Auth error:</span> ${_escapeHtml(_notebooklmStatus.auth_file_error)}</p>` : ''}
             <p><span class="font-semibold text-slate-700">Cookies detected:</span> ${Number(_notebooklmStatus?.cookies_count || 0)}</p>
             <p><span class="font-semibold text-slate-700">Context file:</span> <span class="font-mono break-all">${_escapeHtml(_notebooklmStatus?.context_path || 'unknown')}</span></p>
+            <p><span class="font-semibold text-slate-700">Context last updated:</span> ${_notebooklmStatus?.context_file_updated_at ? _escapeHtml(String(_notebooklmStatus.context_file_updated_at)) : 'Unknown'}</p>
             <p><span class="font-semibold text-slate-700">Saved notebook context:</span> ${_notebooklmStatus?.context_notebook_id ? _escapeHtml(_notebooklmStatus.context_notebook_id) : 'None'}</p>
           </div>
           ${_notebooklmSmoke ? `
@@ -158,6 +160,7 @@ function _renderOwner(el) {
             <p>3. Find the generated file <span class="font-mono">%USERPROFILE%\.notebooklm\profiles\default\storage_state.json</span>.</p>
             <p>4. In this panel, click <span class="font-mono">Upload Auth File</span> and upload that file.</p>
             <p>5. Click <span class="font-mono">Refresh Status</span> until this card shows <span class="font-mono">Ready</span>.</p>
+            <p>6. Faster refresh option: run <span class="font-mono">python scripts/refresh_notebooklm_auth.py --app-url https://your-app --email owner@school.edu --run-login</span> from the backend folder on your own machine.</p>
           </div>
         </div>
       </div>

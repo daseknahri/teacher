@@ -99,6 +99,13 @@ def _notebooklm_status_payload() -> dict:
 
     context_present = context_path.exists()
     context_notebook_id = None
+    auth_file_updated_at = None
+    context_file_updated_at = None
+    if storage_path.exists():
+        try:
+            auth_file_updated_at = datetime.fromtimestamp(storage_path.stat().st_mtime, UTC).isoformat()
+        except Exception:
+            auth_file_updated_at = None
     if context_present:
         try:
             payload = json.loads(context_path.read_text(encoding="utf-8"))
@@ -107,6 +114,10 @@ def _notebooklm_status_payload() -> dict:
                 context_notebook_id = str(raw).strip() if raw else None
         except Exception:
             context_notebook_id = None
+        try:
+            context_file_updated_at = datetime.fromtimestamp(context_path.stat().st_mtime, UTC).isoformat()
+        except Exception:
+            context_file_updated_at = None
 
     ready = bool(package_installed and storage_path.exists() and storage_valid)
     return {
@@ -118,9 +129,11 @@ def _notebooklm_status_payload() -> dict:
         "auth_file_exists": storage_path.exists(),
         "auth_file_valid": storage_valid,
         "auth_file_error": storage_error,
+        "auth_file_updated_at": auth_file_updated_at,
         "cookies_count": cookies_count,
         "context_path": str(context_path),
         "context_file_exists": context_present,
+        "context_file_updated_at": context_file_updated_at,
         "context_notebook_id": context_notebook_id,
         "timeout_seconds": NOTEBOOKLM_TIMEOUT_SECONDS,
         "keepalive_seconds": NOTEBOOKLM_KEEPALIVE_SECONDS,
