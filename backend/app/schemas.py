@@ -630,6 +630,8 @@ class WorkflowUnitOut(BaseModel):
     extraction_model: str | None = None
     extraction_status: str | None = None
     extraction_error: str | None = None
+    extraction_reviewed: bool = True
+    extraction_reviewed_at: datetime | None = None
     checklist: list[WorkflowChecklistItemOut] = Field(default_factory=list)
 
 
@@ -669,6 +671,9 @@ class WorkflowUnitBlueprintOut(BaseModel):
     blueprint_json: dict
     raw_provider_response: dict | None = None
     error_message: str | None = None
+    reviewed: bool = False
+    reviewed_at: datetime | None = None
+    reviewed_by_user_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -707,6 +712,10 @@ class WorkflowSessionWriteupUpdateIn(BaseModel):
     teaching_content: list[str] | None = None
     practice_items: list[str] | None = None
     approved: bool | None = None
+
+
+class WorkflowUnitExtractionReviewIn(BaseModel):
+    reviewed: bool = True
 
 
 class WorkflowSessionConfirmOut(BaseModel):

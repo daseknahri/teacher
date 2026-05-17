@@ -89,6 +89,7 @@ from ..schemas import (
     WorkflowSessionWriteupUpdateIn,
     WorkflowSessionStartIn,
     WorkflowToggleItemIn,
+    WorkflowUnitExtractionReviewIn,
     WorkflowUnitBlueprintOut,
     WorkflowUnitDeleteOut,
     WorkflowUnitOut,
@@ -448,6 +449,8 @@ def _safe_serialize_unit(db: Session, unit: WorkflowUnit, *, class_id: int) -> W
                 extraction_model=getattr(getattr(unit, "blueprint", None), "model", None),
                 extraction_status=str(getattr(getattr(unit, "blueprint", None), "status", "") or "").strip() or None,
                 extraction_error=str(getattr(getattr(unit, "blueprint", None), "error_message", "") or "").strip() or None,
+                extraction_reviewed=bool(getattr(getattr(unit, "blueprint", None), "reviewed", True)),
+                extraction_reviewed_at=getattr(getattr(unit, "blueprint", None), "reviewed_at", None),
                 checklist=[],
             )
         except Exception:
@@ -512,6 +515,8 @@ def _serialize_unit(db: Session, unit: WorkflowUnit) -> WorkflowUnitOut:
         extraction_model=getattr(blueprint, "model", None),
         extraction_status=str(getattr(blueprint, "status", "") or "").strip() or None,
         extraction_error=str(getattr(blueprint, "error_message", "") or "").strip() or None,
+        extraction_reviewed=bool(getattr(blueprint, "reviewed", True)) if blueprint is not None else True,
+        extraction_reviewed_at=getattr(blueprint, "reviewed_at", None) if blueprint is not None else None,
         checklist=_serialize_checklist(items),
     )
 
@@ -1889,6 +1894,9 @@ def _serialize_unit_blueprint(row: WorkflowUnitBlueprint) -> WorkflowUnitBluepri
         blueprint_json=row.blueprint_json or {},
         raw_provider_response=row.raw_provider_response,
         error_message=row.error_message,
+        reviewed=bool(row.reviewed),
+        reviewed_at=row.reviewed_at,
+        reviewed_by_user_id=row.reviewed_by_user_id,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -2175,6 +2183,8 @@ def _store_generated_checklist_on_unit(
         raw_provider_response=generated if isinstance(generated, dict) else None,
         status=str(generated.get("status") or "ready").strip() or "ready",
         error_message=str(generated.get("error_message") or "").strip() or None,
+        reviewed=bool(str(generated.get("source") or "").strip() == "template"),
+        reviewed_at=_utc_now_naive() if str(generated.get("source") or "").strip() == "template" else None,
     )
 
 
@@ -5139,6 +5149,40 @@ def get_workflow_unit_blueprint(
     if row is None:
         raise HTTPException(status_code=404, detail="Unit blueprint not found.")
     return _serialize_unit_blueprint(row)
+
+
+@router.post("/classes/{class_id}/units/{unit_id}/review", response_model=WorkflowUnitOut)
+def review_workflow_unit_extraction(
+    class_id: int,
+    unit_id: int,
+    payload: WorkflowUnitExtractionReviewIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkflowUnitOut:
+    _ = ensure_class_writable(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    row = db.scalar(select(WorkflowUnitBlueprint).where(WorkflowUnitBlueprint.unit_id == int(unit_id)))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Unit blueprint not found.")
+
+    row.reviewed = bool(payload.reviewed)
+    row.reviewed_at = _utc_now_naive() if row.reviewed else None
+    row.reviewed_by_user_id = int(current_user.id) if row.reviewed else None
+
+    log_audit(
+        db,
+        user=current_user,
+        action="workflow.unit.review_extraction",
+        entity_type="workflow_unit",
+        entity_id=unit.id,
+        class_id=class_id,
+        details={"reviewed": bool(row.reviewed)},
+    )
+    db.commit()
+    db.refresh(unit)
+    return _serialize_unit(db, unit)
 
 
 @router.post("/classes/{class_id}/units/{unit_id}/reextract", response_model=WorkflowUnitOut)

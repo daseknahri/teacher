@@ -1550,9 +1550,58 @@ def test_workflow_unit_start_persists_blueprint(client):
     blueprint = blueprint_resp.json()
     assert blueprint["unit_id"] == unit_id
     assert blueprint["status"] == "ready"
+    assert blueprint["reviewed"] is False
     assert blueprint["blueprint_json"]["unit_title"] == "Factorisation"
     assert isinstance(blueprint["blueprint_json"]["items"], list)
     assert len(blueprint["blueprint_json"]["items"]) >= 1
+
+    unit_payload = unit_resp.json()
+    assert unit_payload["extraction_reviewed"] is False
+
+
+def test_workflow_unit_review_endpoint_updates_review_state(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Review State Class", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Fractions",
+            "source_text": "Fractions\nDefinition\nExercices\n",
+        },
+    )
+    assert unit_resp.status_code == 201
+    unit_id = unit_resp.json()["id"]
+    assert unit_resp.json()["extraction_reviewed"] is False
+
+    approve_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/review",
+        headers=headers,
+        json={"reviewed": True},
+    )
+    assert approve_resp.status_code == 200
+    approved_unit = approve_resp.json()
+    assert approved_unit["extraction_reviewed"] is True
+    assert approved_unit["extraction_reviewed_at"] is not None
+
+    blueprint_resp = client.get(f"/workflow/classes/{class_id}/units/{unit_id}/blueprint", headers=headers)
+    assert blueprint_resp.status_code == 200
+    blueprint = blueprint_resp.json()
+    assert blueprint["reviewed"] is True
+    assert blueprint["reviewed_at"] is not None
+
+    reopen_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/review",
+        headers=headers,
+        json={"reviewed": False},
+    )
+    assert reopen_resp.status_code == 200
+    reopened_unit = reopen_resp.json()
+    assert reopened_unit["extraction_reviewed"] is False
 
 
 def test_workflow_confirm_can_generate_saved_session_writeup(client):

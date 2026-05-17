@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from hashlib import sha256
 
 from sqlalchemy import select
@@ -41,6 +42,9 @@ def save_unit_blueprint(
     raw_provider_response: dict | None = None,
     status: str = "ready",
     error_message: str | None = None,
+    reviewed: bool | None = None,
+    reviewed_at: datetime | None = None,
+    reviewed_by_user_id: int | None = None,
 ) -> WorkflowUnitBlueprint:
     row = db.scalar(select(WorkflowUnitBlueprint).where(WorkflowUnitBlueprint.unit_id == int(unit_id)))
     excerpt = str(source_text or "").strip()
@@ -58,6 +62,9 @@ def save_unit_blueprint(
             blueprint_json=blueprint_json,
             raw_provider_response=raw_provider_response,
             error_message=error_message,
+            reviewed=bool(reviewed) if reviewed is not None else False,
+            reviewed_at=reviewed_at if reviewed else None,
+            reviewed_by_user_id=reviewed_by_user_id if reviewed else None,
         )
         db.add(row)
         db.flush()
@@ -72,6 +79,10 @@ def save_unit_blueprint(
     row.blueprint_json = blueprint_json
     row.raw_provider_response = raw_provider_response
     row.error_message = error_message
+    if reviewed is not None:
+        row.reviewed = bool(reviewed)
+        row.reviewed_at = reviewed_at if reviewed else None
+        row.reviewed_by_user_id = reviewed_by_user_id if reviewed else None
     db.flush()
     return row
 

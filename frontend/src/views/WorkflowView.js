@@ -309,6 +309,8 @@ function _openUnitBlueprintModal(unit, blueprint) {
   const model = String(blueprint?.model || unit?.extraction_model || '').trim();
   const status = String(blueprint?.status || unit?.extraction_status || '').trim();
   const errorMessage = String(blueprint?.error_message || unit?.extraction_error || '').trim();
+  const reviewed = blueprint?.reviewed !== false;
+  const reviewedAt = blueprint?.reviewed_at || unit?.extraction_reviewed_at || null;
   const blueprintJson = blueprint?.blueprint_json && typeof blueprint.blueprint_json === 'object' ? blueprint.blueprint_json : {};
   const rawPackage = blueprint?.raw_provider_response && typeof blueprint.raw_provider_response === 'object'
     ? blueprint.raw_provider_response
@@ -345,10 +347,12 @@ function _openUnitBlueprintModal(unit, blueprint) {
             <span class="badge badge-blue">${_escapeHtml(provider)}</span>
             ${model ? `<span class="badge badge-gray">${_escapeHtml(model)}</span>` : ''}
             ${status ? `<span class="badge ${status === 'degraded' ? 'badge-amber' : 'badge-green'}">${_escapeHtml(status)}</span>` : ''}
+            <span class="badge ${reviewed ? 'badge-green' : 'badge-amber'}">${reviewed ? 'Reviewed' : 'Needs review'}</span>
           </div>
           ${errorMessage ? `<p class="text-[12px] text-amber-700"><span class="font-semibold">Provider note:</span> ${_escapeHtml(errorMessage)}</p>` : ''}
           <p class="text-[12px] text-slate-600"><span class="font-semibold">Notebook ID:</span> ${_escapeHtml(providerContext?.notebook_id || rawProviderPayload?.notebook_id || 'None')}</p>
           <p class="text-[12px] text-slate-600"><span class="font-semibold">Source IDs:</span> ${sourceIds.length ? _escapeHtml(sourceIds.join(', ')) : _escapeHtml(String(rawProviderPayload?.source_ids || 'None'))}</p>
+          <p class="text-[12px] text-slate-600"><span class="font-semibold">Reviewed at:</span> ${_escapeHtml(reviewedAt ? fmtDateTime(reviewedAt) : '-')}</p>
           ${responseMode ? `<p class="text-[12px] text-slate-600"><span class="font-semibold">Response mode:</span> ${_escapeHtml(responseMode)}</p>` : ''}
           ${selectedVariant ? `<p class="text-[12px] text-slate-600"><span class="font-semibold">Selected variant:</span> ${_escapeHtml(selectedVariant)}</p>` : ''}
         </div>
@@ -944,6 +948,8 @@ function _render(el, classId) {
   const extractionSource = String(unit?.extraction_source || '').trim().toLowerCase();
   const extractionStatus = String(unit?.extraction_status || '').trim().toLowerCase();
   const extractionError = String(unit?.extraction_error || '').trim();
+  const extractionReviewed = unit ? unit.extraction_reviewed !== false : true;
+  const extractionReviewPending = Boolean(unit?.extraction_source) && !extractionReviewed;
   const extractionBadgeClass = extractionSource === 'notebooklm'
     ? 'badge-green'
     : extractionSource === 'openai'
@@ -1009,12 +1015,15 @@ function _render(el, classId) {
                     <span class="badge ${extractionBadgeClass}">Extraction ${_escapeHtml(extractionLabel)}</span>
                     ${unit.extraction_model ? `<span class="badge badge-gray">${_escapeHtml(String(unit.extraction_model))}</span>` : ''}
                     ${extractionStatus ? `<span class="badge badge-gray">${_escapeHtml(extractionStatus)}</span>` : ''}
+                    <span class="badge ${extractionReviewPending ? 'badge-amber' : 'badge-green'}">${extractionReviewPending ? 'Review Pending' : 'Reviewed'}</span>
                   </div>
                   ${extractionError ? `<p class="text-[11px] text-amber-700 mt-1">Provider note: ${_escapeHtml(extractionError)}</p>` : ''}
+                  ${extractionReviewPending ? `<p class="text-[11px] text-amber-700 mt-1">Review the extracted checklist before you rely on it for teaching. You can approve it once the outline looks right.</p>` : ''}
                 </div>
                 <div class="flex gap-2 flex-wrap mt-auto">
                   ${!session ? `<button id="btn-start-session" class="btn btn-success">Start Session</button>` : ''}
                   ${unit.document_name ? `<button id="btn-download-unit-doc" class="btn btn-secondary btn-sm">Unit PDF</button>` : ''}
+                  <button id="btn-toggle-extraction-review" class="btn ${extractionReviewPending ? 'btn-primary' : 'btn-secondary'} btn-sm">${extractionReviewPending ? 'Approve Extraction' : 'Mark Needs Review'}</button>
                   <button id="btn-rerun-ai-extraction" class="btn btn-secondary btn-sm">Re-run AI</button>
                   <button id="btn-view-ai-details" class="btn btn-secondary btn-sm">AI Details</button>
                   <button id="btn-plan-active-unit" class="btn btn-secondary btn-sm">Plan Sessions</button>
@@ -2244,6 +2253,13 @@ function _bindWorkflowEvents(el, classId) {
   /*  start session  (POST /workflow/classes/{id}/sessions/start  JSON absent_student_ids) */
   async function startSession(triggerBtn) {
     await _withActionLock(`workflow:start-session:${classId}`, async () => {
+      const unit = getActiveUnit();
+      if (unit?.extraction_source && unit.extraction_reviewed === false) {
+        const proceed = await askConfirm(
+          'This extraction is still marked as needing review. Start the session anyway? You can approve the extraction first if the checklist looks correct.'
+        );
+        if (!proceed) return;
+      }
       const absentIds = [...getAbsentIds()];
       _setBusy(triggerBtn, true);
       try {
@@ -2277,6 +2293,32 @@ function _bindWorkflowEvents(el, classId) {
   }
   el.querySelector('#btn-start-session')?.addEventListener('click', function () { startSession(this); });
   el.querySelector('#btn-start-session-att')?.addEventListener('click', function () { startSession(this); });
+  el.querySelector('#btn-toggle-extraction-review')?.addEventListener('click', async function () {
+    await _withActionLock(`workflow:unit-review:${classId}`, async () => {
+      const unit = getActiveUnit();
+      if (!unit?.id) return;
+      const reviewed = unit.extraction_reviewed === false;
+      _setBusy(this, true);
+      try {
+        const updatedUnit = await api(`/workflow/classes/${classId}/units/${unit.id}/review`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reviewed }),
+        });
+        const ws = await api(`/workflow/classes/${classId}`);
+        if (ws?.active_unit && Number(ws.active_unit.id) === Number(updatedUnit.id)) {
+          ws.active_unit = updatedUnit;
+        }
+        setWorkspace(ws);
+        _unitBlueprintCache.delete(Number(unit.id));
+        _render(el, classId);
+        showToast(reviewed ? 'Extraction approved for teaching.' : 'Extraction marked as needing review.', 'ok');
+      } catch (err) {
+        _setBusy(this, false);
+        showToast(err.message || 'Failed to update extraction review state.', 'error');
+      }
+    });
+  });
 
   el.querySelector('#btn-plan-active-unit')?.addEventListener('click', async function () {
     await _withActionLock(`workflow:plan-active-unit:${classId}`, async () => {

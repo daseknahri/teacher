@@ -116,7 +116,12 @@ def ensure_schema_compatibility() -> None:
         _ensure_column("workflow_unit_blueprints", "blueprint_json", f"{json_type} NULL")
         _ensure_column("workflow_unit_blueprints", "raw_provider_response", f"{json_type} NULL")
         _ensure_column("workflow_unit_blueprints", "error_message", "TEXT NULL")
+        _ensure_column("workflow_unit_blueprints", "reviewed", "BOOLEAN DEFAULT FALSE")
+        _ensure_column("workflow_unit_blueprints", "reviewed_at", f"{datetime_type} NULL")
+        _ensure_column("workflow_unit_blueprints", "reviewed_by_user_id", "INTEGER NULL")
         _ensure_column("workflow_unit_blueprints", "updated_at", f"{datetime_type} NULL")
+        if "workflow_unit_blueprints" in table_names:
+            conn.execute(text("UPDATE workflow_unit_blueprints SET reviewed = TRUE WHERE reviewed IS NULL"))
 
         _ensure_column("workflow_session_writeups", "unit_id", "INTEGER NULL")
         _ensure_column("workflow_session_writeups", "provider", "VARCHAR(64) DEFAULT 'fallback'")
