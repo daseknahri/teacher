@@ -29,9 +29,20 @@ def verify_password(password: str, stored: str) -> bool:
 def create_access_token(db: Session, user: User) -> AuthToken:
     token_value = secrets.token_urlsafe(48)
     expires_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=AUTH_TOKEN_TTL_HOURS)
-    token = AuthToken(user_id=user.id, token=token_value, expires_at=expires_at)
+    token = _persist_access_token(db, user_id=user.id, token_value=token_value, expires_at=expires_at)
+    return token
+
+
+def create_temporary_access_token(db: Session, user: User, *, ttl_minutes: int) -> AuthToken:
+    token_value = secrets.token_urlsafe(48)
+    expires_at = datetime.now(UTC).replace(tzinfo=None) + timedelta(minutes=max(1, int(ttl_minutes)))
+    token = _persist_access_token(db, user_id=user.id, token_value=token_value, expires_at=expires_at)
+    return token
+
+
+def _persist_access_token(db: Session, *, user_id: int, token_value: str, expires_at: datetime) -> AuthToken:
+    token = AuthToken(user_id=user_id, token=token_value, expires_at=expires_at)
     db.add(token)
     db.commit()
     db.refresh(token)
     return token
-

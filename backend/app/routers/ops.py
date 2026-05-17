@@ -6,6 +6,8 @@ from importlib.util import find_spec
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi.responses import PlainTextResponse
+from sqlalchemy.orm import Session
 
 from ..config import (
     ALERT_EMAIL_TO,
@@ -23,12 +25,15 @@ from ..config import (
     NOTEBOOKLM_HOME,
     NOTEBOOKLM_KEEPALIVE_SECONDS,
     NOTEBOOKLM_PROFILE,
+    NOTEBOOKLM_REFRESH_HELPER_TTL_MINUTES,
     NOTEBOOKLM_TIMEOUT_SECONDS,
     STORAGE_DIR,
     UPLOADS_DIR,
 )
+from ..database import get_db
 from ..models import User
 from ..security import require_owner
+from ..services.auth import create_temporary_access_token
 from ..services.workflow_generation import (
     get_notebooklm_runtime_health,
     note_notebooklm_manual_auth_clear,
@@ -39,6 +44,46 @@ from ..services.workflow_generation import (
 
 
 router = APIRouter(prefix="/ops", tags=["ops"])
+
+
+def _build_notebooklm_refresh_helper_cmd(*, app_url: str, access_token: str, profile: str) -> str:
+    safe_app_url = app_url.rstrip("/")
+    safe_profile = profile or "default"
+    safe_token = access_token.strip()
+    return (
+        "@echo off\r\n"
+        "setlocal\r\n"
+        f"set \"APP_URL={safe_app_url}\"\r\n"
+        f"set \"ACCESS_TOKEN={safe_token}\"\r\n"
+        f"set \"PROFILE={safe_profile}\"\r\n"
+        "set \"AUTH_FILE=%USERPROFILE%\\.notebooklm\\profiles\\%PROFILE%\\storage_state.json\"\r\n"
+        "echo Starting NotebookLM refresh helper...\r\n"
+        "echo This will open the Google login window if needed.\r\n"
+        "python -m notebooklm login\r\n"
+        "if errorlevel 1 goto :login_failed\r\n"
+        "if not exist \"%AUTH_FILE%\" goto :missing_auth\r\n"
+        "python -c \"import pathlib,sys,httpx; app_url=r'%APP_URL%'; token=r'%ACCESS_TOKEN%'; auth_file=pathlib.Path.home()/'.notebooklm'/'profiles'/r'%PROFILE%'/'storage_state.json'; headers={'Authorization':'Bearer '+token}; client=httpx.Client(timeout=60, follow_redirects=True); fh=auth_file.open('rb'); upload=client.post(app_url+'/ops/notebooklm/auth/upload', headers=headers, files={'file': (auth_file.name, fh, 'application/json')}); fh.close(); upload.raise_for_status(); smoke=client.post(app_url+'/ops/notebooklm/smoke-test', headers=headers); smoke.raise_for_status(); payload=smoke.json(); smoke_data=payload.get('smoke') or {}; print('Smoke test result:', 'Success' if smoke_data.get('ok') else 'Failed'); print('Answer:', smoke_data.get('answer') or '-'); err=smoke_data.get('error_message'); print('Error:', err) if err else None; sys.exit(0 if smoke_data.get('ok') else 1)\"\r\n"
+        "if errorlevel 1 goto :upload_failed\r\n"
+        "echo.\r\n"
+        "echo NotebookLM refresh completed successfully.\r\n"
+        "pause\r\n"
+        "exit /b 0\r\n"
+        ":login_failed\r\n"
+        "echo.\r\n"
+        "echo NotebookLM login did not complete successfully.\r\n"
+        "pause\r\n"
+        "exit /b 1\r\n"
+        ":missing_auth\r\n"
+        "echo.\r\n"
+        "echo Could not find %AUTH_FILE% after login.\r\n"
+        "pause\r\n"
+        "exit /b 1\r\n"
+        ":upload_failed\r\n"
+        "echo.\r\n"
+        "echo Upload or smoke test failed. Please review the output above.\r\n"
+        "pause\r\n"
+        "exit /b 1\r\n"
+    )
 
 
 def _safe_dir_stats(path: Path) -> dict:
@@ -279,3 +324,24 @@ def clear_notebooklm_auth_file(_: User = Depends(require_owner)) -> dict:
             pass
     note_notebooklm_manual_auth_clear()
     return _notebooklm_status_payload()
+
+
+@router.get("/notebooklm/refresh-helper.cmd")
+def download_notebooklm_refresh_helper(
+    request: Request,
+    current_user: User = Depends(require_owner),
+    db: Session = Depends(get_db),
+) -> PlainTextResponse:
+    token = create_temporary_access_token(
+        db,
+        current_user,
+        ttl_minutes=NOTEBOOKLM_REFRESH_HELPER_TTL_MINUTES,
+    )
+    app_url = str(request.base_url).rstrip("/")
+    script = _build_notebooklm_refresh_helper_cmd(
+        app_url=app_url,
+        access_token=token.token,
+        profile=NOTEBOOKLM_PROFILE or "default",
+    )
+    headers = {"Content-Disposition": 'attachment; filename="refresh_notebooklm.cmd"'}
+    return PlainTextResponse(content=script, headers=headers, media_type="text/plain; charset=utf-8")

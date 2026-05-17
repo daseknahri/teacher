@@ -145,6 +145,7 @@ function _renderOwner(el) {
       : '<span class="badge badge-red">Package Missing</span>'}
             <button id="btn-owner-notebooklm-refresh" class="btn btn-secondary btn-sm">Refresh Status</button>
             <button id="btn-owner-notebooklm-smoke" class="btn btn-secondary btn-sm">Run Smoke Test</button>
+            <button id="btn-owner-notebooklm-helper" class="btn btn-secondary btn-sm">Download Refresh Helper</button>
             <button id="btn-owner-notebooklm-clean-temp" class="btn btn-secondary btn-sm">Clean Temp Notebooks</button>
             <button id="btn-owner-notebooklm-upload-auth" class="btn btn-primary btn-sm">Upload Auth File</button>
             <button id="btn-owner-notebooklm-clear-auth" class="btn btn-ghost btn-sm">Clear Auth</button>
@@ -187,6 +188,7 @@ function _renderOwner(el) {
             <p>4. In this panel, click <span class="font-mono">Upload Auth File</span> and upload that file.</p>
             <p>5. Click <span class="font-mono">Refresh Status</span> until this card shows <span class="font-mono">Ready</span>.</p>
             <p>6. Faster refresh option: run <span class="font-mono">python scripts/refresh_notebooklm_auth.py --app-url https://your-app --email owner@school.edu --run-login</span> from the backend folder on your own machine.</p>
+            <p>7. Easiest option: click <span class="font-mono">Download Refresh Helper</span>, then double-click the downloaded <span class="font-mono">.cmd</span> file on your Windows machine.</p>
           </div>
         </div>
       </div>
@@ -441,6 +443,17 @@ function _bindOwnerEvents(el) {
       showToast(_notebooklmSmoke?.smoke?.ok ? 'NotebookLM smoke test passed.' : 'NotebookLM smoke test failed.', _notebooklmSmoke?.smoke?.ok ? 'ok' : 'warning');
     } catch (err) {
       showToast(err.message || 'Failed to run NotebookLM smoke test.', 'error');
+      this.classList.remove('btn-busy'); this.disabled = false;
+    }
+  });
+  el.querySelector('#btn-owner-notebooklm-helper')?.addEventListener('click', async function () {
+    this.classList.add('btn-busy'); this.disabled = true;
+    try {
+      await downloadWithAuth('/ops/notebooklm/refresh-helper.cmd', 'refresh_notebooklm.cmd');
+      showToast('NotebookLM refresh helper downloaded.', 'ok');
+    } catch (err) {
+      showToast(err.message || 'Failed to download NotebookLM refresh helper.', 'error');
+    } finally {
       this.classList.remove('btn-busy'); this.disabled = false;
     }
   });

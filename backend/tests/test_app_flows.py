@@ -1969,6 +1969,17 @@ def test_owner_can_read_notebooklm_status(client):
     assert "runtime_health" in payload
 
 
+def test_owner_can_download_notebooklm_refresh_helper(client):
+    headers = _auth_headers(client)
+    resp = client.get('/ops/notebooklm/refresh-helper.cmd', headers=headers)
+    assert resp.status_code == 200
+    content = resp.text
+    assert "python -m notebooklm login" in content
+    assert "/ops/notebooklm/auth/upload" in content
+    assert "/ops/notebooklm/smoke-test" in content
+    assert "refresh_notebooklm.cmd" in str(resp.headers.get("content-disposition", ""))
+
+
 def test_owner_can_upload_and_clear_notebooklm_auth_file(client, monkeypatch, tmp_path):
     import app.routers.ops as ops_router
     from app.services import workflow_generation
