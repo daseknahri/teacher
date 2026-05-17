@@ -1966,13 +1966,16 @@ def test_owner_can_read_notebooklm_status(client):
     assert "ready" in payload
     assert "auth_path" in payload
     assert "profile" in payload
+    assert "runtime_health" in payload
 
 
 def test_owner_can_upload_and_clear_notebooklm_auth_file(client, monkeypatch, tmp_path):
     import app.routers.ops as ops_router
+    from app.services import workflow_generation
 
     auth_path = tmp_path / "notebooklm" / "profiles" / "default" / "storage_state.json"
     monkeypatch.setattr(ops_router, "NOTEBOOKLM_AUTH_PATH", str(auth_path))
+    monkeypatch.setattr(workflow_generation.app_config, "NOTEBOOKLM_AUTH_PATH", str(auth_path))
     headers = _auth_headers(client)
 
     upload_resp = client.post(
@@ -1984,12 +1987,16 @@ def test_owner_can_upload_and_clear_notebooklm_auth_file(client, monkeypatch, tm
     payload = upload_resp.json()
     assert payload["auth_file_exists"] is True
     assert payload["auth_file_valid"] is True
+    assert payload["runtime_health"]["refresh_required"] is False
+    assert payload["runtime_health"]["last_manual_refresh_at"] is not None
     assert auth_path.exists() is True
 
     clear_resp = client.post('/ops/notebooklm/auth/clear', headers=headers)
     assert clear_resp.status_code == 200
     cleared = clear_resp.json()
     assert cleared["auth_file_exists"] is False
+    assert cleared["runtime_health"]["refresh_required"] is True
+    assert cleared["runtime_health"]["last_manual_clear_at"] is not None
     assert auth_path.exists() is False
 
 

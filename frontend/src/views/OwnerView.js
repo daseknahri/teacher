@@ -29,6 +29,17 @@ function _escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function _fmtStatusTs(value) {
+  if (!value) return 'Unknown';
+  try {
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return String(value);
+    return d.toLocaleString();
+  } catch {
+    return String(value);
+  }
+}
+
 export async function renderOwnerView() {
   _showChrome();
   if (!isOwner()) { navigate('class'); return; }
@@ -74,6 +85,8 @@ export async function renderOwnerView() {
 function _renderOwner(el) {
   const active = _teachers.filter(t => t.is_active !== false);
   const locked = _teachers.filter(t => t.is_active === false);
+  const runtimeHealth = _notebooklmStatus?.runtime_health || {};
+  const refreshRequired = Boolean(runtimeHealth?.refresh_required);
 
   el.innerHTML = `
     <div class="view-container">
@@ -124,6 +137,9 @@ function _renderOwner(el) {
             ${_notebooklmStatus?.ready
       ? '<span class="badge badge-green">Ready</span>'
       : '<span class="badge badge-amber">Needs Setup</span>'}
+            ${refreshRequired
+      ? '<span class="badge badge-red">Refresh Required</span>'
+      : '<span class="badge badge-gray">Auth Healthy</span>'}
             ${_notebooklmStatus?.installed
       ? '<span class="badge badge-blue">Package Installed</span>'
       : '<span class="badge badge-red">Package Missing</span>'}
@@ -144,6 +160,16 @@ function _renderOwner(el) {
             <p><span class="font-semibold text-slate-700">Context file:</span> <span class="font-mono break-all">${_escapeHtml(_notebooklmStatus?.context_path || 'unknown')}</span></p>
             <p><span class="font-semibold text-slate-700">Context last updated:</span> ${_notebooklmStatus?.context_file_updated_at ? _escapeHtml(String(_notebooklmStatus.context_file_updated_at)) : 'Unknown'}</p>
             <p><span class="font-semibold text-slate-700">Saved notebook context:</span> ${_notebooklmStatus?.context_notebook_id ? _escapeHtml(_notebooklmStatus.context_notebook_id) : 'None'}</p>
+          </div>
+          <div class="rounded-2xl border ${refreshRequired ? 'border-red-200 bg-red-50' : 'border-slate-200 bg-slate-50/80'} px-3 py-3 text-[12px] text-slate-700 flex flex-col gap-1">
+            <p class="font-semibold text-slate-800">NotebookLM auth health</p>
+            <p><span class="font-semibold">Refresh required:</span> ${refreshRequired ? 'Yes' : 'No'}</p>
+            <p><span class="font-semibold">Last success:</span> ${_escapeHtml(_fmtStatusTs(runtimeHealth?.last_success_at))}</p>
+            <p><span class="font-semibold">Last success source:</span> ${_escapeHtml(runtimeHealth?.last_success_source || '-')}</p>
+            <p><span class="font-semibold">Last failure:</span> ${_escapeHtml(_fmtStatusTs(runtimeHealth?.last_error_at))}</p>
+            <p><span class="font-semibold">Last failure source:</span> ${_escapeHtml(runtimeHealth?.last_error_source || '-')}</p>
+            <p><span class="font-semibold">Last manual refresh:</span> ${_escapeHtml(_fmtStatusTs(runtimeHealth?.last_manual_refresh_at))}</p>
+            ${runtimeHealth?.last_error_message ? `<p class="${refreshRequired ? 'text-red-700' : 'text-amber-700'}"><span class="font-semibold">Last error:</span> ${_escapeHtml(runtimeHealth.last_error_message)}</p>` : ''}
           </div>
           ${_notebooklmSmoke ? `
           <div class="rounded-2xl border ${_notebooklmSmoke?.smoke?.ok ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'} px-3 py-3 text-[12px] text-slate-700 flex flex-col gap-1">

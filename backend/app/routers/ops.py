@@ -29,7 +29,13 @@ from ..config import (
 )
 from ..models import User
 from ..security import require_owner
-from ..services.workflow_generation import notebooklm_cleanup_temp_notebooks, notebooklm_smoke_test
+from ..services.workflow_generation import (
+    get_notebooklm_runtime_health,
+    note_notebooklm_manual_auth_clear,
+    note_notebooklm_manual_auth_refresh,
+    notebooklm_cleanup_temp_notebooks,
+    notebooklm_smoke_test,
+)
 
 
 router = APIRouter(prefix="/ops", tags=["ops"])
@@ -120,6 +126,7 @@ def _notebooklm_status_payload() -> dict:
             context_file_updated_at = None
 
     ready = bool(package_installed and storage_path.exists() and storage_valid)
+    runtime_health = get_notebooklm_runtime_health()
     return {
         "installed": bool(package_installed),
         "ready": ready,
@@ -137,6 +144,7 @@ def _notebooklm_status_payload() -> dict:
         "context_notebook_id": context_notebook_id,
         "timeout_seconds": NOTEBOOKLM_TIMEOUT_SECONDS,
         "keepalive_seconds": NOTEBOOKLM_KEEPALIVE_SECONDS,
+        "runtime_health": runtime_health,
     }
 
 
@@ -255,6 +263,7 @@ async def upload_notebooklm_auth_file(
             storage_path.chmod(0o600)
         except Exception:
             pass
+    note_notebooklm_manual_auth_refresh()
     return _notebooklm_status_payload()
 
 
@@ -268,4 +277,5 @@ def clear_notebooklm_auth_file(_: User = Depends(require_owner)) -> dict:
                 path.unlink()
         except Exception:
             pass
+    note_notebooklm_manual_auth_clear()
     return _notebooklm_status_payload()

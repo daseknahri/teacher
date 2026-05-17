@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 import json
 from importlib.util import find_spec
 from pathlib import Path
@@ -138,6 +139,113 @@ NOTEBOOKLM_NO_CONTEXT_PATTERNS: tuple[str, ...] = (
 NOTEBOOKLM_TEMP_NOTEBOOK_TITLES: tuple[str, ...] = (
     "Teacher Progress Smoke Test",
 )
+NOTEBOOKLM_AUTH_ERROR_PATTERNS: tuple[str, ...] = (
+    "sign in",
+    "signin",
+    "login",
+    "log in",
+    "unauthorized",
+    "forbidden",
+    "access denied",
+    "cookie",
+    "cookies",
+    "session expired",
+    "storage_state",
+    "redirect",
+    "google account",
+)
+
+
+def _resolve_notebooklm_health_path() -> Path:
+    configured_auth_path = str(app_config.NOTEBOOKLM_AUTH_PATH or "").strip()
+    if configured_auth_path:
+        return Path(configured_auth_path).expanduser().with_name("health.json")
+    profile = app_config.NOTEBOOKLM_PROFILE or "default"
+    return _resolve_notebooklm_home() / "profiles" / profile / "health.json"
+
+
+def _read_notebooklm_health_state() -> dict[str, Any]:
+    path = _resolve_notebooklm_health_path()
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _write_notebooklm_health_state(payload: dict[str, Any]) -> None:
+    path = _resolve_notebooklm_health_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _looks_like_notebooklm_auth_error_message(message: str | None) -> bool:
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    return any(pattern in text for pattern in NOTEBOOKLM_AUTH_ERROR_PATTERNS)
+
+
+def _record_notebooklm_health(
+    *,
+    source: str,
+    ok: bool,
+    error_message: str | None = None,
+    refresh_required: bool | None = None,
+) -> None:
+    state = _read_notebooklm_health_state()
+    now = datetime.now(UTC).isoformat()
+    state["last_event_at"] = now
+    state["last_event_source"] = source
+    if ok:
+        state["last_success_at"] = now
+        state["last_success_source"] = source
+        state["last_error_at"] = state.get("last_error_at")
+        state["refresh_required"] = False if refresh_required is None else bool(refresh_required)
+        if "last_error_message" not in state:
+            state["last_error_message"] = None
+        state["last_error_message"] = state.get("last_error_message")
+    else:
+        state["last_error_at"] = now
+        state["last_error_source"] = source
+        state["last_error_message"] = str(error_message or "").strip() or None
+        state["refresh_required"] = bool(refresh_required)
+    _write_notebooklm_health_state(state)
+
+
+def note_notebooklm_manual_auth_refresh() -> None:
+    state = _read_notebooklm_health_state()
+    now = datetime.now(UTC).isoformat()
+    state["last_manual_refresh_at"] = now
+    state["refresh_required"] = False
+    _write_notebooklm_health_state(state)
+
+
+def note_notebooklm_manual_auth_clear() -> None:
+    state = _read_notebooklm_health_state()
+    now = datetime.now(UTC).isoformat()
+    state["last_manual_clear_at"] = now
+    state["refresh_required"] = True
+    _write_notebooklm_health_state(state)
+
+
+def get_notebooklm_runtime_health() -> dict[str, Any]:
+    state = _read_notebooklm_health_state()
+    refresh_required = bool(state.get("refresh_required"))
+    return {
+        "refresh_required": refresh_required,
+        "last_event_at": state.get("last_event_at"),
+        "last_event_source": state.get("last_event_source"),
+        "last_success_at": state.get("last_success_at"),
+        "last_success_source": state.get("last_success_source"),
+        "last_error_at": state.get("last_error_at"),
+        "last_error_source": state.get("last_error_source"),
+        "last_error_message": state.get("last_error_message"),
+        "last_manual_refresh_at": state.get("last_manual_refresh_at"),
+        "last_manual_clear_at": state.get("last_manual_clear_at"),
+    }
 
 
 def _looks_like_notebooklm_no_context(answer: str | None) -> bool:
@@ -175,6 +283,12 @@ def notebooklm_smoke_test() -> dict[str, Any]:
     try:
         return asyncio.run(_notebooklm_smoke_test_async())
     except Exception as exc:
+        _record_notebooklm_health(
+            source="smoke_test",
+            ok=False,
+            error_message=f"notebooklm_smoke_runtime_error:{exc.__class__.__name__}",
+            refresh_required=_looks_like_notebooklm_auth_error_message(str(exc)),
+        )
         return {
             "ok": False,
             "provider": "notebooklm",
@@ -189,6 +303,12 @@ def notebooklm_smoke_test() -> dict[str, Any]:
 async def _notebooklm_smoke_test_async() -> dict[str, Any]:
     client = await _create_notebooklm_client()
     if client is None:
+        _record_notebooklm_health(
+            source="smoke_test",
+            ok=False,
+            error_message="notebooklm_client_unavailable",
+            refresh_required=False,
+        )
         return {
             "ok": False,
             "provider": "notebooklm",
@@ -225,6 +345,12 @@ async def _notebooklm_smoke_test_async() -> dict[str, Any]:
             )
             raw_answer = str(getattr(result, "answer", "") or "").strip()
     except Exception as exc:
+        _record_notebooklm_health(
+            source="smoke_test",
+            ok=False,
+            error_message=f"notebooklm_smoke_request_failed:{exc.__class__.__name__}:{exc}",
+            refresh_required=_looks_like_notebooklm_auth_error_message(str(exc)),
+        )
         return {
             "ok": False,
             "provider": "notebooklm",
@@ -238,11 +364,18 @@ async def _notebooklm_smoke_test_async() -> dict[str, Any]:
         if notebook_id:
             await _safe_delete_notebook_async(notebook_id)
 
+    smoke_ok = "KAPPA-372" in raw_answer.upper()
+    _record_notebooklm_health(
+        source="smoke_test",
+        ok=smoke_ok,
+        error_message=None if smoke_ok else "notebooklm_smoke_unexpected_answer",
+        refresh_required=False,
+    )
     return {
-        "ok": "KAPPA-372" in raw_answer.upper(),
+        "ok": smoke_ok,
         "provider": "notebooklm",
         "model": "notebooklm-py",
-        "error_message": None if "KAPPA-372" in raw_answer.upper() else "notebooklm_smoke_unexpected_answer",
+        "error_message": None if smoke_ok else "notebooklm_smoke_unexpected_answer",
         "answer": raw_answer,
         "notebook_id": notebook_id or None,
         "source_ids": source_ids,
@@ -763,7 +896,7 @@ def _notebooklm_generate_checklist(
     outline_hint_lines: list[str] | None = None,
 ) -> tuple[list[dict[str, Any]] | None, dict[str, Any] | None, dict[str, Any] | None, str | None]:
     try:
-        return asyncio.run(
+        items, provider_context, raw_provider_response, error_message = asyncio.run(
             _notebooklm_generate_checklist_async(
                 unit_type=unit_type,
                 title=title,
@@ -773,7 +906,20 @@ def _notebooklm_generate_checklist(
                 outline_hint_lines=outline_hint_lines,
             )
         )
+        _record_notebooklm_health(
+            source="generate_checklist",
+            ok=bool(items),
+            error_message=error_message,
+            refresh_required=_looks_like_notebooklm_auth_error_message(error_message),
+        )
+        return items, provider_context, raw_provider_response, error_message
     except Exception as exc:
+        _record_notebooklm_health(
+            source="generate_checklist",
+            ok=False,
+            error_message=f"notebooklm_runtime_error:{exc.__class__.__name__}:{exc}",
+            refresh_required=_looks_like_notebooklm_auth_error_message(str(exc)),
+        )
         return None, None, None, f"notebooklm_runtime_error:{exc.__class__.__name__}"
 
 
@@ -924,7 +1070,7 @@ def _notebooklm_generate_session_writeup(
     provider_context: dict[str, Any] | None,
 ) -> dict[str, Any]:
     try:
-        return asyncio.run(
+        result = asyncio.run(
             _notebooklm_generate_session_writeup_async(
                 unit_title=unit_title,
                 unit_type=unit_type,
@@ -937,7 +1083,20 @@ def _notebooklm_generate_session_writeup(
                 provider_context=provider_context,
             )
         )
+        _record_notebooklm_health(
+            source="generate_writeup",
+            ok=not bool(result.get("error_message")),
+            error_message=str(result.get("error_message") or "").strip() or None,
+            refresh_required=_looks_like_notebooklm_auth_error_message(str(result.get("error_message") or "")),
+        )
+        return result
     except Exception as exc:
+        _record_notebooklm_health(
+            source="generate_writeup",
+            ok=False,
+            error_message=f"notebooklm_runtime_error:{exc.__class__.__name__}:{exc}",
+            refresh_required=_looks_like_notebooklm_auth_error_message(str(exc)),
+        )
         return {
             "provider": "fallback",
             "requested_provider": "notebooklm",
