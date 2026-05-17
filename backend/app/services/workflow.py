@@ -11,7 +11,10 @@ from .. import config as app_config
 from ..config import OCR_LANG, OPENAI_API_KEY, OPENAI_MODEL, OPENAI_TIMEOUT_SECONDS
 from ..models import WorkflowChecklistItemKind, WorkflowUnitType
 from .extraction import resolve_raw_text
-from .workflow_generation import generate_unit_checklist_package, notebooklm_provider_ready
+from .workflow_generation import (
+    ensure_notebooklm_generation_ready,
+    generate_unit_checklist_package,
+)
 
 
 NUMBERED_HEADING_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)*)(?:\s*[-.):]\s*|\s+)(.+)$")
@@ -46,13 +49,13 @@ def generate_unit_checklist(
     document_path: str | None = None,
 ) -> dict[str, Any]:
     configured_provider = str(app_config.UNIT_PLANNER_PROVIDER or "fallback").strip().lower() or "fallback"
-    notebooklm_ready = notebooklm_provider_ready()
     has_document = bool(str(document_path or "").strip())
 
-    if has_document and notebooklm_ready:
+    if has_document:
+        ensure_notebooklm_generation_ready(action_label="unit extraction")
         configured_provider = "notebooklm"
-    elif configured_provider == "notebooklm" and not notebooklm_ready:
-        configured_provider = "openai" if OPENAI_API_KEY else "fallback"
+    elif configured_provider == "notebooklm":
+        ensure_notebooklm_generation_ready(action_label="unit extraction")
     elif configured_provider == "openai" and not OPENAI_API_KEY:
         configured_provider = "fallback"
 

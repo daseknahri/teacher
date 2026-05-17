@@ -16,6 +16,10 @@ from .. import config as app_config
 from ..models import WorkflowChecklistItemKind, WorkflowUnitType
 
 
+class NotebookLMGenerationUnavailableError(RuntimeError):
+    pass
+
+
 SUPPORTED_UNIT_PLANNER_PROVIDERS = {"openai", "fallback", "notebooklm"}
 SUPPORTED_SESSION_WRITER_PROVIDERS = {"openai", "fallback", "notebooklm"}
 NUMBERED_HEADING_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)*)(?:\s*[-.):]\s*|\s+)(.+)$")
@@ -136,6 +140,15 @@ NOTEBOOKLM_NO_CONTEXT_PATTERNS: tuple[str, ...] = (
     "insufficient context",
     "try giving me more specific keywords",
 )
+TEACHER_META_SECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"^\s*objectifs?\b", re.IGNORECASE),
+    re.compile(r"^\s*objectifs?\s+d[' ]apprentissage\b", re.IGNORECASE),
+    re.compile(r"^\s*pr[ée]requis\b", re.IGNORECASE),
+    re.compile(r"^\s*outils?\s+didactiques\b", re.IGNORECASE),
+    re.compile(r"^\s*moyens?\s+didactiques\b", re.IGNORECASE),
+    re.compile(r"^\s*gestion\s+du\s+temps\b", re.IGNORECASE),
+    re.compile(r"^\s*dur[ée]e?\b", re.IGNORECASE),
+)
 NOTEBOOKLM_TEMP_NOTEBOOK_TITLES: tuple[str, ...] = (
     "Teacher Progress Smoke Test",
 )
@@ -246,6 +259,20 @@ def get_notebooklm_runtime_health() -> dict[str, Any]:
         "last_manual_refresh_at": state.get("last_manual_refresh_at"),
         "last_manual_clear_at": state.get("last_manual_clear_at"),
     }
+
+
+def ensure_notebooklm_generation_ready(*, action_label: str) -> None:
+    ready = notebooklm_provider_ready()
+    health = get_notebooklm_runtime_health()
+    refresh_required = bool(health.get("refresh_required"))
+    if refresh_required:
+        raise NotebookLMGenerationUnavailableError(
+            f"NotebookLM login refresh is required before {action_label}. Use the Owner Panel refresh helper, then run the smoke test again."
+        )
+    if not ready:
+        raise NotebookLMGenerationUnavailableError(
+            f"NotebookLM is not ready for {action_label}. Upload or refresh NotebookLM auth from the Owner Panel before continuing."
+        )
 
 
 def _looks_like_notebooklm_no_context(answer: str | None) -> bool:
@@ -697,6 +724,7 @@ def generate_session_writeup_package(
             source_text=source_text,
         )
     elif requested_provider == "notebooklm":
+        ensure_notebooklm_generation_ready(action_label="session write-up generation")
         package = _notebooklm_generate_session_writeup(
             unit_title=unit_title,
             unit_type=unit_type,
@@ -1393,13 +1421,14 @@ def _build_notebooklm_checklist_prompt(
     del session_count
     prompt_parts = [
         "Lis ce PDF comme un manuel scolaire de mathematiques.",
-        "Retourne une liste hierarchique complete de tous les titres et sous-titres pedagogiques visibles, dans l'ordre exact du document.",
+        "Retourne une liste hierarchique complete du parcours reel fait avec les eleves, dans l'ordre exact du document.",
         "Regles:",
         "- Garde le titre du chapitre comme racine.",
-        "- Garde chaque grand titre, sous-titre, rubrique, activite, definition, propriete, regle, exemple et exercice visibles.",
+        "- Garde seulement les rubriques que l'enseignant traite avec les eleves: activites, contenu de la lecon, sections, sous-sections, definitions, proprietes, regles, exemples, exercices, evaluation.",
         "- Conserve le texte et le systeme de numerotation visibles dans le document (I, II, 1, 1.1, A, etc.).",
         "- Ne saute aucun titre visible, meme s'il y a plusieurs activites ou plusieurs exercices.",
         "- Si une rubrique contient Activite 1, Activite 2, ... ou Exercice 1, Exercice 2, ..., garde-les tous comme enfants de cette rubrique.",
+        "- N'inclus pas dans la checklist les rubriques meta enseignant comme Objectifs d'apprentissage, Prerequis, Outils didactiques, Gestion du temps ou rubriques similaires.",
         "- Ne garde pas les paragraphes de contenu, les calculs detailles, les reponses, ni les sous-exemples A / B / C / D.",
         "- Si un titre est coupe sur deux lignes, reconstitue-le.",
         "- Ignore seulement les metadonnees de couverture (nom du professeur, etablissement, niveau, pagination isolee).",
@@ -1425,10 +1454,11 @@ def _build_notebooklm_checklist_review_prompt() -> str:
     return "\n".join(
         [
             "Relis le meme PDF et corrige la liste precedente pour qu'aucun titre pedagogique visible ne manque.",
-            "Je veux la version finale la plus complete et la mieux ordonnee possible.",
+            "Je veux la version finale la plus complete et la mieux ordonnee possible pour suivre ce que l'enseignant fait avec les eleves.",
             "Regles:",
             "- Garde le titre du chapitre comme racine.",
             "- Verifie surtout toutes les rubriques Activite 1, Activite 2, ..., Exercice 1, Exercice 2, ..., Definition, Propriete, Regle, Exemple, Evaluation.",
+            "- Exclue les rubriques meta enseignant comme Objectifs d'apprentissage, Prerequis, Outils didactiques, Gestion du temps ou rubriques equivalentes.",
             "- Ne saute aucun titre visible, meme s'il est repetitif ou similaire a un autre.",
             "- Ne garde pas les paragraphes de contenu, les calculs detailles, les reponses, ni les sous-exemples A / B / C / D.",
             "- Si une rubrique est coupee sur plusieurs pages, reconstruis la structure pedagogique complete.",
@@ -1461,9 +1491,10 @@ def _build_notebooklm_unit_map_prompt(
             '  "ordered_outline": [{"title": "...", "kind": "...", "children": [...]}]',
             "}",
             "Contraintes:",
-            "- ordered_outline doit garder uniquement les titres et sous-titres pedagogiques, dans l'ordre du document.",
+            "- ordered_outline doit garder uniquement le deroulement pedagogique vecu par les eleves, dans l'ordre du document.",
             "- Garde le titre du chapitre comme racine si visible.",
-            "- Inclure activites, definitions, proprietes, exemples, exercices et evaluation quand ils sont visibles.",
+            "- Inclure activites, contenu de la lecon, sections, sous-sections, definitions, proprietes, exemples, exercices et evaluation quand ils sont visibles.",
+            "- N'inclus pas dans ordered_outline les rubriques meta enseignant comme Objectifs d'apprentissage, Prerequis, Outils didactiques ou Gestion du temps; range-les plutot dans teaching_goals, prerequisites ou teacher_resources.",
             "- teaching_goals doit resumer les objectifs d'apprentissage visibles ou clairement implicites.",
             "- prerequisites doit lister les prerequis visibles ou tres evidents.",
             "- teacher_resources doit lister les outils didactiques ou supports visibles.",
@@ -1887,7 +1918,7 @@ def _normalize_notebooklm_outline_items(
             if not isinstance(node, dict):
                 continue
             title = _normalize_outline_title(node.get("title"))
-            if not title or _is_metadata_noise_line(title) or _is_trivial_outline_fragment(title):
+            if not title or _is_metadata_noise_line(title) or _is_trivial_outline_fragment(title) or _is_teacher_meta_outline_title(title):
                 continue
             raw_kind = str(node.get("kind") or WorkflowChecklistItemKind.OTHER.value).strip().lower()
             allowed = {kind.value for kind in WorkflowChecklistItemKind}
@@ -1904,6 +1935,13 @@ def _normalize_notebooklm_outline_items(
     if unit_type != WorkflowUnitType.CHAPTER or not normalized:
         return normalized
     return _ensure_notebooklm_chapter_root(normalized, unit_title=unit_title)
+
+
+def _is_teacher_meta_outline_title(title: str) -> bool:
+    normalized = _normalize_outline_title(title)
+    if not normalized:
+        return False
+    return any(pattern.match(normalized) for pattern in TEACHER_META_SECTION_PATTERNS)
 
 
 def _ensure_notebooklm_chapter_root(items: list[dict[str, Any]], *, unit_title: str) -> list[dict[str, Any]]:

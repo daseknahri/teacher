@@ -2447,6 +2447,40 @@ def test_generate_unit_checklist_package_trusts_notebooklm_outline_without_opena
     assert package["unit_map"]["selected_outline_source"] in {"outline_response", "unit_map"}
 
 
+def test_notebooklm_outline_normalizer_drops_teacher_meta_sections():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    items = workflow_generation._normalize_notebooklm_outline_items(
+        [
+            {
+                "title": "Les nombres rationnels : Somme et difference",
+                "kind": "chapter",
+                "children": [
+                    {"title": "Objectifs d'apprentissage", "kind": "section", "children": []},
+                    {"title": "Prerequis", "kind": "section", "children": []},
+                    {"title": "Outils didactiques", "kind": "section", "children": []},
+                    {"title": "Gestion du temps", "kind": "section", "children": []},
+                    {"title": "Activites", "kind": "section", "children": []},
+                    {"title": "Contenu de la lecon", "kind": "section", "children": []},
+                    {"title": "Evaluation", "kind": "section", "children": []},
+                ],
+            }
+        ],
+        unit_type=WorkflowUnitType.CHAPTER,
+        unit_title="Les nombres rationnels : Somme et difference",
+    )
+
+    titles = [str(row.get("title", "")) for row in _flatten_checklist(items)]
+    assert "Activites" in titles
+    assert "Contenu de la lecon" in titles
+    assert "Evaluation" in titles
+    assert "Objectifs d'apprentissage" not in titles
+    assert "Prerequis" not in titles
+    assert "Outils didactiques" not in titles
+    assert "Gestion du temps" not in titles
+
+
 def test_generate_unit_checklist_package_aligns_checklist_with_stronger_unit_map_outline(monkeypatch):
     from app.models import WorkflowUnitType
     from app.services import workflow_generation
@@ -2511,10 +2545,41 @@ def test_generate_unit_checklist_package_aligns_checklist_with_stronger_unit_map
     flat = _flatten_checklist(package["items"])
     titles = [str(row.get("title", "")) for row in flat]
     assert package["source"] == "notebooklm"
-    assert "Objectifs d'apprentissage" in titles
     assert "Evaluation" in titles
+    assert "Objectifs d'apprentissage" not in titles
+    assert "Comprendre la progression de l'unite" in package["unit_map"]["teaching_goals"]
     assert package["unit_map"]["selected_outline_source"] == "unit_map"
-    assert package["unit_map"]["ordered_outline"][0]["children"][0]["title"] == "Objectifs d'apprentissage"
+    assert package["unit_map"]["ordered_outline"][0]["children"][0]["title"] == "Activites"
+
+
+def test_workflow_unit_start_returns_clear_error_when_notebooklm_refresh_is_required(client, monkeypatch):
+    from app.routers import workflow as workflow_router
+    from app.services.workflow_generation import NotebookLMGenerationUnavailableError
+
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "NotebookLM Guard Class", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    monkeypatch.setattr(
+        workflow_router,
+        "generate_unit_checklist",
+        lambda **kwargs: (_ for _ in ()).throw(
+            NotebookLMGenerationUnavailableError("NotebookLM login refresh is required before unit extraction.")
+        ),
+    )
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Fractions",
+            "source_text": "Fractions\nActivites\nContenu de la lecon\n",
+        },
+    )
+    assert unit_resp.status_code == 409
+    assert "NotebookLM login refresh is required" in unit_resp.json()["detail"]
 
 
 def test_select_best_notebooklm_outline_candidate_prefers_more_complete_tree():

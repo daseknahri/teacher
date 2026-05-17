@@ -117,7 +117,7 @@ from ..services.workflow_content import (
     generate_and_store_session_writeup,
     save_unit_blueprint,
 )
-from ..services.workflow_generation import delete_provider_unit_context
+from ..services.workflow_generation import NotebookLMGenerationUnavailableError, delete_provider_unit_context
 from ..services.report import build_calendar_summary_pdf
 from ..services.excel import build_holiday_export_workbook, build_holiday_import_template, parse_holiday_excel
 
@@ -2066,13 +2066,16 @@ def _create_unit_with_generated_checklist(
         if not document_hash:
             document_hash = build_document_hash(extracted_text)
 
-    generated = generate_unit_checklist(
-        unit_type=unit_type,
-        title=unit.title,
-        source_text=extracted_text,
-        session_count=checklist_session_count,
-        document_path=unit.document_path,
-    )
+    try:
+        generated = generate_unit_checklist(
+            unit_type=unit_type,
+            title=unit.title,
+            source_text=extracted_text,
+            session_count=checklist_session_count,
+            document_path=unit.document_path,
+        )
+    except NotebookLMGenerationUnavailableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     _store_generated_checklist_on_unit(
         db,
         unit=unit,
@@ -5099,12 +5102,15 @@ def confirm_workflow_session(
 
     writeup_generated = False
     if bool(payload.generate_session_writeup):
-        generate_and_store_session_writeup(
-            db,
-            session_id=int(session.id),
-            provider=app_config.SESSION_WRITER_PROVIDER,
-            model=app_config.OPENAI_MODEL if app_config.SESSION_WRITER_PROVIDER == "openai" else None,
-        )
+        try:
+            generate_and_store_session_writeup(
+                db,
+                session_id=int(session.id),
+                provider=app_config.SESSION_WRITER_PROVIDER,
+                model=app_config.OPENAI_MODEL if app_config.SESSION_WRITER_PROVIDER == "openai" else None,
+            )
+        except NotebookLMGenerationUnavailableError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         writeup_generated = True
 
     log_audit(
@@ -5234,13 +5240,16 @@ def reextract_workflow_unit(
         if isinstance(raw_context, dict):
             previous_provider_context = raw_context
 
-    generated = generate_unit_checklist(
-        unit_type=unit.unit_type,
-        title=unit.title,
-        source_text=source_text,
-        session_count=requested_session_count,
-        document_path=unit.document_path,
-    )
+    try:
+        generated = generate_unit_checklist(
+            unit_type=unit.unit_type,
+            title=unit.title,
+            source_text=source_text,
+            session_count=requested_session_count,
+            document_path=unit.document_path,
+        )
+    except NotebookLMGenerationUnavailableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     _store_generated_checklist_on_unit(
         db,
         unit=unit,
@@ -5365,12 +5374,15 @@ def generate_workflow_session_writeup(
     if existing is not None and not bool(payload.regenerate):
         return _serialize_session_writeup(existing)
 
-    row = generate_and_store_session_writeup(
-        db,
-        session_id=int(session_id),
-        provider=app_config.SESSION_WRITER_PROVIDER,
-        model=app_config.OPENAI_MODEL if app_config.SESSION_WRITER_PROVIDER == "openai" else None,
-    )
+    try:
+        row = generate_and_store_session_writeup(
+            db,
+            session_id=int(session_id),
+            provider=app_config.SESSION_WRITER_PROVIDER,
+            model=app_config.OPENAI_MODEL if app_config.SESSION_WRITER_PROVIDER == "openai" else None,
+        )
+    except NotebookLMGenerationUnavailableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     log_audit(
         db,
         user=current_user,
