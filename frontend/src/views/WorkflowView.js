@@ -33,6 +33,7 @@ const _inFlightActions = new Set();
 const _sessionProgressCache = new Map();
 const _sessionWriteupCache = new Map();
 const _unitSessionTimelineCache = new Map();
+const _unitBlueprintCache = new Map();
 const CHECKLIST_KINDS = ['chapter', 'section', 'subsection', 'property', 'definition', 'example', 'exercise', 'supervision', 'correction', 'other'];
 const RECENT_SESSION_WINDOWS = [
   { key: 'today', label: 'Today' },
@@ -130,6 +131,10 @@ function _emptyUnitTimelineState() {
   return { loading: false, loaded: false, error: null, sessions: [], signature: '' };
 }
 
+function _emptyUnitBlueprintState() {
+  return { loading: false, loaded: false, error: null, item: null };
+}
+
 function _getUnitTimelineState(unitId) {
   const uid = Number(unitId);
   if (!Number.isFinite(uid) || uid <= 0) return _emptyUnitTimelineState();
@@ -181,6 +186,57 @@ function _setUnitTimelineState(unitId, state) {
   return next;
 }
 
+function _getUnitBlueprintState(unitId) {
+  const uid = Number(unitId);
+  if (!Number.isFinite(uid) || uid <= 0) return _emptyUnitBlueprintState();
+  return _unitBlueprintCache.get(uid) || _emptyUnitBlueprintState();
+}
+
+function _setUnitBlueprintState(unitId, state) {
+  const uid = Number(unitId);
+  if (!Number.isFinite(uid) || uid <= 0) return _emptyUnitBlueprintState();
+  const next = {
+    loading: Boolean(state?.loading),
+    loaded: Boolean(state?.loaded),
+    error: state?.error ? String(state.error) : null,
+    item: state?.item && typeof state.item === 'object' ? { ...state.item } : null,
+  };
+  _unitBlueprintCache.set(uid, next);
+  return next;
+}
+
+async function _loadUnitBlueprint(classId, unitId, { force = false } = {}) {
+  const uid = Number(unitId);
+  if (!Number.isFinite(uid) || uid <= 0) return _emptyUnitBlueprintState();
+  const existing = _getUnitBlueprintState(uid);
+  if (existing.loading) return existing;
+  if (!force && existing.loaded) return existing;
+
+  _setUnitBlueprintState(uid, {
+    loading: true,
+    loaded: false,
+    error: null,
+    item: existing.item,
+  });
+
+  try {
+    const row = await api(`/workflow/classes/${classId}/units/${uid}/blueprint`);
+    return _setUnitBlueprintState(uid, {
+      loading: false,
+      loaded: true,
+      error: null,
+      item: row || null,
+    });
+  } catch (err) {
+    return _setUnitBlueprintState(uid, {
+      loading: false,
+      loaded: true,
+      error: String(err?.message || 'Failed to load AI extraction details.'),
+      item: existing.item,
+    });
+  }
+}
+
 async function _loadUnitTimeline(unitId, { force = false } = {}) {
   const uid = Number(unitId);
   if (!Number.isFinite(uid) || uid <= 0) return _emptyUnitTimelineState();
@@ -214,6 +270,129 @@ async function _loadUnitTimeline(unitId, { force = false } = {}) {
       signature: existing.signature,
     });
   }
+}
+
+function _prettyJson(value) {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value ?? '');
+  }
+}
+
+function _renderBlueprintTree(nodes, depth = 0) {
+  if (!Array.isArray(nodes) || !nodes.length) {
+    return depth === 0
+      ? '<p class="text-[12px] text-slate-500">No parsed checklist tree saved for this unit.</p>'
+      : '';
+  }
+  const listClass = depth === 0
+    ? 'space-y-1.5'
+    : 'space-y-1.5 ml-4 mt-2 border-l border-slate-200 pl-3';
+  return `
+    <ul class="${listClass}">
+      ${nodes.map(node => `
+        <li>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-[13px] text-slate-700">${_escapeHtml(node?.title || '')}</span>
+            ${node?.kind ? `<span class="badge badge-gray">${_escapeHtml(String(node.kind))}</span>` : ''}
+            ${node?.session_number ? `<span class="badge badge-blue">S${Number(node.session_number)}</span>` : ''}
+          </div>
+          ${_renderBlueprintTree(node?.children || [], depth + 1)}
+        </li>
+      `).join('')}
+    </ul>`;
+}
+
+function _openUnitBlueprintModal(unit, blueprint) {
+  const provider = String(blueprint?.provider || unit?.extraction_source || 'unknown');
+  const model = String(blueprint?.model || unit?.extraction_model || '').trim();
+  const status = String(blueprint?.status || unit?.extraction_status || '').trim();
+  const errorMessage = String(blueprint?.error_message || unit?.extraction_error || '').trim();
+  const blueprintJson = blueprint?.blueprint_json && typeof blueprint.blueprint_json === 'object' ? blueprint.blueprint_json : {};
+  const rawPackage = blueprint?.raw_provider_response && typeof blueprint.raw_provider_response === 'object'
+    ? blueprint.raw_provider_response
+    : {};
+  const rawProviderPayload = rawPackage?.raw_provider_response && typeof rawPackage.raw_provider_response === 'object'
+    ? rawPackage.raw_provider_response
+    : {};
+  const providerContext = blueprintJson?.provider_context && typeof blueprintJson.provider_context === 'object'
+    ? blueprintJson.provider_context
+    : {};
+  const responses = Array.isArray(rawProviderPayload?.responses) ? rawProviderPayload.responses : [];
+  const selectedVariant = String(rawProviderPayload?.selected_variant || '').trim();
+  const responseMode = String(rawProviderPayload?.response_mode || '').trim();
+  const sourceIds = Array.isArray(providerContext?.source_ids) ? providerContext.source_ids : [];
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal max-w-5xl w-[96vw]">
+      <div class="px-6 py-5 border-b border-slate-100">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-[17px] font-bold text-slate-800">AI Extraction Details</h2>
+            <p class="text-[12px] text-slate-500 mt-1">
+              This shows what was saved for this unit when the checklist was generated.
+            </p>
+          </div>
+          <button id="unit-blueprint-close-top" class="btn btn-ghost btn-sm">Close</button>
+        </div>
+      </div>
+      <div class="px-6 py-4 max-h-[78vh] overflow-y-auto flex flex-col gap-4">
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 flex flex-col gap-2">
+          <div class="flex gap-2 flex-wrap items-center">
+            <span class="badge badge-blue">${_escapeHtml(provider)}</span>
+            ${model ? `<span class="badge badge-gray">${_escapeHtml(model)}</span>` : ''}
+            ${status ? `<span class="badge ${status === 'degraded' ? 'badge-amber' : 'badge-green'}">${_escapeHtml(status)}</span>` : ''}
+          </div>
+          ${errorMessage ? `<p class="text-[12px] text-amber-700"><span class="font-semibold">Provider note:</span> ${_escapeHtml(errorMessage)}</p>` : ''}
+          <p class="text-[12px] text-slate-600"><span class="font-semibold">Notebook ID:</span> ${_escapeHtml(providerContext?.notebook_id || rawProviderPayload?.notebook_id || 'None')}</p>
+          <p class="text-[12px] text-slate-600"><span class="font-semibold">Source IDs:</span> ${sourceIds.length ? _escapeHtml(sourceIds.join(', ')) : _escapeHtml(String(rawProviderPayload?.source_ids || 'None'))}</p>
+          ${responseMode ? `<p class="text-[12px] text-slate-600"><span class="font-semibold">Response mode:</span> ${_escapeHtml(responseMode)}</p>` : ''}
+          ${selectedVariant ? `<p class="text-[12px] text-slate-600"><span class="font-semibold">Selected variant:</span> ${_escapeHtml(selectedVariant)}</p>` : ''}
+        </div>
+
+        <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+          <h3 class="text-[14px] font-semibold text-slate-800 mb-2">Parsed checklist tree</h3>
+          <p class="text-[12px] text-slate-500 mb-3">This is the structured tree the app saved into the unit checklist.</p>
+          ${_renderBlueprintTree(blueprintJson?.items || [])}
+        </div>
+
+        <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+          <h3 class="text-[14px] font-semibold text-slate-800 mb-2">Raw NotebookLM answers</h3>
+          <p class="text-[12px] text-slate-500 mb-3">These are the direct answers returned by NotebookLM before the app parsed them.</p>
+          ${responses.length ? responses.map(row => `
+            <details class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 mb-2" ${String(row?.variant || '') === selectedVariant ? 'open' : ''}>
+              <summary class="cursor-pointer text-[12px] font-semibold text-slate-700">
+                ${_escapeHtml(String(row?.variant || 'response'))}
+                ${row?.conversation_id ? ` • ${_escapeHtml(String(row.conversation_id))}` : ''}
+              </summary>
+              <pre class="mt-3 text-[11px] leading-5 whitespace-pre-wrap break-words text-slate-700 font-mono">${_escapeHtml(String(row?.answer || ''))}</pre>
+            </details>
+          `).join('') : '<p class="text-[12px] text-slate-500">No raw NotebookLM responses were saved for this unit.</p>'}
+        </div>
+
+        <details class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+          <summary class="cursor-pointer text-[14px] font-semibold text-slate-800">Full saved extraction JSON</summary>
+          <pre class="mt-3 text-[11px] leading-5 whitespace-pre-wrap break-words text-slate-700 font-mono">${_escapeHtml(_prettyJson(blueprint || {}))}</pre>
+        </details>
+      </div>
+      <div class="px-6 py-4 border-t border-slate-100 flex justify-end">
+        <button id="unit-blueprint-close" class="btn btn-primary">Close</button>
+      </div>
+    </div>`;
+
+  function cleanup() {
+    overlay.remove();
+  }
+
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) cleanup();
+  });
+  overlay.querySelector('#unit-blueprint-close-top')?.addEventListener('click', cleanup);
+  overlay.querySelector('#unit-blueprint-close')?.addEventListener('click', cleanup);
+  document.body.appendChild(overlay);
 }
 
 function _sortSessionProgressItems(rows) {
@@ -829,6 +1008,7 @@ function _render(el, classId) {
                 <div class="flex gap-2 flex-wrap mt-auto">
                   ${!session ? `<button id="btn-start-session" class="btn btn-success">Start Session</button>` : ''}
                   ${unit.document_name ? `<button id="btn-download-unit-doc" class="btn btn-secondary btn-sm">Unit PDF</button>` : ''}
+                  <button id="btn-view-ai-details" class="btn btn-secondary btn-sm">AI Details</button>
                   <button id="btn-plan-active-unit" class="btn btn-secondary btn-sm">Plan Sessions</button>
                   <button id="btn-add-item-root" class="btn btn-secondary btn-sm">Add Item</button>
                   <button id="btn-close-unit" class="btn btn-ghost btn-sm !text-slate-400">Close Unit</button>
@@ -2794,6 +2974,33 @@ function _bindWorkflowEvents(el, classId) {
       } catch (err) {
         _setBusy(closeBtn, false);
         showToast(err.message, 'error');
+      }
+    });
+  });
+
+  el.querySelector('#btn-view-ai-details')?.addEventListener('click', async function () {
+    const button = this;
+    await _withActionLock(`workflow:unit-blueprint:${classId}`, async () => {
+      const unit = getActiveUnit();
+      if (!unit?.id) return;
+      _setBusy(button, true);
+      try {
+        const state = await _loadUnitBlueprint(classId, unit.id, { force: true });
+        if (state?.error) {
+          showToast(state.error, 'error');
+          _setBusy(button, false);
+          return;
+        }
+        if (!state?.item) {
+          showToast('No AI extraction details are saved for this unit yet.', 'warning');
+          _setBusy(button, false);
+          return;
+        }
+        _setBusy(button, false);
+        _openUnitBlueprintModal(unit, state.item);
+      } catch (err) {
+        _setBusy(button, false);
+        showToast(String(err?.message || 'Failed to load AI extraction details.'), 'error');
       }
     });
   });
