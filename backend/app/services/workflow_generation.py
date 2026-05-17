@@ -849,6 +849,7 @@ async def _notebooklm_generate_checklist_async(
                 "responses": [
                     {
                         "variant": row["variant"],
+                        "prompt": row["prompt"],
                         "answer": row["answer"],
                         "conversation_id": row["conversation_id"],
                     }

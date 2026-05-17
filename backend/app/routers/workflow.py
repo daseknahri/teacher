@@ -2064,11 +2064,52 @@ def _create_unit_with_generated_checklist(
         session_count=checklist_session_count,
         document_path=unit.document_path,
     )
+    _store_generated_checklist_on_unit(
+        db,
+        unit=unit,
+        generated=generated,
+        extracted_text=extracted_text,
+        document_hash=document_hash,
+        checklist_session_count=checklist_session_count,
+        checklist_session_hint_out=checklist_session_hint_out,
+    )
+
+    log_audit(
+        db,
+        user=current_user,
+        action="workflow.unit.start",
+        entity_type="workflow_unit",
+        entity_id=unit.id,
+        class_id=class_id,
+        details={
+            "unit_type": unit_type.value,
+            "title": unit.title,
+            "planned_hours": planned_hours,
+            "generation_source": generated.get("source"),
+        },
+    )
+    return unit
+
+
+def _store_generated_checklist_on_unit(
+    db: Session,
+    *,
+    unit: WorkflowUnit,
+    generated: dict[str, object],
+    extracted_text: str,
+    document_hash: str | None,
+    checklist_session_count: int | None = None,
+    checklist_session_hint_out: dict[int, int] | None = None,
+) -> None:
     nodes = generated.get("items") or []
     if _title_looks_like_slug(unit.title):
         better_title = _first_meaningful_generated_title(nodes)
         if better_title:
             unit.title = better_title[:255]
+
+    db.execute(delete(WorkflowChecklistItem).where(WorkflowChecklistItem.unit_id == int(unit.id)))
+    db.flush()
+
     position_counter = 1
 
     def create_items(
@@ -2135,22 +2176,6 @@ def _create_unit_with_generated_checklist(
         status=str(generated.get("status") or "ready").strip() or "ready",
         error_message=str(generated.get("error_message") or "").strip() or None,
     )
-
-    log_audit(
-        db,
-        user=current_user,
-        action="workflow.unit.start",
-        entity_type="workflow_unit",
-        entity_id=unit.id,
-        class_id=class_id,
-        details={
-            "unit_type": unit_type.value,
-            "title": unit.title,
-            "planned_hours": planned_hours,
-            "generation_source": generated.get("source"),
-        },
-    )
-    return unit
 
 
 @router.post("/classes/{class_id}/units/start", response_model=WorkflowUnitOut, status_code=status.HTTP_201_CREATED)
@@ -5114,6 +5139,99 @@ def get_workflow_unit_blueprint(
     if row is None:
         raise HTTPException(status_code=404, detail="Unit blueprint not found.")
     return _serialize_unit_blueprint(row)
+
+
+@router.post("/classes/{class_id}/units/{unit_id}/reextract", response_model=WorkflowUnitOut)
+def reextract_workflow_unit(
+    class_id: int,
+    unit_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkflowUnitOut:
+    _ = ensure_class_writable(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+
+    linked_sessions_count = int(
+        db.scalar(select(func.count(ClassSession.id)).where(ClassSession.unit_id == int(unit.id))) or 0
+    )
+    if linked_sessions_count > 0:
+        raise HTTPException(
+            status_code=409,
+            detail="This unit already has linked sessions. Re-extraction is only allowed before teaching starts.",
+        )
+
+    source_text = ""
+    if unit.document_path and Path(str(unit.document_path)).exists():
+        source_text = extract_text_from_document(str(unit.document_path), None)
+    elif unit.blueprint is not None and unit.blueprint.source_text_excerpt:
+        source_text = str(unit.blueprint.source_text_excerpt or "").strip()
+    if not source_text.strip():
+        raise HTTPException(status_code=400, detail="No source content is available to re-run extraction.")
+
+    document_hash = None
+    if unit.blueprint is not None and unit.blueprint.document_hash:
+        document_hash = str(unit.blueprint.document_hash or "").strip() or None
+    if document_hash is None and unit.document_path and Path(str(unit.document_path)).exists():
+        try:
+            document_hash = build_document_hash(Path(str(unit.document_path)).read_bytes())
+        except Exception:
+            document_hash = None
+    if document_hash is None:
+        document_hash = build_document_hash(source_text)
+
+    requested_session_count = unit.blueprint.requested_session_count if unit.blueprint is not None else None
+    previous_provider_context = None
+    if unit.blueprint is not None and isinstance(unit.blueprint.blueprint_json, dict):
+        raw_context = unit.blueprint.blueprint_json.get("provider_context")
+        if isinstance(raw_context, dict):
+            previous_provider_context = raw_context
+
+    generated = generate_unit_checklist(
+        unit_type=unit.unit_type,
+        title=unit.title,
+        source_text=source_text,
+        session_count=requested_session_count,
+        document_path=unit.document_path,
+    )
+    _store_generated_checklist_on_unit(
+        db,
+        unit=unit,
+        generated=generated,
+        extracted_text=source_text,
+        document_hash=document_hash,
+        checklist_session_count=requested_session_count,
+        checklist_session_hint_out=None,
+    )
+
+    log_audit(
+        db,
+        user=current_user,
+        action="workflow.unit.reextract",
+        entity_type="workflow_unit",
+        entity_id=unit.id,
+        class_id=class_id,
+        details={
+            "title": unit.title,
+            "unit_type": unit.unit_type.value,
+            "generation_source": generated.get("source"),
+        },
+    )
+    db.commit()
+
+    new_provider_context = None
+    if unit.blueprint is not None and isinstance(unit.blueprint.blueprint_json, dict):
+        raw_context = unit.blueprint.blueprint_json.get("provider_context")
+        if isinstance(raw_context, dict):
+            new_provider_context = raw_context
+    previous_notebook_id = str((previous_provider_context or {}).get("notebook_id") or "").strip()
+    new_notebook_id = str((new_provider_context or {}).get("notebook_id") or "").strip()
+    if previous_notebook_id and previous_notebook_id != new_notebook_id:
+        _ = delete_provider_unit_context(provider_context=previous_provider_context)
+
+    db.refresh(unit)
+    return _serialize_unit(db, unit)
 
 
 @router.get("/classes/{class_id}/sessions/{session_id}/writeup", response_model=WorkflowSessionWriteupOut)

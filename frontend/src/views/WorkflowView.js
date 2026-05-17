@@ -368,7 +368,14 @@ function _openUnitBlueprintModal(unit, blueprint) {
                 ${_escapeHtml(String(row?.variant || 'response'))}
                 ${row?.conversation_id ? ` • ${_escapeHtml(String(row.conversation_id))}` : ''}
               </summary>
-              <pre class="mt-3 text-[11px] leading-5 whitespace-pre-wrap break-words text-slate-700 font-mono">${_escapeHtml(String(row?.answer || ''))}</pre>
+              ${row?.prompt ? `<div class="mt-3">
+                <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Prompt</p>
+                <pre class="text-[11px] leading-5 whitespace-pre-wrap break-words text-slate-700 font-mono bg-white rounded-lg border border-slate-200 px-3 py-2">${_escapeHtml(String(row.prompt || ''))}</pre>
+              </div>` : ''}
+              <div class="mt-3">
+                <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Answer</p>
+                <pre class="text-[11px] leading-5 whitespace-pre-wrap break-words text-slate-700 font-mono">${_escapeHtml(String(row?.answer || ''))}</pre>
+              </div>
             </details>
           `).join('') : '<p class="text-[12px] text-slate-500">No raw NotebookLM responses were saved for this unit.</p>'}
         </div>
@@ -1008,6 +1015,7 @@ function _render(el, classId) {
                 <div class="flex gap-2 flex-wrap mt-auto">
                   ${!session ? `<button id="btn-start-session" class="btn btn-success">Start Session</button>` : ''}
                   ${unit.document_name ? `<button id="btn-download-unit-doc" class="btn btn-secondary btn-sm">Unit PDF</button>` : ''}
+                  <button id="btn-rerun-ai-extraction" class="btn btn-secondary btn-sm">Re-run AI</button>
                   <button id="btn-view-ai-details" class="btn btn-secondary btn-sm">AI Details</button>
                   <button id="btn-plan-active-unit" class="btn btn-secondary btn-sm">Plan Sessions</button>
                   <button id="btn-add-item-root" class="btn btn-secondary btn-sm">Add Item</button>
@@ -3001,6 +3009,30 @@ function _bindWorkflowEvents(el, classId) {
       } catch (err) {
         _setBusy(button, false);
         showToast(String(err?.message || 'Failed to load AI extraction details.'), 'error');
+      }
+    });
+  });
+
+  el.querySelector('#btn-rerun-ai-extraction')?.addEventListener('click', async function () {
+    const button = this;
+    await _withActionLock(`workflow:unit-reextract:${classId}`, async () => {
+      const unit = getActiveUnit();
+      if (!unit?.id) return;
+      const ok = await askConfirm(
+        'Re-run AI extraction for this unit? This will replace the current checklist. For safety, this is only allowed before any unit sessions exist.'
+      );
+      if (!ok) return;
+      _setBusy(button, true);
+      try {
+        _unitBlueprintCache.delete(Number(unit.id));
+        await api(`/workflow/classes/${classId}/units/${unit.id}/reextract`, { method: 'POST' });
+        const ws = await api(`/workflow/classes/${classId}`);
+        setWorkspace(ws);
+        _render(el, classId);
+        showToast('AI extraction re-run completed.', 'ok');
+      } catch (err) {
+        _setBusy(button, false);
+        showToast(String(err?.message || 'Failed to re-run AI extraction.'), 'error');
       }
     });
   });

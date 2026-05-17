@@ -1,4 +1,5 @@
 from io import BytesIO
+from datetime import date
 import json
 import os
 import sys
@@ -1649,6 +1650,150 @@ def test_workflow_blueprint_records_requested_provider_when_falling_back(client,
     assert blueprint["error_message"] == "notebooklm_client_unavailable"
     assert blueprint["raw_provider_response"]["requested_provider"] == "notebooklm"
     assert blueprint["raw_provider_response"]["error_message"] == "notebooklm_client_unavailable"
+
+
+def test_workflow_unit_reextract_updates_checklist_and_blueprint(client, monkeypatch):
+    from app.routers import workflow as workflow_router
+
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Reextract Class", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Les nombres rationnels",
+            "source_text": (
+                "Les nombres rationnels : Somme et difference\n"
+                "Objectifs d'apprentissage\n"
+                "Contenu de la lecon\n"
+            ),
+        },
+    )
+    assert unit_resp.status_code == 201
+    unit_id = unit_resp.json()["id"]
+
+    monkeypatch.setattr(
+        workflow_router,
+        "generate_unit_checklist",
+        lambda **kwargs: {
+            "source": "notebooklm",
+            "requested_provider": "notebooklm",
+            "model": "notebooklm-py",
+            "status": "ready",
+            "error_message": None,
+            "provider_context": {
+                "provider": "notebooklm",
+                "notebook_id": "nb-rerun-1",
+                "source_ids": ["src-rerun-1"],
+                "notebook_title": "Teacher Progress - Les nombres rationnels",
+            },
+            "raw_provider_response": {
+                "responses": [
+                    {
+                        "variant": "outline",
+                        "prompt": "Extract the pedagogical outline only.",
+                        "answer": "- Les nombres rationnels : Somme et difference\n  - Activites\n  - Contenu de la lecon\n",
+                    }
+                ]
+            },
+            "items": [
+                {
+                    "title": "Les nombres rationnels : Somme et difference",
+                    "kind": "chapter",
+                    "children": [
+                        {"title": "Activites", "kind": "section", "children": []},
+                        {
+                            "title": "Contenu de la lecon",
+                            "kind": "section",
+                            "children": [
+                                {"title": "I- Addition", "kind": "subsection", "children": []},
+                                {"title": "Evaluation", "kind": "exercise", "children": []},
+                            ],
+                        },
+                    ],
+                }
+            ],
+        },
+    )
+    monkeypatch.setattr(workflow_router, "delete_provider_unit_context", lambda provider_context: True)
+
+    reextract_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/reextract",
+        headers=headers,
+    )
+    assert reextract_resp.status_code == 200
+    payload = reextract_resp.json()
+    assert payload["extraction_source"] == "notebooklm"
+    assert payload["extraction_model"] == "notebooklm-py"
+    assert payload["checklist"][0]["title"] == "Les nombres rationnels : Somme et difference"
+    assert payload["checklist"][0]["children"][0]["title"] == "Activites"
+    assert payload["checklist"][0]["children"][1]["children"][0]["title"] == "I- Addition"
+
+    blueprint_resp = client.get(f"/workflow/classes/{class_id}/units/{unit_id}/blueprint", headers=headers)
+    assert blueprint_resp.status_code == 200
+    blueprint = blueprint_resp.json()
+    assert blueprint["provider"] == "notebooklm"
+    assert blueprint["model"] == "notebooklm-py"
+    assert blueprint["blueprint_json"]["provider_context"]["notebook_id"] == "nb-rerun-1"
+    assert blueprint["raw_provider_response"]["raw_provider_response"]["responses"][0]["prompt"] == "Extract the pedagogical outline only."
+
+
+def test_workflow_unit_reextract_is_blocked_after_teaching_starts(client):
+    from app.database import SessionLocal
+    from app.models import ClassSession
+
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Blocked Reextract Class", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    roster_content = _build_roster_file([("A1", "Student One")])
+    roster_resp = client.post(
+        f"/classes/{class_id}/students/import",
+        headers=headers,
+        files={"file": ("roster.xlsx", roster_content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert roster_resp.status_code == 200
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Fractions",
+            "source_text": "Fractions\nObjectifs\nExercices\n",
+        },
+    )
+    assert unit_resp.status_code == 201
+    unit_id = unit_resp.json()["id"]
+
+    db = SessionLocal()
+    try:
+        db.add(
+            ClassSession(
+                class_id=int(class_id),
+                unit_id=int(unit_id),
+                unit_session_number=1,
+                session_date=date(2026, 5, 17),
+                start_time=None,
+                end_time=None,
+                note="Linked for reextract guard test",
+            )
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    reextract_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/reextract",
+        headers=headers,
+    )
+    assert reextract_resp.status_code == 409
+    assert "before teaching starts" in reextract_resp.json()["detail"]
 
 
 def test_owner_can_run_notebooklm_smoke_test(client, monkeypatch):
