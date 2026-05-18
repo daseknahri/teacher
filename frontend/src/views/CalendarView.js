@@ -573,6 +573,12 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
       <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
         <p class="text-[12px] font-semibold text-slate-600">Recommended next step</p>
         <p class="text-[12px] text-slate-500 mt-1">Review the planned flow and prep suggestions now. The textbook write-up becomes available after the session happens.</p>
+        ${hasUnit ? `
+          <div class="mt-3 flex gap-2 flex-wrap">
+            <button id="btn-calendar-next-open-workflow" class="btn btn-primary btn-sm">Open workflow</button>
+            <button id="btn-calendar-next-assistant" class="btn btn-secondary btn-sm">Ask This Unit</button>
+            <button id="btn-calendar-next-materials" class="btn btn-secondary btn-sm">Material Studio</button>
+          </div>` : ''}
       </div>`;
   }
   if (!hasUnit) {
@@ -3776,6 +3782,15 @@ function _renderCalendar(el, classId) {
 
   el.querySelector('#btn-calendar-next-generate')?.addEventListener('click', () => {
     el.querySelector('#btn-generate-selected-writeup')?.click();
+  });
+  el.querySelector('#btn-calendar-next-open-workflow')?.addEventListener('click', () => {
+    el.querySelector('#btn-open-selected-workflow')?.click();
+  });
+  el.querySelector('#btn-calendar-next-assistant')?.addEventListener('click', () => {
+    el.querySelector('#btn-open-selected-unit-assistant')?.click();
+  });
+  el.querySelector('#btn-calendar-next-materials')?.addEventListener('click', () => {
+    el.querySelector('#btn-open-selected-material-studio')?.click();
   });
   el.querySelector('#btn-calendar-next-guidance')?.addEventListener('click', () => {
     el.querySelector('#btn-import-selected-guidance')?.click();
