@@ -371,6 +371,64 @@ function _renderCalendarSectionPlans(sectionPlans, plannedTitles) {
   `).join('');
 }
 
+function _teacherActionLabel(action) {
+  const normalized = String(action || '').trim().toLowerCase();
+  const labels = {
+    explain_section: 'Explain section',
+    generate_teacher_notes: 'Teacher notes',
+    generate_slides: 'Slides',
+    create_warmup_variant: 'Warm-up variant',
+    simplify_explanation: 'Simplify explanation',
+    generate_guided_examples: 'Guided examples',
+    generate_easier_practice: 'Easier practice',
+    generate_harder_practice: 'Harder practice',
+    generate_quick_quiz: 'Quick quiz',
+    generate_remediation: 'Remediation',
+  };
+  return labels[normalized] || normalized.replace(/_/g, ' ');
+}
+
+function _renderCalendarTeacherPrep(unitMap, plannedTitles) {
+  const playbook = Array.isArray(unitMap?.teacher_playbook) ? unitMap.teacher_playbook.filter(Boolean) : [];
+  const materialStudio = unitMap?.material_studio && typeof unitMap.material_studio === 'object' ? unitMap.material_studio : {};
+  const titleKeys = new Set((Array.isArray(plannedTitles) ? plannedTitles : []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+  const matchedPlaybook = playbook.filter(entry => {
+    const sectionTitle = String(entry?.section_title || '').trim().toLowerCase();
+    if (sectionTitle && titleKeys.has(sectionTitle)) return true;
+    const sectionPath = Array.isArray(entry?.section_path) ? entry.section_path : [];
+    return sectionPath.some(value => titleKeys.has(String(value || '').trim().toLowerCase()));
+  }).slice(0, 4);
+  const unitArtifacts = Array.isArray(materialStudio?.unit_artifacts) ? materialStudio.unit_artifacts.filter(Boolean).slice(0, 4) : [];
+
+  if (!matchedPlaybook.length && !unitArtifacts.length) {
+    return '<p class="text-[12px] text-slate-500 mt-2">No teacher prep suggestions saved for this unit yet.</p>';
+  }
+
+  return `
+    <div class="mt-2 flex flex-col gap-3">
+      ${matchedPlaybook.map(entry => `
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(entry?.section_title || 'Section'))}</p>
+          ${Array.isArray(entry?.available_actions) && entry.available_actions.length ? `
+            <div class="mt-2 flex flex-wrap gap-1.5">
+              ${entry.available_actions.map(action => `<span class="badge badge-gray">${_escapeHtml(_teacherActionLabel(action))}</span>`).join('')}
+            </div>` : ''}
+          ${Array.isArray(entry?.suggested_requests) && entry.suggested_requests.length ? `
+            <ul class="mt-3 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+              ${entry.suggested_requests.slice(0, 4).map(row => `<li>${_escapeHtml(String(row || ''))}</li>`).join('')}
+            </ul>` : ''}
+        </div>
+      `).join('')}
+      ${unitArtifacts.length ? `
+        <div class="rounded-xl border border-slate-200 bg-white p-3">
+          <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Helpful unit materials</p>
+          <div class="flex flex-wrap gap-2">
+            ${unitArtifacts.map(artifact => `<span class="badge badge-blue">${_escapeHtml(String(artifact?.title || artifact?.id || 'Material'))}</span>`).join('')}
+          </div>
+        </div>` : ''}
+    </div>`;
+}
+
 function _coerceCalendarEvent(row) {
   const sessionId = Number(row?.session_id ?? row?.id ?? 0);
   if (!sessionId) return null;
@@ -2511,6 +2569,7 @@ function _renderCalendar(el, classId) {
           <div class="flex items-center gap-2">
             <button id="btn-confirm-selected-session" class="btn btn-success btn-sm" ${selectedCanConfirm ? '' : 'disabled'} title="${_escapeHtml(selectedConfirmTitle)}">${_escapeHtml(selectedConfirmLabel)}</button>
             <button id="btn-edit-selected-session" class="btn btn-ghost btn-sm" ${selectedCanEdit ? '' : 'disabled'} title="${_escapeHtml(selectedEditTitle)}">Edit</button>
+            ${selectedEvent.unit_id != null ? '<button id="btn-open-selected-workflow" class="btn btn-ghost btn-sm">Open Workflow</button>' : ''}
             <button id="btn-close-selected-session" class="btn btn-ghost btn-sm text-slate-400">Close</button>
           </div>
         </div>
@@ -2594,6 +2653,17 @@ function _renderCalendar(el, classId) {
                           ${_renderCalendarSectionPlans(selectedSectionPlans, plannedSessionTitles)}
                         </div>
                       </div>`}
+          </div>
+
+          <div class="p-3 rounded-xl border border-slate-200">
+            <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Teacher Prep Suggestions</h4>
+            ${_selectedSessionLoading
+              ? '<p class="text-[12px] text-slate-500 mt-2">Loading prep suggestions...</p>'
+              : selectedEvent.unit_id == null
+                ? '<p class="text-[12px] text-slate-500 mt-2">This session is not linked to a workflow unit.</p>'
+                : selectedBlueprintError
+                  ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedBlueprintError)}</p>`
+                  : _renderCalendarTeacherPrep(selectedUnitMap, plannedSessionTitles)}
           </div>
 
           <div class="p-3 rounded-xl border border-slate-200">
@@ -2928,6 +2998,10 @@ function _renderCalendar(el, classId) {
     _selectedSessionError = null;
     _selectedSessionLoading = false;
     _renderCalendar(el, classId);
+  });
+
+  el.querySelector('#btn-open-selected-workflow')?.addEventListener('click', () => {
+    navigate('workflow');
   });
 
   el.querySelector('#btn-confirm-selected-session')?.addEventListener('click', async event => {
