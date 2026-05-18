@@ -3443,13 +3443,13 @@ function _renderCalendar(el, classId) {
   });
 
   el.querySelector('#btn-open-selected-workflow')?.addEventListener('click', () => {
-    const intent = _buildCalendarWorkflowIntent(selectedEvent, '');
+    const intent = _buildCalendarWorkflowIntent(selectedEvent, selectedMatchesActiveWorkflow ? 'session' : '');
     if (intent) _setWorkflowViewIntent(intent);
     navigate('workflow');
   });
 
   el.querySelector('#btn-open-active-workflow-session')?.addEventListener('click', () => {
-    const intent = _buildWorkflowSessionIntent(activeWorkflowSession, '');
+    const intent = _buildWorkflowSessionIntent(activeWorkflowSession, 'session');
     if (intent) _setWorkflowViewIntent(intent);
     navigate('workflow');
   });

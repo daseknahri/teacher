@@ -4765,6 +4765,15 @@ function _bindWorkflowEvents(el, classId) {
   const pendingViewIntent = _consumeWorkflowViewIntent(getActiveUnit()?.id);
   if (pendingViewIntent?.action) {
     _workflowEntryContext = pendingViewIntent?.source === 'calendar' ? pendingViewIntent : null;
+    if (pendingViewIntent.action === 'session') {
+      const activeSession = getActiveSession();
+      const intendedSessionId = Number(pendingViewIntent.session_id || 0) || null;
+      if (activeSession && (!intendedSessionId || Number(activeSession.id || 0) === intendedSessionId)) {
+        _activeTab = 2;
+        _render(el, classId);
+        return;
+      }
+    }
     queueMicrotask(async () => {
       const unit = getActiveUnit();
       if (!unit?.id) return;
