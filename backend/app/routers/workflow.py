@@ -5568,6 +5568,40 @@ def download_workflow_unit_assistant_artifact(
     )
 
 
+@router.delete("/classes/{class_id}/units/{unit_id}/assistant/artifacts/{artifact_id}")
+def delete_workflow_unit_assistant_artifact(
+    class_id: int,
+    unit_id: int,
+    artifact_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, bool]:
+    _ = ensure_class_writable(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    artifact = db.get(WorkflowUnitAssistantArtifact, int(artifact_id))
+    if artifact is None or int(artifact.unit_id) != int(unit_id):
+        raise HTTPException(status_code=404, detail="Workflow assistant artifact not found.")
+    details = {
+        "artifact_kind": str(artifact.artifact_kind or "").strip() or None,
+        "section_title": str(artifact.section_title or "").strip() or None,
+        "action": str(artifact.action or "").strip() or None,
+    }
+    db.delete(artifact)
+    db.commit()
+    log_audit(
+        db,
+        user=current_user,
+        action="workflow.unit.delete_assistant_artifact",
+        entity_type="workflow_unit",
+        entity_id=unit.id,
+        class_id=class_id,
+        details=details,
+    )
+    return {"ok": True}
+
+
 @router.get("/classes/{class_id}/units/{unit_id}/materials", response_model=list[WorkflowUnitMaterialOut])
 def list_workflow_unit_materials(
     class_id: int,

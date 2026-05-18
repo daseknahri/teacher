@@ -1029,9 +1029,14 @@ function _openUnitAssistantModal({ classId, unit, blueprint }) {
                 <span class="badge badge-blue">${_escapeHtml(_assistantArtifactKindLabel(item?.artifact_kind))}</span>
                 ${item?.action ? `<span class="badge badge-gray">${_escapeHtml(_assistantActionLabel(item.action))}</span>` : ''}
               </div>
-              <button class="btn btn-secondary btn-sm btn-unit-assistant-artifact-download" data-artifact-id="${_escapeHtml(String(item?.id || ''))}">
-                Download
-              </button>
+              <div class="flex items-center gap-2">
+                <button class="btn btn-secondary btn-sm btn-unit-assistant-artifact-download" data-artifact-id="${_escapeHtml(String(item?.id || ''))}">
+                  Download
+                </button>
+                <button class="btn btn-ghost btn-sm !text-rose-600 btn-unit-assistant-artifact-delete" data-artifact-id="${_escapeHtml(String(item?.id || ''))}">
+                  Delete
+                </button>
+              </div>
             </div>
             ${item?.content_markdown ? `<p class="text-[12px] text-slate-700 leading-6 mt-3">${_escapeHtml(String(item.content_markdown).split('\n').slice(0, 4).join(' '))}</p>` : ''}
             <p class="text-[11px] text-slate-500 mt-3"><span class="font-semibold">Updated:</span> ${_escapeHtml(fmtDateTime(item?.updated_at))}</p>
@@ -1047,6 +1052,23 @@ function _openUnitAssistantModal({ classId, unit, blueprint }) {
           await downloadWithAuth(`/workflow/classes/${classId}/units/${unit.id}/assistant/artifacts/${artifactId}/download`, 'guidance.md');
         } catch (err) {
           setError(String(err?.message || 'Failed to download the saved guidance.'));
+        }
+      });
+    });
+    savedWrap.querySelectorAll('.btn-unit-assistant-artifact-delete').forEach(button => {
+      button.addEventListener('click', async () => {
+        const artifactId = Number(button.dataset.artifactId || 0);
+        if (!artifactId) return;
+        if (!window.confirm('Delete this saved guidance?')) return;
+        try {
+          await api(`/workflow/classes/${classId}/units/${unit.id}/assistant/artifacts/${artifactId}`, {
+            method: 'DELETE',
+          });
+          state.savedArtifacts = state.savedArtifacts.filter(item => Number(item?.id || 0) !== artifactId);
+          renderSavedArtifacts();
+          showToast('Saved guidance deleted.', 'ok');
+        } catch (err) {
+          setError(String(err?.message || 'Failed to delete the saved guidance.'));
         }
       });
     });

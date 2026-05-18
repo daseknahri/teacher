@@ -1981,6 +1981,20 @@ def test_workflow_unit_assistant_artifact_save_and_download(client):
     assert "guided-practice" in str(download_resp.headers.get("content-disposition") or "").lower()
     assert "Propose two harder fraction additions" in download_resp.text
 
+    delete_resp = client.delete(
+        f"/workflow/classes/{class_id}/units/{unit_id}/assistant/artifacts/{artifact_id}",
+        headers=headers,
+    )
+    assert delete_resp.status_code == 200
+    assert delete_resp.json() == {"ok": True}
+
+    list_after_delete_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/assistant/artifacts",
+        headers=headers,
+    )
+    assert list_after_delete_resp.status_code == 200
+    assert list_after_delete_resp.json() == []
+
 
 def test_workflow_unit_material_generation_persists_study_guide(client, monkeypatch):
     from app.routers import workflow as workflow_router
