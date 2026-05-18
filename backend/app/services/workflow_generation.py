@@ -1707,7 +1707,15 @@ def _normalize_unit_map_payload(
         "assessment_blocks": _normalize_string_list((payload or {}).get("assessment_blocks") if isinstance(payload, dict) else None),
         "pedagogy_notes": _normalize_string_list((payload or {}).get("pedagogy_notes") if isinstance(payload, dict) else None),
         "ordered_outline": normalized_outline,
-        "future_actions": ["checklist", "content_pack", "session_writeup", "ask_unit", "slide_outline"],
+        "future_actions": [
+            "checklist",
+            "content_pack",
+            "session_writeup",
+            "ask_unit",
+            "adaptive_practice",
+            "teacher_guidance",
+            "slide_outline",
+        ],
     }
     normalized["unit_title"] = normalized["unit_title"] or _normalize_outline_title(unit_title) or "Unite"
 
@@ -2286,6 +2294,7 @@ def _apply_content_blocks_to_unit_map(
     updated = _copy_jsonable(unit_map)
     fallback_plans = updated.get("section_plans") if isinstance(updated.get("section_plans"), list) else None
     updated["section_plans"] = _build_unit_section_plans_from_content_blocks(content_blocks, fallback_plans=fallback_plans)
+    updated["teacher_playbook"] = _build_teacher_playbook_from_section_plans(updated["section_plans"])
     if not updated.get("activity_blocks"):
         updated["activity_blocks"] = [plan.get("section_title") for plan in updated["section_plans"] if plan.get("activity_titles")]
     if not updated.get("assessment_blocks"):
@@ -2403,6 +2412,72 @@ def _build_unit_section_plans(items: list[dict[str, Any]]) -> list[dict[str, Any
         seen.add(key)
         deduped.append(plan)
     return deduped[:24]
+
+
+def _build_teacher_playbook_from_section_plans(
+    plans: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    if not isinstance(plans, list):
+        return []
+    playbook: list[dict[str, Any]] = []
+    for plan in plans:
+        if not isinstance(plan, dict):
+            continue
+        section_title = _normalize_outline_title(plan.get("section_title"))
+        if not section_title:
+            continue
+        section_path = [
+            _normalize_outline_title(value)
+            for value in (plan.get("section_path") if isinstance(plan.get("section_path"), list) else [section_title])
+            if _normalize_outline_title(value)
+        ] or [section_title]
+        has_activity = bool(plan.get("activity_titles"))
+        has_content = bool(plan.get("content_titles"))
+        has_examples = bool(plan.get("example_titles"))
+        has_exercises = bool(plan.get("exercise_titles"))
+        available_actions = [
+            "explain_section",
+            "generate_teacher_notes",
+            "generate_slides",
+        ]
+        if has_activity:
+            available_actions.append("create_warmup_variant")
+        if has_content:
+            available_actions.append("simplify_explanation")
+        if has_examples:
+            available_actions.append("generate_guided_examples")
+        if has_content or has_examples or has_exercises:
+            available_actions.extend(["generate_easier_practice", "generate_harder_practice"])
+        if has_content or has_exercises:
+            available_actions.append("generate_quick_quiz")
+        if has_exercises:
+            available_actions.append("generate_remediation")
+
+        suggested_requests = [
+            f"Explique la section '{section_title}' simplement pour la classe.",
+        ]
+        if has_activity:
+            suggested_requests.append(f"Propose une variante plus engageante de l'activite pour '{section_title}'.")
+        if has_examples:
+            suggested_requests.append(f"Genere deux exemples guides supplementaires pour '{section_title}'.")
+        if has_content or has_examples or has_exercises:
+            suggested_requests.append(f"Genere trois exercices plus faciles pour '{section_title}' avec reponses courtes.")
+            suggested_requests.append(f"Genere trois exercices plus difficiles pour '{section_title}' avec correction resumee.")
+        if has_content or has_exercises:
+            suggested_requests.append(f"Prepare un mini quiz de sortie pour '{section_title}'.")
+
+        playbook.append(
+            {
+                "section_title": section_title,
+                "section_path": section_path,
+                "available_actions": available_actions,
+                "suggested_requests": suggested_requests[:6],
+                "supports_activity": has_activity,
+                "supports_examples": has_examples,
+                "supports_exercises": has_exercises,
+            }
+        )
+    return playbook[:24]
 
 
 def _select_best_notebooklm_outline_candidate(

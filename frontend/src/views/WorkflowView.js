@@ -330,6 +330,7 @@ function _openUnitBlueprintModal(unit, blueprint) {
   const selectedStructureSource = String(rawProviderPayload?.selected_structure_source || unitMap?.selected_outline_source || '').trim();
   const unitMapOutline = Array.isArray(unitMap?.ordered_outline) ? unitMap.ordered_outline : [];
   const sectionPlans = Array.isArray(unitMap?.section_plans) ? unitMap.section_plans.filter(Boolean) : [];
+  const teacherPlaybook = Array.isArray(unitMap?.teacher_playbook) ? unitMap.teacher_playbook.filter(Boolean) : [];
   const renderMapList = (title, rows) => {
     const values = Array.isArray(rows) ? rows.filter(Boolean) : [];
     if (!values.length) return '';
@@ -408,6 +409,20 @@ function _openUnitBlueprintModal(unit, blueprint) {
       </div>
     `).join('');
   };
+  const renderTeacherPlaybook = rows => {
+    const values = Array.isArray(rows) ? rows.filter(Boolean) : [];
+    if (!values.length) {
+      return '<p class="text-[12px] text-slate-500">No teacher playbook was derived for this unit yet.</p>';
+    }
+    return values.map(row => `
+      <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+        <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(row?.section_title || 'Section'))}</p>
+        ${Array.isArray(row?.section_path) && row.section_path.length ? `<p class="text-[11px] text-slate-500 mt-1"><span class="font-semibold">Path:</span> ${_escapeHtml(row.section_path.join(' -> '))}</p>` : ''}
+        ${renderMapList('Available actions', row?.available_actions)}
+        ${renderMapList('Suggested requests', row?.suggested_requests)}
+      </div>
+    `).join('');
+  };
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -483,6 +498,13 @@ function _openUnitBlueprintModal(unit, blueprint) {
             <p class="text-[12px] text-slate-500 mb-3">This is the ordered teaching material extracted from the unit. Each block keeps a short faithful excerpt and a classroom-ready version we can reuse later for sessions, slides, and richer teacher help.</p>
             <div class="space-y-3">
               ${renderContentBlocks(contentBlocks)}
+            </div>
+          </div>
+          <div class="mt-4">
+            <h4 class="text-[13px] font-semibold text-slate-800 mb-2">Teacher playbook</h4>
+            <p class="text-[12px] text-slate-500 mb-3">This is the first reusable action layer for the unit. It shows what we can later ask NotebookLM to do for each section: easier practice, harder practice, explanation help, quick quiz, slides, and more.</p>
+            <div class="space-y-3">
+              ${renderTeacherPlaybook(teacherPlaybook)}
             </div>
           </div>
         </div>
