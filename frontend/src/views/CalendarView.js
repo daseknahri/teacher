@@ -157,7 +157,7 @@ function _setWorkflowViewIntent(intent) {
   }
 }
 
-function _buildCalendarWorkflowIntent(selectedEvent, action = '') {
+function _buildCalendarWorkflowIntent(selectedEvent, action = '', extra = {}) {
   if (!selectedEvent || selectedEvent.unit_id == null) return null;
   const sessionLabel = selectedEvent.unit_session_number
     ? `Unit Session ${Number(selectedEvent.unit_session_number)}`
@@ -169,6 +169,12 @@ function _buildCalendarWorkflowIntent(selectedEvent, action = '') {
     session_id: Number(selectedEvent.session_id || 0) || null,
     session_label: sessionLabel,
     session_date: String(selectedEvent.session_date || selectedEvent.date || '').trim(),
+    section_title: String(extra?.section_title || '').trim(),
+    section_path: Array.isArray(extra?.section_path)
+      ? extra.section_path.map(value => String(value || '').trim()).filter(Boolean)
+      : [],
+    teacher_request: String(extra?.teacher_request || '').trim(),
+    assistant_action: String(extra?.assistant_action || '').trim().toLowerCase(),
   };
 }
 
@@ -441,9 +447,16 @@ function _renderCalendarTeacherPrep(unitMap, plannedTitles) {
               ${entry.available_actions.map(action => `<span class="badge badge-gray">${_escapeHtml(_teacherActionLabel(action))}</span>`).join('')}
             </div>` : ''}
           ${Array.isArray(entry?.suggested_requests) && entry.suggested_requests.length ? `
-            <ul class="mt-3 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
-              ${entry.suggested_requests.slice(0, 4).map(row => `<li>${_escapeHtml(String(row || ''))}</li>`).join('')}
-            </ul>` : ''}
+            <div class="mt-3 flex flex-wrap gap-2">
+              ${entry.suggested_requests.slice(0, 4).map(row => `
+                <button
+                  class="btn btn-ghost btn-sm btn-calendar-prep-request"
+                  data-section-title="${_escapeHtmlAttr(String(entry?.section_title || ''))}"
+                  data-section-path="${_escapeHtmlAttr(JSON.stringify(Array.isArray(entry?.section_path) ? entry.section_path : []))}"
+                  data-teacher-request="${_escapeHtmlAttr(String(row || ''))}"
+                  data-assistant-action="explain_section"
+                >${_escapeHtml(String(row || ''))}</button>`).join('')}
+            </div>` : ''}
         </div>
       `).join('')}
       ${unitArtifacts.length ? `
@@ -3356,6 +3369,28 @@ function _renderCalendar(el, classId) {
     if (!intent) return;
     _setWorkflowViewIntent(intent);
     navigate('workflow');
+  });
+
+  el.querySelectorAll('.btn-calendar-prep-request').forEach(button => {
+    button.addEventListener('click', () => {
+      let sectionPath = [];
+      try {
+        const raw = String(button.dataset.sectionPath || '[]').trim();
+        const parsed = JSON.parse(raw);
+        sectionPath = Array.isArray(parsed) ? parsed.map(value => String(value || '').trim()).filter(Boolean) : [];
+      } catch {
+        sectionPath = [];
+      }
+      const intent = _buildCalendarWorkflowIntent(selectedEvent, 'assistant', {
+        section_title: String(button.dataset.sectionTitle || '').trim(),
+        section_path: sectionPath,
+        teacher_request: String(button.dataset.teacherRequest || '').trim(),
+        assistant_action: String(button.dataset.assistantAction || 'explain_section').trim().toLowerCase(),
+      });
+      if (!intent) return;
+      _setWorkflowViewIntent(intent);
+      navigate('workflow');
+    });
   });
 
   el.querySelector('#btn-open-selected-material-studio')?.addEventListener('click', () => {

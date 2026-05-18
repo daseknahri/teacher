@@ -77,6 +77,12 @@ function _consumeWorkflowViewIntent(expectedUnitId) {
       session_id: Number(parsed.session_id || 0) || null,
       session_label: String(parsed.session_label || '').trim(),
       session_date: String(parsed.session_date || '').trim(),
+      section_title: String(parsed.section_title || '').trim(),
+      section_path: Array.isArray(parsed.section_path)
+        ? parsed.section_path.map(value => String(value || '').trim()).filter(Boolean)
+        : [],
+      teacher_request: String(parsed.teacher_request || '').trim(),
+      assistant_action: String(parsed.assistant_action || '').trim().toLowerCase(),
     };
   } catch {
     try { sessionStorage.removeItem(WORKFLOW_VIEW_INTENT_KEY); } catch {}
@@ -966,16 +972,30 @@ function _assistantArtifactKindLabel(value) {
   return 'Teacher notes';
 }
 
-function _openUnitAssistantModal({ classId, unit, blueprint }) {
+function _openUnitAssistantModal({ classId, unit, blueprint, initial = {} }) {
   const sections = _buildUnitAssistantSections(blueprint);
-  const initialSection = sections[1] || sections[0];
+  const normalizedInitialPath = Array.isArray(initial?.sectionPath)
+    ? initial.sectionPath.map(value => String(value || '').trim()).filter(Boolean)
+    : [];
+  const normalizedInitialTitle = String(initial?.sectionTitle || '').trim().toLowerCase();
+  const normalizedInitialAction = String(initial?.assistantAction || '').trim().toLowerCase();
+  const initialTeacherRequest = String(initial?.teacherRequest || '').trim();
+  const initialSection = sections.find(section => {
+    const sectionTitle = String(section?.section_title || '').trim().toLowerCase();
+    if (normalizedInitialTitle && sectionTitle === normalizedInitialTitle) return true;
+    const sectionPath = Array.isArray(section?.section_path) ? section.section_path.map(value => String(value || '').trim().toLowerCase()) : [];
+    if (normalizedInitialPath.length && sectionPath.length === normalizedInitialPath.length) {
+      return sectionPath.every((value, index) => value === String(normalizedInitialPath[index] || '').trim().toLowerCase());
+    }
+    return false;
+  }) || sections[1] || sections[0];
   const initialActions = Array.isArray(initialSection?.available_actions) && initialSection.available_actions.length
     ? initialSection.available_actions
     : ['explain_section'];
   const state = {
     sectionKey: String(initialSection?.key || '__whole_unit__'),
-    action: String(initialActions[0] || 'explain_section'),
-    teacherRequest: '',
+    action: initialActions.includes(normalizedInitialAction) ? normalizedInitialAction : String(initialActions[0] || 'explain_section'),
+    teacherRequest: initialTeacherRequest,
     loading: false,
     result: null,
     error: '',
@@ -1223,6 +1243,7 @@ function _openUnitAssistantModal({ classId, unit, blueprint }) {
     if (!suggestionsWrap) return;
     const section = getSection();
     const rows = Array.isArray(section?.suggested_requests) ? section.suggested_requests.filter(Boolean) : [];
+    if (requestInput) requestInput.value = state.teacherRequest;
     sectionPathNode.textContent = Array.isArray(section?.section_path) && section.section_path.length
       ? `Path: ${section.section_path.join(' -> ')}`
       : (section?.section_title ? `Section: ${section.section_title}` : 'Whole unit guidance');
@@ -2194,9 +2215,16 @@ function _renderSessionPlaybookPreview(unitMap, plannedTitles) {
     <div class="rounded-xl border border-slate-200 bg-white p-3">
       <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(entry?.section_title || 'Section'))}</p>
       ${Array.isArray(entry?.suggested_requests) && entry.suggested_requests.length ? `
-        <ul class="mt-2 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
-          ${entry.suggested_requests.slice(0, 3).map(row => `<li>${_escapeHtml(String(row || ''))}</li>`).join('')}
-        </ul>` : ''}
+        <div class="mt-2 flex flex-wrap gap-2">
+          ${entry.suggested_requests.slice(0, 3).map(row => `
+            <button
+              class="btn btn-ghost btn-sm btn-session-playbook-request"
+              data-section-title="${_escapeHtmlAttr(String(entry?.section_title || ''))}"
+              data-section-path="${_escapeHtmlAttr(JSON.stringify(Array.isArray(entry?.section_path) ? entry.section_path : []))}"
+              data-teacher-request="${_escapeHtmlAttr(String(row || ''))}"
+              data-assistant-action="explain_section"
+            >${_escapeHtml(String(row || ''))}</button>`).join('')}
+        </div>` : ''}
     </div>
   `).join('');
 }
@@ -4601,6 +4629,47 @@ function _bindWorkflowEvents(el, classId) {
     });
   });
 
+  el.querySelectorAll('.btn-session-playbook-request').forEach(button => {
+    button.addEventListener('click', async () => {
+      await _withActionLock(`workflow:unit-assistant-prefill:${classId}`, async () => {
+        const unit = getActiveUnit();
+        if (!unit?.id) return;
+        try {
+          const state = await _loadUnitBlueprint(classId, unit.id, { force: false });
+          if (state?.error) {
+            showToast(state.error, 'error');
+            return;
+          }
+          if (!state?.item) {
+            showToast('No saved unit intelligence is available for this unit yet.', 'warning');
+            return;
+          }
+          let sectionPath = [];
+          try {
+            const raw = String(button.dataset.sectionPath || '[]').trim();
+            const parsed = JSON.parse(raw);
+            sectionPath = Array.isArray(parsed) ? parsed.map(value => String(value || '').trim()).filter(Boolean) : [];
+          } catch {
+            sectionPath = [];
+          }
+          _openUnitAssistantModal({
+            classId,
+            unit,
+            blueprint: state.item,
+            initial: {
+              sectionTitle: String(button.dataset.sectionTitle || '').trim(),
+              sectionPath,
+              teacherRequest: String(button.dataset.teacherRequest || '').trim(),
+              assistantAction: String(button.dataset.assistantAction || 'explain_section').trim().toLowerCase(),
+            },
+          });
+        } catch (err) {
+          showToast(String(err?.message || 'Failed to open the suggested unit guidance.'), 'error');
+        }
+      });
+    });
+  });
+
   el.querySelector('#btn-open-material-studio')?.addEventListener('click', async function () {
     const button = this;
     await _withActionLock(`workflow:unit-material-studio:${classId}`, async () => {
@@ -4641,7 +4710,17 @@ function _bindWorkflowEvents(el, classId) {
           return;
         }
         if (pendingViewIntent.action === 'assistant') {
-          _openUnitAssistantModal({ classId, unit, blueprint: state.item });
+          _openUnitAssistantModal({
+            classId,
+            unit,
+            blueprint: state.item,
+            initial: {
+              sectionTitle: pendingViewIntent.section_title,
+              sectionPath: pendingViewIntent.section_path,
+              teacherRequest: pendingViewIntent.teacher_request,
+              assistantAction: pendingViewIntent.assistant_action,
+            },
+          });
           return;
         }
         if (pendingViewIntent.action === 'material_studio') {
