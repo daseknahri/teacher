@@ -33,6 +33,7 @@ const WORKFLOW_VIEW_INTENT_KEY = 'workflow_view_intent';
 const CALENDAR_VIEW_INTENT_KEY = 'calendar_view_intent';
 let _workflowEntryContext = null;
 let _workflowPreviewScrollKey = null;
+let _workflowPreviewFocusOnly = true;
 const _collapsedChecklistIds = new Set();
 const _inFlightActions = new Set();
 const _sessionProgressCache = new Map();
@@ -2066,6 +2067,7 @@ export async function renderWorkflowView() {
     if (pendingWorkflowIntent?.source === 'calendar') {
       const intendedSessionId = Number(pendingWorkflowIntent.session_id || 0) || null;
       const activeSessionId = Number(ws?.active_session?.id || 0) || null;
+      _workflowPreviewFocusOnly = pendingWorkflowIntent.action !== 'session';
       if (
         pendingWorkflowIntent.action === 'session'
         && activeSessionId
@@ -2075,6 +2077,8 @@ export async function renderWorkflowView() {
       } else {
         _activeTab = 0;
       }
+    } else {
+      _workflowPreviewFocusOnly = true;
     }
     setWorkspace(ws);
     _render(el, classId);
@@ -2425,6 +2429,10 @@ function _render(el, classId) {
   _ensureChecklistFocusVisible(checklist, previewSessionTitleKeys);
   const checklistChildrenCount = _buildChecklistChildrenCount(checklist);
   const visibleChecklist = _visibleChecklistRows(checklist, _collapsedChecklistIds);
+  const previewFocusIds = previewSessionNumber ? _collectPreviewFocusIds(checklist, previewSessionTitleKeys) : new Set();
+  const displayChecklist = previewSessionNumber && _workflowPreviewFocusOnly && previewFocusIds.size
+    ? visibleChecklist.filter(item => previewFocusIds.has(Number(item?.id || 0)))
+    : visibleChecklist;
   const moveMeta = _buildChecklistMoveMeta(checklist);
   const done = checklist.filter(i => Boolean(i?.is_completed || i?.done)).length;
   const total = checklist.length;
@@ -2575,8 +2583,10 @@ function _render(el, classId) {
                 <div class="flex items-center gap-2 flex-wrap">
                   <h4 class="text-[12px] font-semibold text-slate-600">Checklist</h4>
                   ${previewSessionNumber ? `<span class="badge badge-blue">Focused on Session ${previewSessionNumber}</span>` : ''}
+                  ${previewSessionNumber && _workflowPreviewFocusOnly ? `<span class="badge badge-green">Planned route only</span>` : ''}
                 </div>
                 <div class="flex items-center gap-1 flex-wrap">
+                  ${previewSessionNumber ? `<button id="btn-checklist-preview-focus-toggle" class="btn btn-ghost btn-sm !text-blue-600" title="Switch between the planned route and the full unit checklist">${_workflowPreviewFocusOnly ? 'Show Full Unit' : 'Show Planned Route Only'}</button>` : ''}
                   <button id="btn-checklist-expand-all" class="btn btn-ghost btn-sm !text-slate-500" title="Expand all checklist branches">Expand All</button>
                   <button id="btn-checklist-collapse-all" class="btn btn-ghost btn-sm !text-slate-500" title="Collapse all checklist branches">Collapse All</button>
                 </div>
@@ -2585,7 +2595,9 @@ function _render(el, classId) {
               <div class="flex items-center gap-2 px-2 py-1.5 bg-blue-50 rounded-lg border border-blue-100 mb-1">
                 <span class="text-[10px] font-bold text-blue-700">FOCUS</span>
                 <p class="text-[11px] text-blue-700 leading-tight">
-                  Highlighted rows belong to the planned route for ${_escapeHtml(_workflowEntryContext?.session_label || `Unit Session ${previewSessionNumber}`)}.
+                  ${_workflowPreviewFocusOnly
+                    ? `Showing only the planned route for ${_escapeHtml(_workflowEntryContext?.session_label || `Unit Session ${previewSessionNumber}`)}. Use "Show Full Unit" if you want the complete checklist.`
+                    : `Highlighted rows belong to the planned route for ${_escapeHtml(_workflowEntryContext?.session_label || `Unit Session ${previewSessionNumber}`)}.`}
                 </p>
               </div>` : ''}
               <div class="flex items-center gap-2 px-2 py-1.5 bg-blue-50/50 rounded-lg border border-blue-100/50 mb-1">
@@ -2594,7 +2606,7 @@ function _render(el, classId) {
                   <span class="font-bold">Hold handle to reorder.</span> Drop Top = Before, Middle = Nested Child, Bottom = After.
                 </p>
               </div>
-              ${visibleChecklist.map(item => {
+              ${displayChecklist.map(item => {
     const meta = moveMeta.get(item.id) || {};
     const itemId = Number(item.id);
     const isDone = Boolean(item?.is_completed || item?.done);
@@ -3062,6 +3074,32 @@ function _buildChecklistChildrenCount(items) {
   return counts;
 }
 
+function _collectPreviewFocusIds(items, titleKeys) {
+  const rows = Array.isArray(items) ? items : [];
+  const keys = titleKeys instanceof Set ? titleKeys : new Set();
+  if (!rows.length || !keys.size) return new Set();
+  const byId = new Map();
+  rows.forEach(row => {
+    const itemId = Number(row?.id);
+    if (!Number.isFinite(itemId) || itemId <= 0) return;
+    byId.set(itemId, row);
+  });
+  const focusIds = new Set();
+  rows.forEach(row => {
+    const itemId = Number(row?.id);
+    const titleKey = String(row?.title || '').trim().toLowerCase();
+    if (!Number.isFinite(itemId) || itemId <= 0 || !keys.has(titleKey)) return;
+    let currentId = itemId;
+    while (Number.isFinite(currentId) && currentId > 0 && !focusIds.has(currentId)) {
+      focusIds.add(currentId);
+      const current = byId.get(currentId);
+      if (!current || current.parent_item_id == null) break;
+      currentId = Number(current.parent_item_id || 0);
+    }
+  });
+  return focusIds;
+}
+
 function _visibleChecklistRows(items, collapsedIds) {
   const rows = Array.isArray(items) ? items : [];
   if (!rows.length) return [];
@@ -3477,6 +3515,12 @@ function _bindWorkflowEvents(el, classId) {
       _collapseChecklistAllParents(_checklist(unit));
       _render(el, classId);
     });
+  });
+
+  el.querySelector('#btn-checklist-preview-focus-toggle')?.addEventListener('click', event => {
+    event.preventDefault();
+    _workflowPreviewFocusOnly = !_workflowPreviewFocusOnly;
+    _render(el, classId);
   });
 
   el.querySelectorAll('.btn-checklist-toggle').forEach(btn => {
@@ -4941,6 +4985,7 @@ function _bindWorkflowEvents(el, classId) {
 
   el.querySelector('#btn-dismiss-workflow-entry')?.addEventListener('click', () => {
     _workflowEntryContext = null;
+    _workflowPreviewFocusOnly = true;
     _render(el, classId);
   });
 
