@@ -3281,6 +3281,85 @@ def test_generate_unit_checklist_package_keeps_notebooklm_content_blocks(monkeyp
     assert "Activite 1 : Calculer" in rendered_titles
 
 
+def test_build_checklist_from_section_plans_prefers_precise_section_paths():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    section_plans = [
+        {
+            "section_title": "1) Les denominateurs sont les memes",
+            "section_path": ["I- Addition et soustraction", "1) Les denominateurs sont les memes"],
+            "delivery_sequence": ["Activite 1 : Calculer", "Regle", "Exemples", "Exercices"],
+            "blocks": [
+                {"title": "Activite 1 : Calculer", "kind": "activity", "order_index": 1, "student_visible": True, "teacher_only": False},
+                {"title": "Regle", "kind": "property", "order_index": 2, "student_visible": True, "teacher_only": False},
+                {"title": "Exemples", "kind": "example", "order_index": 3, "student_visible": True, "teacher_only": False},
+                {"title": "Exercices", "kind": "exercise", "order_index": 4, "student_visible": True, "teacher_only": False},
+            ],
+        }
+    ]
+
+    items = workflow_generation._build_checklist_from_section_plans(
+        section_plans,
+        unit_title="Les nombres rationnels : Somme et difference",
+        unit_type=WorkflowUnitType.CHAPTER,
+        fallback_outline=[
+            {
+                "title": "Les nombres rationnels : Somme et difference",
+                "kind": "chapter",
+                "children": [{"title": "Activites", "kind": "section", "children": []}],
+            }
+        ],
+    )
+
+    flat_titles = [str(row.get("title", "")) for row in workflow_generation._flatten_checklist_nodes(items)]
+    assert flat_titles[0] == "Les nombres rationnels : Somme et difference"
+    assert "I- Addition et soustraction" in flat_titles
+    assert "1) Les denominateurs sont les memes" in flat_titles
+    assert "Activites" not in flat_titles
+    assert flat_titles.index("Activite 1 : Calculer") < flat_titles.index("Regle") < flat_titles.index("Exemples") < flat_titles.index("Exercices")
+
+
+def test_normalize_content_blocks_payload_retargets_generic_paths_to_precise_sections():
+    from app.services import workflow_generation
+
+    normalized = workflow_generation._normalize_content_blocks_payload(
+        {
+            "content_blocks": [
+                {
+                    "section_title": "Activites",
+                    "section_path": ["Activites"],
+                    "kind": "activity",
+                    "teaching_phase": "activity",
+                    "title": "Activite 1 : Calculer",
+                    "source_excerpt": "Calcule",
+                    "teaching_material": "Calculer en binomes",
+                    "student_visible": True,
+                    "teacher_only": False,
+                    "order_index": 1,
+                },
+                {
+                    "section_title": "1) Les denominateurs sont les memes",
+                    "section_path": ["I- Addition et soustraction", "1) Les denominateurs sont les memes"],
+                    "kind": "property",
+                    "teaching_phase": "content",
+                    "title": "Regle",
+                    "source_excerpt": "Les denominateurs sont les memes",
+                    "teaching_material": "Institutionnaliser la regle",
+                    "student_visible": True,
+                    "teacher_only": False,
+                    "order_index": 2,
+                },
+            ]
+        },
+        unit_map=None,
+        fallback_outline=[],
+    )
+
+    assert normalized[0]["section_path"] == ["I- Addition et soustraction", "1) Les denominateurs sont les memes"]
+    assert normalized[0]["section_title"] == "1) Les denominateurs sont les memes"
+
+
 def test_workflow_unit_start_returns_clear_error_when_notebooklm_refresh_is_required(client, monkeypatch):
     from app.routers import workflow as workflow_router
     from app.services.workflow_generation import NotebookLMGenerationUnavailableError

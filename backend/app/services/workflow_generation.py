@@ -617,22 +617,38 @@ def generate_unit_checklist_package(
                     unit_type=unit_type,
                     fallback_outline=selected_outline,
                 )
-                if content_pack_outline:
+                section_plan_outline = _build_checklist_from_section_plans(
+                    unit_map.get("section_plans") if isinstance(unit_map, dict) else None,
+                    unit_title=title,
+                    unit_type=unit_type,
+                    fallback_outline=selected_outline,
+                )
+                if content_pack_outline or section_plan_outline:
                     outline_meta_count = _count_teacher_meta_outline_nodes(selected_outline)
                     content_meta_count = _count_teacher_meta_outline_nodes(content_pack_outline)
+                    plan_meta_count = _count_teacher_meta_outline_nodes(section_plan_outline)
+                    prefer_section_plan = _section_plans_have_structured_paths(unit_map.get("section_plans") if isinstance(unit_map, dict) else None)
                     prefer_content_blocks = _content_blocks_have_structured_paths(content_blocks) or content_meta_count < outline_meta_count
+                    candidates_for_selection = [("outline_response", selected_outline)]
+                    if content_pack_outline:
+                        candidates_for_selection.append(("content_blocks", content_pack_outline))
+                    if section_plan_outline:
+                        candidates_for_selection.append(("section_plans", section_plan_outline))
                     selected_name, selected_items = _select_best_checklist_candidate(
-                        [("outline_response", selected_outline), ("content_blocks", content_pack_outline)],
+                        candidates_for_selection,
                         reference_outline=selected_outline,
                         unit_type=unit_type,
                         unit_title=title,
                     )
-                    if prefer_content_blocks:
+                    if prefer_section_plan and section_plan_outline and plan_meta_count <= min(outline_meta_count, content_meta_count or plan_meta_count):
+                        selected_outline = section_plan_outline
+                        selected_structure_source = "section_plans"
+                    elif prefer_content_blocks and content_pack_outline:
                         selected_outline = content_pack_outline
                         selected_structure_source = "content_blocks"
-                    elif selected_name == "content_blocks":
+                    elif selected_name in {"content_blocks", "section_plans"}:
                         selected_outline = selected_items
-                        selected_structure_source = "content_blocks"
+                        selected_structure_source = selected_name
                 if isinstance(raw_provider_response, dict):
                     raw_provider_response["selected_structure_source"] = selected_structure_source
                     raw_provider_response["unit_map"] = unit_map
@@ -3466,6 +3482,85 @@ def _build_checklist_from_content_blocks(
     return _sanitize_items(roots)
 
 
+def _build_checklist_from_section_plans(
+    plans: list[dict[str, Any]] | None,
+    *,
+    unit_title: str,
+    unit_type: WorkflowUnitType,
+    fallback_outline: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    if not isinstance(plans, list) or not plans:
+        return []
+
+    chapter_title = _normalize_outline_title(unit_title) or "Unite"
+    if unit_type == WorkflowUnitType.CHAPTER and isinstance(fallback_outline, list) and fallback_outline:
+        first = fallback_outline[0] if isinstance(fallback_outline[0], dict) else None
+        if isinstance(first, dict):
+            first_title = _normalize_outline_title(first.get("title"))
+            first_kind = str(first.get("kind") or "").strip().lower()
+            if first_title and first_kind == WorkflowChecklistItemKind.CHAPTER.value:
+                chapter_title = first_title
+
+    def make_node(title: str, kind: WorkflowChecklistItemKind) -> dict[str, Any]:
+        return {"title": title, "kind": kind.value, "children": []}
+
+    root = make_node(chapter_title, WorkflowChecklistItemKind.CHAPTER)
+    roots: list[dict[str, Any]] = [root] if unit_type == WorkflowUnitType.CHAPTER else []
+    root_children = root["children"] if unit_type == WorkflowUnitType.CHAPTER else roots
+
+    def get_or_create_child(parent_children: list[dict[str, Any]], title: str, kind: WorkflowChecklistItemKind) -> dict[str, Any]:
+        key = _semantic_title_key(title)
+        for node in parent_children:
+            if _semantic_title_key(node.get("title")) == key:
+                return node
+        node = make_node(title, kind)
+        parent_children.append(node)
+        return node
+
+    for raw_plan in plans:
+        if not isinstance(raw_plan, dict):
+            continue
+        section_title = _normalize_outline_title(raw_plan.get("section_title"))
+        if not section_title or _is_teacher_meta_outline_title(section_title):
+            continue
+        section_path = raw_plan.get("section_path") if isinstance(raw_plan.get("section_path"), list) else [section_title]
+        normalized_path = [_normalize_outline_title(value) for value in section_path if _normalize_outline_title(value)]
+        normalized_path = [value for value in normalized_path if not _is_generic_section_bucket_title(value) or len(normalized_path) == 1]
+        if not normalized_path:
+            normalized_path = [section_title]
+
+        parent_children = root_children
+        for depth, part in enumerate(normalized_path):
+            if _semantic_title_key(part) == _semantic_title_key(chapter_title):
+                continue
+            part_kind = WorkflowChecklistItemKind.SECTION if depth == 0 else WorkflowChecklistItemKind.SUBSECTION
+            node = get_or_create_child(parent_children, part, part_kind)
+            parent_children = node["children"]
+
+        blocks = raw_plan.get("blocks") if isinstance(raw_plan.get("blocks"), list) else []
+        seen_leafs: set[str] = set()
+        for block in sorted(
+            [row for row in blocks if isinstance(row, dict)],
+            key=lambda row: (int(row.get("order_index") or 0), _semantic_title_key(row.get("title"))),
+        ):
+            if bool(block.get("teacher_only")) and not bool(block.get("student_visible", True)):
+                continue
+            title = _normalize_outline_title(block.get("title"))
+            kind = _normalize_content_block_kind(block.get("kind"))
+            if not title:
+                continue
+            key = _semantic_title_key(title)
+            if not key or key in seen_leafs:
+                continue
+            seen_leafs.add(key)
+            leaf_kind = _content_block_to_checklist_kind(kind, title=title)
+            if key == _semantic_title_key(normalized_path[-1]) and kind in {"lesson", "content"}:
+                continue
+            get_or_create_child(parent_children, title, leaf_kind)
+
+    return _sanitize_items(roots)
+
+
 def _apply_content_blocks_to_unit_map(
     unit_map: dict[str, Any] | None,
     content_blocks: list[dict[str, Any]] | None,
@@ -3498,6 +3593,18 @@ def _content_blocks_have_structured_paths(blocks: list[dict[str, Any]] | None) -
             continue
         path = block.get("section_path")
         if isinstance(path, list) and len([row for row in path if _normalize_outline_title(row)]) >= 2:
+            return True
+    return False
+
+
+def _section_plans_have_structured_paths(plans: list[dict[str, Any]] | None) -> bool:
+    if not isinstance(plans, list):
+        return False
+    for plan in plans:
+        if not isinstance(plan, dict):
+            continue
+        path = plan.get("section_path")
+        if isinstance(path, list) and len([row for row in path if _normalize_outline_title(row) and not _is_generic_section_bucket_title(row)]) >= 2:
             return True
     return False
 
