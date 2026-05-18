@@ -2408,6 +2408,7 @@ function _render(el, classId) {
   // Progress ring
   const checklist = _checklist(unit);
   _syncChecklistCollapseState(unit, checklist);
+  _ensureChecklistFocusVisible(checklist, previewSessionTitleKeys);
   const checklistChildrenCount = _buildChecklistChildrenCount(checklist);
   const visibleChecklist = _visibleChecklistRows(checklist, _collapsedChecklistIds);
   const moveMeta = _buildChecklistMoveMeta(checklist);
@@ -2987,6 +2988,27 @@ function _syncChecklistCollapseState(unit, items) {
   const validIds = new Set((items || []).map(row => Number(row.id)).filter(Number.isFinite));
   Array.from(_collapsedChecklistIds).forEach(itemId => {
     if (!validIds.has(itemId)) _collapsedChecklistIds.delete(itemId);
+  });
+}
+
+function _ensureChecklistFocusVisible(items, titleKeys) {
+  if (!Array.isArray(items) || !items.length || !(titleKeys instanceof Set) || !titleKeys.size) return;
+  const byId = new Map();
+  items.forEach(row => {
+    const itemId = Number(row?.id);
+    if (!Number.isFinite(itemId) || itemId <= 0) return;
+    byId.set(itemId, row);
+  });
+  items.forEach(row => {
+    const titleKey = String(row?.title || '').trim().toLowerCase();
+    if (!titleKey || !titleKeys.has(titleKey)) return;
+    let currentId = Number(row?.id || 0);
+    while (Number.isFinite(currentId) && currentId > 0) {
+      _collapsedChecklistIds.delete(currentId);
+      const current = byId.get(currentId);
+      if (!current || current.parent_item_id == null) break;
+      currentId = Number(current.parent_item_id || 0);
+    }
   });
 }
 
