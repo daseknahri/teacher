@@ -2063,6 +2063,19 @@ export async function renderWorkflowView() {
         }
       }
     }
+    if (pendingWorkflowIntent?.source === 'calendar') {
+      const intendedSessionId = Number(pendingWorkflowIntent.session_id || 0) || null;
+      const activeSessionId = Number(ws?.active_session?.id || 0) || null;
+      if (
+        pendingWorkflowIntent.action === 'session'
+        && activeSessionId
+        && (!intendedSessionId || activeSessionId === intendedSessionId)
+      ) {
+        _activeTab = 2;
+      } else {
+        _activeTab = 0;
+      }
+    }
     setWorkspace(ws);
     _render(el, classId);
   } catch (err) {
