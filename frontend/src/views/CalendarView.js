@@ -2700,9 +2700,17 @@ function _renderCalendar(el, classId) {
           <div class="p-3 rounded-xl border border-slate-200">
             <div class="flex items-center justify-between gap-2 flex-wrap">
               <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Textbook Write-Up</h4>
-              ${selectedWriteup
-                ? `<span class="badge ${selectedWriteup.approved === false ? 'badge-amber' : 'badge-green'}">${selectedWriteup.approved === false ? 'Draft' : 'Approved'}</span>`
-                : ''}
+              <div class="flex items-center gap-2 flex-wrap">
+                ${selectedWriteup
+                  ? `<span class="badge ${selectedWriteup.approved === false ? 'badge-amber' : 'badge-green'}">${selectedWriteup.approved === false ? 'Draft' : 'Approved'}</span>`
+                  : ''}
+                ${selectedEvent.unit_id != null && !selectedIsFuture
+                  ? `<button id="btn-generate-selected-writeup" class="btn btn-ghost btn-sm">${selectedWriteup ? 'Re-generate' : 'Generate'}</button>`
+                  : ''}
+                ${selectedWriteup
+                  ? `<button id="btn-toggle-selected-writeup-approval" class="btn btn-ghost btn-sm">${selectedWriteup.approved === false ? 'Approve' : 'Mark Draft'}</button>`
+                  : ''}
+              </div>
             </div>
             ${_selectedSessionLoading
               ? '<p class="text-[12px] text-slate-500 mt-2">Loading workflow write-up...</p>'
@@ -3190,6 +3198,67 @@ function _renderCalendar(el, classId) {
       );
     } catch (err) {
       showToast(String(err?.message || 'Failed to update attendance.'), 'error');
+    } finally {
+      _mutationInFlight = false;
+      if (button) button.disabled = false;
+    }
+  });
+
+  el.querySelector('#btn-generate-selected-writeup')?.addEventListener('click', async event => {
+    if (!selectedEvent || selectedEvent.unit_id == null) return;
+    if (selectedIsFuture) {
+      showToast('Future sessions cannot generate a textbook write-up yet.', 'info');
+      return;
+    }
+    if (_mutationInFlight) {
+      showToast('Please wait for the current update to finish.', 'info');
+      return;
+    }
+    const sessionId = Number(selectedEvent.session_id || 0);
+    if (!sessionId) return;
+    const button = event.currentTarget;
+    if (button) button.disabled = true;
+    _mutationInFlight = true;
+    try {
+      await api(`/workflow/classes/${classId}/sessions/${sessionId}/writeup/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ regenerate: true }),
+      });
+      _sessionDetailCache.delete(sessionId);
+      await _selectSession(sessionId, el, classId);
+      showToast(selectedWriteup ? 'Textbook write-up re-generated.' : 'Textbook write-up generated.', 'ok');
+    } catch (err) {
+      showToast(String(err?.message || 'Failed to generate write-up.'), 'error');
+    } finally {
+      _mutationInFlight = false;
+      if (button) button.disabled = false;
+    }
+  });
+
+  el.querySelector('#btn-toggle-selected-writeup-approval')?.addEventListener('click', async event => {
+    if (!selectedEvent || !selectedWriteup) return;
+    if (_mutationInFlight) {
+      showToast('Please wait for the current update to finish.', 'info');
+      return;
+    }
+    const sessionId = Number(selectedEvent.session_id || 0);
+    if (!sessionId) return;
+    const nextApproved = selectedWriteup.approved === false;
+    const button = event.currentTarget;
+    if (button) button.disabled = true;
+    _mutationInFlight = true;
+    try {
+      await api(`/workflow/classes/${classId}/sessions/${sessionId}/writeup`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approved: nextApproved }),
+      });
+      _sessionDetailCache.delete(sessionId);
+      await _selectSession(sessionId, el, classId);
+      showToast(nextApproved ? 'Write-up approved.' : 'Write-up marked as draft.', 'ok');
+    } catch (err) {
+      showToast(String(err?.message || 'Failed to update write-up status.'), 'error');
     } finally {
       _mutationInFlight = false;
       if (button) button.disabled = false;

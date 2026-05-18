@@ -4531,6 +4531,14 @@ function _bindWorkflowEvents(el, classId) {
         _render(el, classId);
       });
     }
+    const blueprintState = _getUnitBlueprintState(activeUnit.id);
+    if (!blueprintState.loading && !blueprintState.loaded) {
+      _loadUnitBlueprint(classId, activeUnit.id, { force: false }).then(() => {
+        const latestUnit = getActiveUnit();
+        if (Number(latestUnit?.id || 0) !== Number(activeUnit.id)) return;
+        _render(el, classId);
+      });
+    }
     if (autoLoadSession?.id) {
       const autoWriteupState = _getSessionWriteupState(autoLoadSession.id);
       if ((autoLoadSession.has_saved_writeup || autoWriteupState.item) && !autoWriteupState.loaded && !autoWriteupState.loading) {
