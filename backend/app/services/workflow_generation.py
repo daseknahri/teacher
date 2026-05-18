@@ -771,11 +771,20 @@ def generate_session_writeup_package(
     provider: str | None = None,
     document_path: str | None = None,
     provider_context: dict[str, Any] | None = None,
+    unit_map: dict[str, Any] | None = None,
+    content_blocks: list[dict[str, Any]] | None = None,
+    saved_guidance: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     requested_provider = _normalize_provider_name(
         provider or app_config.SESSION_WRITER_PROVIDER,
         supported=SUPPORTED_SESSION_WRITER_PROVIDERS,
         default="fallback",
+    )
+    session_context = _build_session_writeup_context(
+        checked_item_titles=checked_item_titles,
+        unit_map=unit_map,
+        content_blocks=content_blocks,
+        saved_guidance=saved_guidance,
     )
 
     payload = {
@@ -796,6 +805,9 @@ def generate_session_writeup_package(
             checked_item_titles=checked_item_titles,
             note_text=note_text,
             source_text=source_text,
+            unit_map=unit_map,
+            content_blocks=content_blocks,
+            saved_guidance=saved_guidance,
         )
     elif requested_provider == "notebooklm":
         ensure_notebooklm_generation_ready(action_label="session write-up generation")
@@ -809,6 +821,9 @@ def generate_session_writeup_package(
             source_text=source_text,
             document_path=document_path,
             provider_context=provider_context,
+            unit_map=unit_map,
+            content_blocks=content_blocks,
+            saved_guidance=saved_guidance,
         )
 
     fallback_package = _fallback_session_writeup_package(
@@ -819,6 +834,9 @@ def generate_session_writeup_package(
         checked_item_titles=checked_item_titles,
         note_text=note_text,
         source_text=source_text,
+        unit_map=unit_map,
+        content_blocks=content_blocks,
+        saved_guidance=saved_guidance,
     )
     if package is None:
         package = fallback_package
@@ -830,6 +848,11 @@ def generate_session_writeup_package(
         "provider_used": package.get("provider"),
         "document_path": str(document_path or "").strip() or None,
         "provider_context": provider_context if isinstance(provider_context, dict) else None,
+        "unit_brain_used": bool(session_context.get("matched_section_paths") or session_context.get("matched_block_titles") or session_context.get("matched_guidance_titles")),
+        "matched_section_titles": session_context.get("matched_section_titles") or [],
+        "matched_section_paths": session_context.get("matched_section_paths") or [],
+        "matched_block_titles": session_context.get("matched_block_titles") or [],
+        "matched_guidance_titles": session_context.get("matched_guidance_titles") or [],
     }
     return package
 
@@ -1349,6 +1372,9 @@ def _notebooklm_generate_session_writeup(
     source_text: str,
     document_path: str | None,
     provider_context: dict[str, Any] | None,
+    unit_map: dict[str, Any] | None,
+    content_blocks: list[dict[str, Any]] | None,
+    saved_guidance: list[dict[str, Any]] | None,
 ) -> dict[str, Any]:
     try:
         result = asyncio.run(
@@ -1362,6 +1388,9 @@ def _notebooklm_generate_session_writeup(
                 source_text=source_text,
                 document_path=document_path,
                 provider_context=provider_context,
+                unit_map=unit_map,
+                content_blocks=content_blocks,
+                saved_guidance=saved_guidance,
             )
         )
         _record_notebooklm_health(
@@ -1403,6 +1432,9 @@ async def _notebooklm_generate_session_writeup_async(
     source_text: str,
     document_path: str | None,
     provider_context: dict[str, Any] | None,
+    unit_map: dict[str, Any] | None,
+    content_blocks: list[dict[str, Any]] | None,
+    saved_guidance: list[dict[str, Any]] | None,
 ) -> dict[str, Any]:
     client = await _create_notebooklm_client()
     if client is None:
@@ -1423,6 +1455,12 @@ async def _notebooklm_generate_session_writeup_async(
     notebook_title = f"{app_config.NOTEBOOKLM_NOTEBOOK_PREFIX}{unit_title or 'Unit'}".strip()
     created_temporary_notebook = False
     source_ids = [str(value).strip() for value in ((provider_context or {}).get("source_ids") or []) if str(value).strip()]
+    session_context = _build_session_writeup_context(
+        checked_item_titles=checked_item_titles,
+        unit_map=unit_map,
+        content_blocks=content_blocks,
+        saved_guidance=saved_guidance,
+    )
     raw_result: dict[str, Any] | None = None
     try:
         async with client as opened:
@@ -1444,6 +1482,9 @@ async def _notebooklm_generate_session_writeup_async(
                 session_number=session_number,
                 checked_item_titles=checked_item_titles,
                 note_text=note_text,
+                matched_section_plans=session_context.get("matched_plans") if isinstance(session_context, dict) else None,
+                matched_content_blocks=session_context.get("matched_blocks") if isinstance(session_context, dict) else None,
+                matched_guidance=session_context.get("matched_guidance") if isinstance(session_context, dict) else None,
             )
             result = await _ask_notebooklm_with_source_retry(
                 opened=opened,
@@ -1600,6 +1641,148 @@ def _filter_content_blocks_for_section(
     if matched:
         return matched
     return [block for block in blocks if isinstance(block, dict) and not bool(block.get("teacher_only"))][:18]
+
+
+def _extract_saved_guidance_excerpt(artifact: dict[str, Any] | None, *, limit: int = 220) -> str:
+    if not isinstance(artifact, dict):
+        return ""
+    markdown = str(artifact.get("content_markdown") or "").strip()
+    if not markdown:
+        return ""
+    lines = [re.sub(r"^#+\s*", "", row).strip() for row in markdown.splitlines()]
+    text = " ".join(row for row in lines if row)
+    return _normalize_content_block_text(text, limit=limit) or ""
+
+
+def _build_session_writeup_context(
+    *,
+    checked_item_titles: list[str],
+    unit_map: dict[str, Any] | None,
+    content_blocks: list[dict[str, Any]] | None,
+    saved_guidance: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    checked_keys = {
+        _semantic_title_key(value)
+        for value in checked_item_titles
+        if _semantic_title_key(value)
+    }
+    section_plans = unit_map.get("section_plans") if isinstance(unit_map, dict) and isinstance(unit_map.get("section_plans"), list) else []
+    matched_plans: list[dict[str, Any]] = []
+    matched_path_keys: set[str] = set()
+    matched_section_titles: list[str] = []
+    matched_section_paths: list[list[str]] = []
+
+    for raw_plan in section_plans:
+        if not isinstance(raw_plan, dict):
+            continue
+        section_title = _normalize_outline_title(raw_plan.get("section_title"))
+        if not section_title:
+            continue
+        section_path = [
+            _normalize_outline_title(value)
+            for value in (raw_plan.get("section_path") if isinstance(raw_plan.get("section_path"), list) else [section_title])
+            if _normalize_outline_title(value)
+        ] or [section_title]
+        candidate_keys = {
+            _semantic_title_key(section_title),
+            *(_semantic_title_key(value) for value in section_path if _semantic_title_key(value)),
+            *(
+                _semantic_title_key(value)
+                for bucket_name in ("delivery_sequence", "activity_titles", "content_titles", "example_titles", "exercise_titles")
+                for value in (raw_plan.get(bucket_name) if isinstance(raw_plan.get(bucket_name), list) else [])
+                if _semantic_title_key(value)
+            ),
+        }
+        if not checked_keys.intersection(candidate_keys):
+            continue
+        matched_plans.append(raw_plan)
+        path_key = "|".join(_semantic_title_key(value) for value in section_path if _semantic_title_key(value))
+        if path_key:
+            matched_path_keys.add(path_key)
+        matched_section_titles.append(section_title)
+        matched_section_paths.append(section_path)
+
+    matched_blocks: list[dict[str, Any]] = []
+    matched_block_titles: list[str] = []
+    seen_block_keys: set[str] = set()
+    for raw_block in content_blocks or []:
+        if not isinstance(raw_block, dict):
+            continue
+        if bool(raw_block.get("teacher_only")) and not bool(raw_block.get("student_visible", True)):
+            continue
+        title = _normalize_outline_title(raw_block.get("title"))
+        section_title = _normalize_outline_title(raw_block.get("section_title"))
+        section_path = [
+            _normalize_outline_title(value)
+            for value in (raw_block.get("section_path") if isinstance(raw_block.get("section_path"), list) else [section_title])
+            if _normalize_outline_title(value)
+        ]
+        title_key = _semantic_title_key(title)
+        section_key = _semantic_title_key(section_title)
+        path_key = "|".join(_semantic_title_key(value) for value in section_path if _semantic_title_key(value))
+        if not (
+            title_key in checked_keys
+            or section_key in checked_keys
+            or path_key in matched_path_keys
+            or any(_semantic_title_key(value) in checked_keys for value in section_path)
+        ):
+            continue
+        block_key = f"{path_key}|{title_key}"
+        if not title_key or block_key in seen_block_keys:
+            continue
+        seen_block_keys.add(block_key)
+        matched_blocks.append(raw_block)
+        matched_block_titles.append(title)
+
+    if not matched_blocks and isinstance(content_blocks, list):
+        for raw_block in content_blocks:
+            if not isinstance(raw_block, dict):
+                continue
+            if bool(raw_block.get("teacher_only")) and not bool(raw_block.get("student_visible", True)):
+                continue
+            title = _normalize_outline_title(raw_block.get("title"))
+            title_key = _semantic_title_key(title)
+            if not title_key or title_key not in checked_keys:
+                continue
+            matched_blocks.append(raw_block)
+            matched_block_titles.append(title)
+
+    matched_guidance: list[dict[str, Any]] = []
+    matched_guidance_titles: list[str] = []
+    seen_guidance_keys: set[str] = set()
+    for artifact in saved_guidance or []:
+        if not isinstance(artifact, dict):
+            continue
+        section_title = _normalize_outline_title(artifact.get("section_title"))
+        section_path = [
+            _normalize_outline_title(value)
+            for value in (artifact.get("section_path") if isinstance(artifact.get("section_path"), list) else [])
+            if _normalize_outline_title(value)
+        ]
+        title = _normalize_content_block_text(artifact.get("title"), limit=180)
+        artifact_key = _semantic_title_key(title or section_title)
+        artifact_path_key = "|".join(_semantic_title_key(value) for value in section_path if _semantic_title_key(value))
+        if not (
+            _semantic_title_key(section_title) in checked_keys
+            or artifact_path_key in matched_path_keys
+            or any(_semantic_title_key(value) in checked_keys for value in section_path)
+        ):
+            continue
+        if not artifact_key or artifact_key in seen_guidance_keys:
+            continue
+        seen_guidance_keys.add(artifact_key)
+        matched_guidance.append(artifact)
+        matched_guidance_titles.append(title or section_title or f"Saved guidance {len(matched_guidance)}")
+
+    return {
+        "matched_plans": matched_plans[:8],
+        "matched_blocks": matched_blocks[:18],
+        "matched_guidance": matched_guidance[:6],
+        "matched_section_titles": matched_section_titles[:8],
+        "matched_section_paths": matched_section_paths[:8],
+        "matched_block_titles": [title for title in matched_block_titles[:18] if title],
+        "matched_guidance_titles": [title for title in matched_guidance_titles[:6] if title],
+    }
 
 
 def _build_notebooklm_unit_assistant_prompt(
@@ -4260,24 +4443,90 @@ def _build_notebooklm_session_writeup_prompt(
     session_number: int | None,
     checked_item_titles: list[str],
     note_text: str,
+    matched_section_plans: list[dict[str, Any]] | None = None,
+    matched_content_blocks: list[dict[str, Any]] | None = None,
+    matched_guidance: list[dict[str, Any]] | None = None,
 ) -> str:
     checked_text = json.dumps([str(value or "").strip() for value in checked_item_titles if str(value or "").strip()], ensure_ascii=False)
-    return (
-        "A partir des contenus sources de ce notebook, redige uniquement un JSON strict avec les cles "
-        "`title`, `learning_focus`, `teaching_content`, `practice_items`.\n"
-        "Contraintes:\n"
-        "1. Utilise seulement les elements effectivement realises.\n"
-        "2. `learning_focus` doit etre une liste breve et claire.\n"
-        "3. `teaching_content` doit contenir 1 a 4 paragraphes bien rediges en francais.\n"
-        "4. `practice_items` doit contenir des exercices, applications ou renforcements.\n"
-        "5. S'il manque du contenu, propose une seance de consolidation par exercices; aucune section ne doit etre vide.\n"
-        "6. Ne retourne aucun texte hors JSON.\n"
-        f"Unite: {unit_title or 'unite en cours'}\n"
-        f"Type d'unite: {unit_type.value if unit_type is not None else 'chapter'}\n"
-        f"Numero de seance: {int(session_number) if session_number and session_number > 0 else 'non precise'}\n"
-        f"Elements realises: {checked_text}\n"
-        f"Note enseignant: {note_text.strip() if note_text.strip() else '(aucune)'}"
-    )
+    plan_rows: list[str] = []
+    for raw_plan in (matched_section_plans or [])[:6]:
+        if not isinstance(raw_plan, dict):
+            continue
+        section_title = _normalize_outline_title(raw_plan.get("section_title"))
+        if not section_title:
+            continue
+        sequence = [
+            _normalize_outline_title(value)
+            for value in (raw_plan.get("delivery_sequence") if isinstance(raw_plan.get("delivery_sequence"), list) else [])
+            if _normalize_outline_title(value)
+        ]
+        plan_rows.append(f"- {section_title}: {' -> '.join(sequence[:8]) if sequence else '-'}")
+
+    block_rows: list[dict[str, Any]] = []
+    for raw_block in (matched_content_blocks or [])[:12]:
+        if not isinstance(raw_block, dict):
+            continue
+        title = _normalize_outline_title(raw_block.get("title"))
+        kind = _normalize_content_block_kind(raw_block.get("kind"))
+        if not title:
+            continue
+        block_rows.append(
+            {
+                "section_title": _normalize_outline_title(raw_block.get("section_title")) or title,
+                "section_path": [
+                    _normalize_outline_title(value)
+                    for value in (raw_block.get("section_path") if isinstance(raw_block.get("section_path"), list) else [])
+                    if _normalize_outline_title(value)
+                ],
+                "kind": kind,
+                "teaching_phase": str(raw_block.get("teaching_phase") or "").strip() or _normalize_content_block_phase(None, kind=kind, title=title),
+                "title": title,
+                "teaching_material": _normalize_content_block_text(raw_block.get("teaching_material"), limit=260),
+                "source_excerpt": _normalize_content_block_text(raw_block.get("source_excerpt"), limit=180),
+            }
+        )
+
+    guidance_rows: list[dict[str, Any]] = []
+    for artifact in (matched_guidance or [])[:4]:
+        if not isinstance(artifact, dict):
+            continue
+        guidance_rows.append(
+            {
+                "artifact_kind": str(artifact.get("artifact_kind") or "").strip() or "teacher_notes",
+                "section_title": _normalize_outline_title(artifact.get("section_title")) or None,
+                "title": _normalize_content_block_text(artifact.get("title"), limit=160) or None,
+                "summary": _extract_saved_guidance_excerpt(artifact, limit=220),
+            }
+        )
+
+    prompt_parts = [
+        "A partir des contenus sources de ce notebook et du contexte pedagogique de la seance, redige uniquement un JSON strict avec les cles `title`, `learning_focus`, `teaching_content`, `practice_items`.",
+        "Contraintes:",
+        "1. Utilise seulement les elements effectivement realises avec les eleves.",
+        "2. Base-toi d'abord sur les sections, blocs et guidances pedagogiques lies a cette seance, pas seulement sur les titres coches.",
+        "3. `learning_focus` doit etre une liste breve et claire.",
+        "4. `teaching_content` doit contenir 1 a 4 paragraphes bien rediges en francais, dans l'ordre de la seance.",
+        "5. `practice_items` doit contenir des exercices, applications ou renforcements coherents avec la progression reelle.",
+        "6. Si possible, respecte la logique pedagogique: activite d'amorce, notion ou contenu, exemple guide, pratique ou exercice.",
+        "7. N'introduis pas de rubriques meta enseignant comme objectifs, prerequis, outils didactiques ou gestion du temps.",
+        "8. S'il manque du contenu, propose une seance de consolidation par exercices; aucune section ne doit etre vide.",
+        "9. Ne retourne aucun texte hors JSON.",
+        f"Unite: {unit_title or 'unite en cours'}",
+        f"Type d'unite: {unit_type.value if unit_type is not None else 'chapter'}",
+        f"Numero de seance: {int(session_number) if session_number and session_number > 0 else 'non precise'}",
+        f"Elements realises: {checked_text}",
+        f"Note enseignant: {note_text.strip() if note_text.strip() else '(aucune)'}",
+    ]
+    if plan_rows:
+        prompt_parts.append("Sections pedagogiques reperees pour cette seance:")
+        prompt_parts.extend(plan_rows)
+    if block_rows:
+        prompt_parts.append("Blocs de contenu relies a cette seance:")
+        prompt_parts.append(json.dumps(block_rows, ensure_ascii=False, indent=2))
+    if guidance_rows:
+        prompt_parts.append("Guidance pedagogique deja sauvegardee pour cette seance:")
+        prompt_parts.append(json.dumps(guidance_rows, ensure_ascii=False, indent=2))
+    return "\n".join(prompt_parts)
 
 
 def _openai_generate_checklist(
@@ -4375,29 +4624,63 @@ def _openai_generate_session_writeup(
     checked_item_titles: list[str],
     note_text: str,
     source_text: str,
+    unit_map: dict[str, Any] | None,
+    content_blocks: list[dict[str, Any]] | None,
+    saved_guidance: list[dict[str, Any]] | None,
 ) -> dict[str, Any] | None:
     if not app_config.OPENAI_API_KEY:
         return None
 
     checked_titles = [str(value or "").strip() for value in checked_item_titles if str(value or "").strip()]
+    session_context = _build_session_writeup_context(
+        checked_item_titles=checked_item_titles,
+        unit_map=unit_map,
+        content_blocks=content_blocks,
+        saved_guidance=saved_guidance,
+    )
     system_prompt = (
         "You are an expert French-speaking middle-school mathematics teacher. "
         "Write a concise but well-structured classroom session summary from checklist items that were actually completed. "
         "Return STRICT JSON only with exactly these keys: title, learning_focus, teaching_content, practice_items. "
         "Rules: "
         "1) Use only the checked checklist items and teacher note; do not invent unrelated topics. "
-        "2) learning_focus must be a list of short bullet-style statements. "
-        "3) teaching_content must be a list of 1 to 4 well-written teaching paragraphs in French. "
-        "4) practice_items must be a list of exercises, reinforcement tasks, or applications. "
-        "5) If there is little content, produce an exercise/reinforcement session instead of leaving sections empty. "
-        "6) Keep the sequencing coherent for a textbook-style export."
+        "2) Use the matched section plans, content blocks, and saved guidance when provided so the session follows the real teaching sequence. "
+        "3) learning_focus must be a list of short bullet-style statements. "
+        "4) teaching_content must be a list of 1 to 4 well-written teaching paragraphs in French. "
+        "5) practice_items must be a list of exercises, reinforcement tasks, or applications. "
+        "6) Exclude teacher-planning metadata such as objectives, prerequisites, didactic tools, and time management. "
+        "7) If there is little content, produce an exercise/reinforcement session instead of leaving sections empty. "
+        "8) Keep the sequencing coherent for a textbook-style export."
     )
+    matched_block_rows = [
+        {
+            "section_title": _normalize_outline_title(row.get("section_title")) or None,
+            "title": _normalize_outline_title(row.get("title")) or None,
+            "kind": _normalize_content_block_kind(row.get("kind")),
+            "teaching_phase": str(row.get("teaching_phase") or "").strip() or None,
+            "teaching_material": _normalize_content_block_text(row.get("teaching_material"), limit=220),
+        }
+        for row in (session_context.get("matched_blocks") or [])[:10]
+        if isinstance(row, dict)
+    ]
+    guidance_rows = [
+        {
+            "artifact_kind": str(row.get("artifact_kind") or "").strip() or "teacher_notes",
+            "title": _normalize_content_block_text(row.get("title"), limit=160),
+            "summary": _extract_saved_guidance_excerpt(row, limit=180),
+        }
+        for row in (session_context.get("matched_guidance") or [])[:4]
+        if isinstance(row, dict)
+    ]
     user_prompt = (
         f"Unite: {unit_title or 'unite en cours'}\n"
         f"Type d'unite: {unit_type.value if unit_type is not None else 'chapter'}\n"
         f"Numero de seance: {int(session_number) if session_number and session_number > 0 else 'non precise'}\n"
         f"Points coches: {json.dumps(checked_titles, ensure_ascii=False)}\n"
         f"Note enseignant: {note_text.strip() if note_text.strip() else '(aucune)'}\n"
+        f"Sections liees: {json.dumps(session_context.get('matched_section_titles') or [], ensure_ascii=False)}\n"
+        f"Blocs relies: {json.dumps(matched_block_rows, ensure_ascii=False)}\n"
+        f"Guidance sauvegardee: {json.dumps(guidance_rows, ensure_ascii=False)}\n"
         "Source de reference:\n"
         f"{source_text.strip() if source_text.strip() else '(aucun texte source)'}"
     )
@@ -4453,14 +4736,44 @@ def _fallback_session_writeup_package(
     checked_item_titles: list[str],
     note_text: str,
     source_text: str,
+    unit_map: dict[str, Any] | None,
+    content_blocks: list[dict[str, Any]] | None,
+    saved_guidance: list[dict[str, Any]] | None,
 ) -> dict[str, Any]:
     _ = unit_type
     _ = source_text
+    session_context = _build_session_writeup_context(
+        checked_item_titles=checked_item_titles,
+        unit_map=unit_map,
+        content_blocks=content_blocks,
+        saved_guidance=saved_guidance,
+    )
     focus_items = _normalize_focus_items(checked_item_titles)
+    focus_items.extend(
+        _normalize_focus_items(
+            [
+                str(row.get("section_title") or row.get("title") or "").strip()
+                for row in (session_context.get("matched_blocks") or [])[:6]
+                if isinstance(row, dict)
+            ]
+        )
+    )
+    focus_items = _dedupe_sentence_list(focus_items)[:8]
     if not focus_items:
         focus_items = ["Consolidation guidee des acquis par des exercices de renforcement."]
 
     practice_items = _derive_practice_items(checked_item_titles)
+    for row in session_context.get("matched_blocks") or []:
+        if not isinstance(row, dict):
+            continue
+        kind = _normalize_content_block_kind(row.get("kind"))
+        if kind not in {"example", "exercise", "evaluation"}:
+            continue
+        cleaned = _clean_sentence(str(row.get("title") or ""))
+        if cleaned and cleaned not in practice_items:
+            practice_items.append(cleaned)
+        if len(practice_items) >= 6:
+            break
     if not practice_items:
         practice_items = ["Exercices d'application et de revision en lien avec les notions travaillees."]
 
@@ -4470,6 +4783,8 @@ def _fallback_session_writeup_package(
         focus_items=focus_items,
         unit_title=unit_title,
         note_text=note_text,
+        content_blocks=session_context.get("matched_blocks") if isinstance(session_context, dict) else None,
+        saved_guidance=session_context.get("matched_guidance") if isinstance(session_context, dict) else None,
     )
     return _normalize_writeup_payload(
         title=title,
@@ -5729,6 +6044,21 @@ def _normalize_focus_items(checked_titles: list[str]) -> list[str]:
     return output
 
 
+def _dedupe_sentence_list(values: list[str]) -> list[str]:
+    output: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        cleaned = _clean_sentence(raw)
+        if not cleaned:
+            continue
+        key = cleaned.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(cleaned)
+    return output
+
+
 def _derive_practice_items(checked_titles: list[str]) -> list[str]:
     output: list[str] = []
     for raw in checked_titles:
@@ -5792,10 +6122,39 @@ def _short_heading_from_focus(text: str) -> str:
     return value or "Contenus de seance"
 
 
-def _build_teaching_content(*, focus_items: list[str], unit_title: str, note_text: str) -> list[str]:
+def _build_teaching_content(
+    *,
+    focus_items: list[str],
+    unit_title: str,
+    note_text: str,
+    content_blocks: list[dict[str, Any]] | None = None,
+    saved_guidance: list[dict[str, Any]] | None = None,
+) -> list[str]:
     anchors = [str(item or "").strip().rstrip(".") for item in focus_items if str(item or "").strip()]
     if note_text:
-        return [_clean_sentence(note_text)]
+        rows = [_clean_sentence(note_text)]
+    else:
+        rows = []
+    for block in (content_blocks or [])[:4]:
+        if not isinstance(block, dict):
+            continue
+        kind = _normalize_content_block_kind(block.get("kind"))
+        if kind in {"exercise", "evaluation"}:
+            continue
+        material = _normalize_content_block_text(block.get("teaching_material"), limit=260)
+        excerpt = _normalize_content_block_text(block.get("source_excerpt"), limit=220)
+        candidate = material or excerpt or _normalize_outline_title(block.get("title"))
+        if not candidate:
+            continue
+        rows.append(_clean_sentence(candidate))
+    for artifact in (saved_guidance or [])[:2]:
+        excerpt = _extract_saved_guidance_excerpt(artifact, limit=220)
+        if not excerpt:
+            continue
+        rows.append(_clean_sentence(excerpt))
+    rows = _dedupe_sentence_list(rows)
+    if rows:
+        return rows[:4]
     if len(anchors) >= 2:
         return [
             _clean_sentence(

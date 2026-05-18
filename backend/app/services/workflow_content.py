@@ -93,6 +93,30 @@ def save_unit_blueprint(
     return row
 
 
+def _serialize_unit_assistant_artifact_context(unit: WorkflowUnit | None) -> list[dict]:
+    if unit is None:
+        return []
+    output: list[dict] = []
+    for artifact in unit.assistant_artifacts or []:
+        title = str(artifact.title or "").strip()
+        content_markdown = str(artifact.content_markdown or "").strip()
+        if not title and not content_markdown:
+            continue
+        output.append(
+            {
+                "id": int(artifact.id),
+                "artifact_kind": str(artifact.artifact_kind or "").strip() or "teacher_notes",
+                "section_title": str(artifact.section_title or "").strip() or None,
+                "section_path": [str(value).strip() for value in (artifact.section_path_json or []) if str(value).strip()],
+                "action": str(artifact.action or "").strip() or None,
+                "title": title or None,
+                "content_markdown": content_markdown or None,
+                "source_payload": artifact.source_payload_json if isinstance(artifact.source_payload_json, dict) else None,
+            }
+        )
+    return output
+
+
 def generate_and_store_session_writeup(
     db: Session,
     *,
@@ -127,12 +151,21 @@ def generate_and_store_session_writeup(
     note_text = str(session.note or "").strip()
     source_text = ""
     provider_context: dict | None = None
+    unit_map_json: dict | None = None
+    content_blocks_json: list[dict] | None = None
+    assistant_artifacts_json: list[dict] | None = None
     if unit is not None and unit.blueprint is not None and unit.blueprint.source_text_excerpt:
         source_text = str(unit.blueprint.source_text_excerpt or "").strip()
     if unit is not None and unit.blueprint is not None and isinstance(unit.blueprint.blueprint_json, dict):
         raw_context = unit.blueprint.blueprint_json.get("provider_context")
         if isinstance(raw_context, dict):
             provider_context = raw_context
+    if unit is not None and unit.blueprint is not None and isinstance(unit.blueprint.unit_map_json, dict):
+        unit_map_json = unit.blueprint.unit_map_json
+    if unit is not None and unit.blueprint is not None and isinstance(unit.blueprint.content_blocks_json, list):
+        content_blocks_json = unit.blueprint.content_blocks_json
+    if unit is not None:
+        assistant_artifacts_json = _serialize_unit_assistant_artifact_context(unit)
 
     package = generate_session_writeup_package(
         unit_title=str(unit.title or "").strip() if unit is not None else "",
@@ -145,6 +178,9 @@ def generate_and_store_session_writeup(
         provider=provider,
         document_path=str(unit.document_path or "").strip() if unit is not None else None,
         provider_context=provider_context,
+        unit_map=unit_map_json,
+        content_blocks=content_blocks_json,
+        saved_guidance=assistant_artifacts_json,
     )
 
     row = db.scalar(select(WorkflowSessionWriteup).where(WorkflowSessionWriteup.session_id == int(session.id)))

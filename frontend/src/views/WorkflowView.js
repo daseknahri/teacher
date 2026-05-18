@@ -1958,6 +1958,80 @@ function _listToMultiline(rows) {
   return Array.isArray(rows) ? rows.map(row => String(row || '').trim()).filter(Boolean).join('\n') : '';
 }
 
+function _normalizeWriteupSourcePayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  const matchedSections = Array.isArray(payload.matched_section_titles)
+    ? payload.matched_section_titles.map(row => String(row || '').trim()).filter(Boolean)
+    : [];
+  const matchedPaths = Array.isArray(payload.matched_section_paths)
+    ? payload.matched_section_paths
+      .map(path => Array.isArray(path) ? path.map(row => String(row || '').trim()).filter(Boolean).join(' > ') : '')
+      .filter(Boolean)
+    : [];
+  const matchedBlocks = Array.isArray(payload.matched_block_titles)
+    ? payload.matched_block_titles.map(row => String(row || '').trim()).filter(Boolean)
+    : [];
+  const matchedGuidance = Array.isArray(payload.matched_guidance_titles)
+    ? payload.matched_guidance_titles.map(row => String(row || '').trim()).filter(Boolean)
+    : [];
+  return {
+    requestedProvider: String(payload.requested_provider || '').trim() || null,
+    providerUsed: String(payload.provider_used || '').trim() || null,
+    unitBrainUsed: Boolean(payload.unit_brain_used),
+    matchedSections,
+    matchedPaths,
+    matchedBlocks,
+    matchedGuidance,
+  };
+}
+
+function _renderWriteupSourcePayload(payload, { compact = false } = {}) {
+  const meta = _normalizeWriteupSourcePayload(payload);
+  if (!meta) return '';
+  const parts = [];
+  if (meta.requestedProvider || meta.providerUsed) {
+    parts.push(`
+      <div class="flex flex-wrap gap-2">
+        ${meta.requestedProvider ? `<span class="badge badge-gray">Requested ${_escapeHtml(meta.requestedProvider)}</span>` : ''}
+        ${meta.providerUsed ? `<span class="badge ${meta.providerUsed === 'notebooklm' ? 'badge-green' : meta.providerUsed === 'openai' ? 'badge-blue' : 'badge-amber'}">Used ${_escapeHtml(meta.providerUsed)}</span>` : ''}
+        ${meta.unitBrainUsed ? '<span class="badge badge-green">Unit brain matched</span>' : '<span class="badge badge-gray">Generic session context</span>'}
+      </div>
+    `);
+  }
+
+  const groups = [
+    ['Matched sections', meta.matchedSections],
+    ['Matched paths', meta.matchedPaths],
+    ['Matched blocks', meta.matchedBlocks],
+    ['Saved guidance used', meta.matchedGuidance],
+  ].filter(([, rows]) => Array.isArray(rows) && rows.length);
+
+  if (!groups.length && !parts.length) return '';
+
+  parts.push(`
+    <div class="grid grid-cols-1 ${compact ? '' : 'lg:grid-cols-2'} gap-3">
+      ${groups.map(([label, rows]) => `
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">${_escapeHtml(label)}</p>
+          <ul class="mt-2 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+            ${rows.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
+          </ul>
+        </div>
+      `).join('')}
+    </div>
+  `);
+
+  return `
+    <div class="flex flex-col gap-3">
+      <div>
+        <p class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">AI Context Used</p>
+        <p class="text-[12px] text-slate-500 mt-1">This shows which saved unit sections and guidance the write-up matched before generation.</p>
+      </div>
+      ${parts.join('')}
+    </div>
+  `;
+}
+
 function _openSessionWriteupModal(writeup) {
   return new Promise(resolve => {
     const item = writeup && typeof writeup === 'object' ? writeup : {};
@@ -2480,6 +2554,7 @@ function _render(el, classId) {
                       ${sessionWriteupState.item.practice_items.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
                     </ul>
                   </div>` : ''}
+                ${_renderWriteupSourcePayload(sessionWriteupState.item.source_payload, { compact: false })}
               </div>`
             : '<p class="text-[12px] text-slate-500">No saved write-up yet. Generate one after checking the completed items.</p>'}
             </div>

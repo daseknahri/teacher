@@ -74,6 +74,7 @@ def generate_unit_checklist(
         "status": package.get("status") or "ready",
         "items": package.get("items") or [],
         "unit_map": package.get("unit_map") if isinstance(package.get("unit_map"), dict) else None,
+        "content_blocks": package.get("content_blocks") if isinstance(package.get("content_blocks"), list) else None,
         "raw_provider_response": package.get("raw_provider_response"),
         "error_message": package.get("error_message"),
         "provider_context": package.get("provider_context") if isinstance(package.get("provider_context"), dict) else None,

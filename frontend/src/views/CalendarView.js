@@ -144,6 +144,82 @@ function _escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function _normalizeCalendarWriteupSourcePayload(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+  return {
+    requestedProvider: payload.requested_provider ? String(payload.requested_provider).trim() : '',
+    providerUsed: payload.provider_used ? String(payload.provider_used).trim() : '',
+    unitBrainUsed: Boolean(payload.unit_brain_used),
+    matchedSections: Array.isArray(payload.matched_section_titles)
+      ? payload.matched_section_titles.map(row => String(row || '').trim()).filter(Boolean)
+      : [],
+    matchedPaths: Array.isArray(payload.matched_section_paths)
+      ? payload.matched_section_paths
+        .map(path => Array.isArray(path) ? path.map(part => String(part || '').trim()).filter(Boolean).join(' > ') : '')
+        .filter(Boolean)
+      : [],
+    matchedBlocks: Array.isArray(payload.matched_block_titles)
+      ? payload.matched_block_titles.map(row => String(row || '').trim()).filter(Boolean)
+      : [],
+    matchedGuidance: Array.isArray(payload.matched_guidance_titles)
+      ? payload.matched_guidance_titles.map(row => String(row || '').trim()).filter(Boolean)
+      : [],
+  };
+}
+
+function _renderCalendarWriteupSourcePayload(payload) {
+  const normalized = _normalizeCalendarWriteupSourcePayload(payload);
+  if (!normalized) return '';
+  const rows = [];
+  if (normalized.requestedProvider || normalized.providerUsed) {
+    rows.push(`
+      <div class="flex flex-wrap gap-2 text-[11px] text-slate-500">
+        ${normalized.requestedProvider ? `<span>Requested: <strong class="text-slate-600">${_escapeHtml(normalized.requestedProvider)}</strong></span>` : ''}
+        ${normalized.providerUsed ? `<span>Used: <strong class="text-slate-600">${_escapeHtml(normalized.providerUsed)}</strong></span>` : ''}
+      </div>`);
+  }
+  rows.push(`<p class="text-[11px] text-slate-500">Unit brain matched: <strong class="text-slate-600">${normalized.unitBrainUsed ? 'Yes' : 'No'}</strong></p>`);
+  if (normalized.matchedSections.length) {
+    rows.push(`
+      <div>
+        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Matched Sections</p>
+        <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+          ${normalized.matchedSections.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
+        </ul>
+      </div>`);
+  }
+  if (normalized.matchedPaths.length) {
+    rows.push(`
+      <div>
+        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Matched Paths</p>
+        <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+          ${normalized.matchedPaths.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
+        </ul>
+      </div>`);
+  }
+  if (normalized.matchedBlocks.length) {
+    rows.push(`
+      <div>
+        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Matched Blocks</p>
+        <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+          ${normalized.matchedBlocks.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
+        </ul>
+      </div>`);
+  }
+  if (normalized.matchedGuidance.length) {
+    rows.push(`
+      <div>
+        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Saved Guidance Used</p>
+        <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+          ${normalized.matchedGuidance.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
+        </ul>
+      </div>`);
+  }
+  return rows.length
+    ? `<div class="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 flex flex-col gap-2">${rows.join('')}</div>`
+    : '';
+}
+
 function _flattenChecklistNodes(nodes, depth = 0, output = []) {
   const rows = Array.isArray(nodes) ? nodes : [];
   rows.forEach(row => {
@@ -1060,6 +1136,18 @@ async function _selectSession(sessionId, el, classId) {
 
   try {
     const detail = await api(`/sessions/${sid}`);
+    if (detail && detail.unit_id != null) {
+      try {
+        detail.workflow_writeup = await api(`/workflow/classes/${classId}/sessions/${sid}/writeup`);
+        detail.workflow_writeup_error = null;
+      } catch (writeupErr) {
+        detail.workflow_writeup = null;
+        detail.workflow_writeup_error = String(writeupErr?.message || 'Failed to load workflow write-up.');
+      }
+    } else if (detail && typeof detail === 'object') {
+      detail.workflow_writeup = null;
+      detail.workflow_writeup_error = null;
+    }
     if (Number(_selectedSessionId) !== sid) return;
     _sessionDetailCache.set(sid, detail);
   } catch (err) {
@@ -2047,6 +2135,10 @@ function _renderCalendar(el, classId) {
   const selectedEvent = _findSelectedEvent(weekEvents);
   const selectedSessionNumber = selectedEvent ? unitSessionNumbers.get(Number(selectedEvent.session_id)) || null : null;
   const selectedDetail = selectedEvent ? _sessionDetailCache.get(Number(selectedEvent.session_id)) : null;
+  const selectedWriteup = selectedDetail?.workflow_writeup && typeof selectedDetail.workflow_writeup === 'object'
+    ? selectedDetail.workflow_writeup
+    : null;
+  const selectedWriteupError = selectedDetail?.workflow_writeup_error ? String(selectedDetail.workflow_writeup_error) : '';
   const studentsById = new Map((getStudents() || []).map(student => [Number(student.id), student]));
   const absentRows = selectedEvent ? _absentRowsFromDetail(selectedDetail, selectedEvent, studentsById) : [];
   const headlineBlocks = selectedEvent ? _headlineBlocksFromDetail(selectedDetail, selectedEvent) : [];
@@ -2328,6 +2420,47 @@ function _renderCalendar(el, classId) {
             ${String(selectedDetail?.session?.note || selectedEvent.note || '').trim()
         ? `<p class="mt-2 text-[13px] text-slate-700 whitespace-pre-wrap">${_escapeHtml(String(selectedDetail?.session?.note || selectedEvent.note || '').trim())}</p>`
         : '<p class="text-[12px] text-slate-500 mt-2">No note for this session.</p>'}
+          </div>
+
+          <div class="p-3 rounded-xl border border-slate-200">
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Textbook Write-Up</h4>
+              ${selectedWriteup
+                ? `<span class="badge ${selectedWriteup.approved === false ? 'badge-amber' : 'badge-green'}">${selectedWriteup.approved === false ? 'Draft' : 'Approved'}</span>`
+                : ''}
+            </div>
+            ${_selectedSessionLoading
+              ? '<p class="text-[12px] text-slate-500 mt-2">Loading workflow write-up...</p>'
+              : selectedWriteup
+                ? `
+                  <div class="mt-2 flex flex-col gap-3">
+                    <p class="text-[13px] font-semibold text-slate-700">${_escapeHtml(selectedWriteup.title || 'Session write-up')}</p>
+                    ${Array.isArray(selectedWriteup.learning_focus) && selectedWriteup.learning_focus.length ? `
+                      <div>
+                        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Learning Focus</p>
+                        <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+                          ${selectedWriteup.learning_focus.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
+                        </ul>
+                      </div>` : ''}
+                    ${Array.isArray(selectedWriteup.teaching_content) && selectedWriteup.teaching_content.length ? `
+                      <div class="flex flex-col gap-2">
+                        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Teaching Content</p>
+                        ${selectedWriteup.teaching_content.map(row => `<p class="text-[13px] text-slate-700 leading-relaxed">${_escapeHtml(row)}</p>`).join('')}
+                      </div>` : ''}
+                    ${Array.isArray(selectedWriteup.practice_items) && selectedWriteup.practice_items.length ? `
+                      <div>
+                        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Practice</p>
+                        <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+                          ${selectedWriteup.practice_items.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
+                        </ul>
+                      </div>` : ''}
+                    ${_renderCalendarWriteupSourcePayload(selectedWriteup.source_payload)}
+                  </div>`
+                : selectedWriteupError
+                  ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedWriteupError)}</p>`
+                  : selectedEvent.unit_id == null
+                    ? '<p class="text-[12px] text-slate-500 mt-2">This session is not linked to a workflow unit.</p>'
+                    : '<p class="text-[12px] text-slate-500 mt-2">No saved textbook write-up for this session yet.</p>'}
           </div>
         </div>
       </div>` : `

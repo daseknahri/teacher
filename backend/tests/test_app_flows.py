@@ -175,6 +175,51 @@ def _create_teacher_and_login(client, owner_headers: dict[str, str]) -> tuple[in
     return teacher_id, {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
 
 
+def _close_any_active_unit(client, headers: dict[str, str]) -> None:
+    classes_resp = client.get("/classes", headers=headers)
+    assert classes_resp.status_code == 200
+    for row in classes_resp.json():
+        if not isinstance(row, dict) or not row.get("id"):
+            continue
+        class_id = int(row["id"])
+        workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+        assert workspace_resp.status_code == 200
+        active_unit = workspace_resp.json().get("active_unit")
+        if not isinstance(active_unit, dict) or not active_unit.get("id"):
+            continue
+        close_resp = client.post(
+            f"/workflow/classes/{class_id}/units/{active_unit['id']}/close",
+            headers=headers,
+        )
+        if close_resp.status_code == 200:
+            continue
+        active_session = workspace_resp.json().get("active_session")
+        if (
+            close_resp.status_code == 409
+            and isinstance(active_session, dict)
+            and active_session.get("id")
+        ):
+            end_payload = {}
+            if active_session.get("session_date"):
+                end_payload["session_date"] = active_session.get("session_date")
+            if active_session.get("start_time"):
+                end_payload["start_time"] = active_session.get("start_time")
+                end_payload["end_time"] = active_session.get("start_time")
+            end_resp = client.post(
+                f"/workflow/classes/{class_id}/sessions/{active_session['id']}/end",
+                headers=headers,
+                json=end_payload,
+            )
+            assert end_resp.status_code == 200
+            retry_close_resp = client.post(
+                f"/workflow/classes/{class_id}/units/{active_unit['id']}/close",
+                headers=headers,
+            )
+            assert retry_close_resp.status_code == 200
+            continue
+        assert close_resp.status_code == 200
+
+
 def test_heuristic_extract_supports_compact_numbered_and_french_keywords():
     from app.services.extraction import _heuristic_extract
 
@@ -1623,6 +1668,16 @@ def test_workflow_confirm_can_generate_saved_session_writeup(client):
     )
     assert roster_resp.status_code == 200
 
+    workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_resp.status_code == 200
+    active_unit = workspace_resp.json().get("active_unit")
+    if isinstance(active_unit, dict) and active_unit.get("id"):
+        close_active_resp = client.post(
+            f"/workflow/classes/{class_id}/units/{active_unit['id']}/close",
+            headers=headers,
+        )
+        assert close_active_resp.status_code == 200
+
     unit_resp = client.post(
         f"/workflow/classes/{class_id}/units/start",
         headers=headers,
@@ -2465,11 +2520,12 @@ def test_owner_can_cleanup_notebooklm_temp_notebooks(client, monkeypatch):
     assert payload["cleanup"]["deleted_count"] == 2
 
 
-def test_workflow_writeup_records_requested_provider_when_falling_back(client, monkeypatch):
+def test_workflow_writeup_requires_notebooklm_auth_when_requested(client, monkeypatch):
     from app import config as app_config
 
     monkeypatch.setattr(app_config, "SESSION_WRITER_PROVIDER", "notebooklm")
     headers = _auth_headers(client)
+    _close_any_active_unit(client, headers)
     class_resp = client.post("/classes", json={"name": "Writeup Provider Class", "subject": "Math"}, headers=headers)
     assert class_resp.status_code == 201
     class_id = class_resp.json()["id"]
@@ -2506,11 +2562,8 @@ def test_workflow_writeup_records_requested_provider_when_falling_back(client, m
         headers=headers,
         json={"regenerate": True},
     )
-    assert writeup_resp.status_code == 200
-    writeup = writeup_resp.json()
-    assert writeup["provider"] == "fallback"
-    assert writeup["source_payload"]["requested_provider"] == "notebooklm"
-    assert writeup["source_payload"]["provider_used"] == "fallback"
+    assert writeup_resp.status_code == 409
+    assert "NotebookLM" in str(writeup_resp.json().get("detail", ""))
 
 
 def test_workflow_writeup_can_be_edited_after_generation(client):
@@ -3572,10 +3625,13 @@ def test_unit_creation_replaces_slug_title_with_first_meaningful_generated_headi
 
 def test_workflow_notebooklm_provider_persists_context_and_writeup(client, monkeypatch):
     from app import config as app_config
+    from app.services import workflow as workflow_service
     from app.services import workflow_generation
 
     monkeypatch.setattr(app_config, "UNIT_PLANNER_PROVIDER", "notebooklm")
     monkeypatch.setattr(app_config, "SESSION_WRITER_PROVIDER", "notebooklm")
+    monkeypatch.setattr(workflow_service, "ensure_notebooklm_generation_ready", lambda **kwargs: None)
+    monkeypatch.setattr(workflow_generation, "ensure_notebooklm_generation_ready", lambda **kwargs: None)
 
     monkeypatch.setattr(
         workflow_generation,
@@ -3597,31 +3653,126 @@ def test_workflow_notebooklm_provider_persists_context_and_writeup(client, monke
                 "source_ids": ["src-1"],
                 "notebook_title": "Teacher Progress - Factorisation",
             },
-            {"answer": "{\"items\": []}"},
+            {
+                "answer": "{\"items\": []}",
+                "unit_map": {
+                    "unit_title": "Factorisation",
+                    "ordered_outline": [
+                        {
+                            "title": "Factorisation",
+                            "kind": "chapter",
+                            "children": [
+                                {
+                                    "title": "1.1 Mise en facteur commun",
+                                    "kind": "section",
+                                    "children": [
+                                        {"title": "Exemple guide", "kind": "example", "children": []},
+                                        {"title": "Exercices d'application", "kind": "exercise", "children": []},
+                                    ],
+                                }
+                            ],
+                        }
+                    ],
+                    "section_plans": [
+                        {
+                            "section_title": "1.1 Mise en facteur commun",
+                            "section_path": ["Factorisation", "1.1 Mise en facteur commun"],
+                            "delivery_sequence": ["Exemple guide", "Exercices d'application"],
+                            "activity_titles": [],
+                            "content_titles": ["1.1 Mise en facteur commun"],
+                            "example_titles": ["Exemple guide"],
+                            "exercise_titles": ["Exercices d'application"],
+                            "blocks": [
+                                {
+                                    "title": "Exemple guide",
+                                    "kind": "example",
+                                    "teaching_material": "Montrer comment isoler le facteur commun.",
+                                    "source_excerpt": "Exemple guide",
+                                    "student_visible": True,
+                                    "teacher_only": False,
+                                    "order_index": 1,
+                                },
+                                {
+                                    "title": "Exercices d'application",
+                                    "kind": "exercise",
+                                    "teaching_material": "Faire pratiquer la factorisation sur des expressions simples.",
+                                    "source_excerpt": "Exercices d'application",
+                                    "student_visible": True,
+                                    "teacher_only": False,
+                                    "order_index": 2,
+                                },
+                            ],
+                        }
+                    ],
+                },
+                "content_blocks": [
+                    {
+                        "section_title": "1.1 Mise en facteur commun",
+                        "section_path": ["Factorisation", "1.1 Mise en facteur commun"],
+                        "kind": "lesson",
+                        "teaching_phase": "content",
+                        "title": "1.1 Mise en facteur commun",
+                        "source_excerpt": "Mise en facteur commun",
+                        "teaching_material": "Introduire la mise en facteur commun avec une progression claire.",
+                        "student_visible": True,
+                        "teacher_only": False,
+                        "order_index": 1,
+                    },
+                    {
+                        "section_title": "1.1 Mise en facteur commun",
+                        "section_path": ["Factorisation", "1.1 Mise en facteur commun"],
+                        "kind": "example",
+                        "teaching_phase": "example",
+                        "title": "Exemple guide",
+                        "source_excerpt": "Exemple guide",
+                        "teaching_material": "Montrer comment isoler le facteur commun.",
+                        "student_visible": True,
+                        "teacher_only": False,
+                        "order_index": 2,
+                    },
+                    {
+                        "section_title": "1.1 Mise en facteur commun",
+                        "section_path": ["Factorisation", "1.1 Mise en facteur commun"],
+                        "kind": "exercise",
+                        "teaching_phase": "practice",
+                        "title": "Exercices d'application",
+                        "source_excerpt": "Exercices d'application",
+                        "teaching_material": "Faire pratiquer la factorisation sur des expressions simples.",
+                        "student_visible": True,
+                        "teacher_only": False,
+                        "order_index": 3,
+                    },
+                ],
+            },
             None,
         ),
     )
+    captured_writeup_kwargs: dict[str, object] = {}
     monkeypatch.setattr(
         workflow_generation,
         "_notebooklm_generate_session_writeup",
-        lambda **kwargs: {
-            "provider": "notebooklm",
-            "requested_provider": "notebooklm",
-            "model": "notebooklm-py",
-            "status": "ready",
-            "title": "Seance 1 - Mise en facteur commun",
-            "checked_item_ids": kwargs["checked_item_ids"],
-            "checked_item_titles": kwargs["checked_item_titles"],
-            "learning_focus": ["Reconnaître un facteur commun."],
-            "teaching_content": ["La seance a introduit la mise en facteur commun avec des exemples progressifs."],
-            "practice_items": ["Exercices d'application sur des expressions algebriques."],
-            "teacher_note_snapshot": kwargs["note_text"] or None,
-            "raw_provider_response": {"answer": "{\"title\":\"ok\"}"},
-            "error_message": None,
-        },
+        lambda **kwargs: (
+            captured_writeup_kwargs.update(kwargs)
+            or {
+                "provider": "notebooklm",
+                "requested_provider": "notebooklm",
+                "model": "notebooklm-py",
+                "status": "ready",
+                "title": "Seance 1 - Mise en facteur commun",
+                "checked_item_ids": kwargs["checked_item_ids"],
+                "checked_item_titles": kwargs["checked_item_titles"],
+                "learning_focus": ["Reconna?tre un facteur commun."],
+                "teaching_content": ["La seance a introduit la mise en facteur commun avec des exemples progressifs."],
+                "practice_items": ["Exercices d'application sur des expressions algebriques."],
+                "teacher_note_snapshot": kwargs["note_text"] or None,
+                "raw_provider_response": {"answer": "{\"title\":\"ok\"}"},
+                "error_message": None,
+            }
+        ),
     )
 
     headers = _auth_headers(client)
+    _close_any_active_unit(client, headers)
     class_resp = client.post("/classes", json={"name": "NotebookLM Class", "subject": "Math"}, headers=headers)
     assert class_resp.status_code == 201
     class_id = class_resp.json()["id"]
@@ -3669,8 +3820,100 @@ def test_workflow_notebooklm_provider_persists_context_and_writeup(client, monke
     writeup = writeup_resp.json()
     assert writeup["provider"] == "notebooklm"
     assert writeup["title"] == "Seance 1 - Mise en facteur commun"
-    assert writeup["learning_focus"] == ["Reconnaître un facteur commun."]
+    assert writeup["learning_focus"] == ["Reconna?tre un facteur commun."]
+    assert isinstance(captured_writeup_kwargs.get("unit_map"), dict)
+    assert isinstance(captured_writeup_kwargs.get("content_blocks"), list)
+    assert captured_writeup_kwargs["unit_map"]["section_plans"][0]["section_title"] == "1.1 Mise en facteur commun"
+    assert any(
+        row.get("title") == "1.1 Mise en facteur commun"
+        or row.get("section_title") == "1.1 Mise en facteur commun"
+        or "1.1 Mise en facteur commun" in [str(value) for value in (row.get("section_path") or [])]
+        for row in captured_writeup_kwargs["content_blocks"]
+        if isinstance(row, dict)
+    )
 
+
+def test_generate_session_writeup_package_uses_unit_brain_in_fallback():
+    from app.services.workflow_generation import generate_session_writeup_package
+
+    package = generate_session_writeup_package(
+        unit_title="Les nombres rationnels",
+        unit_type=None,
+        session_number=2,
+        checked_item_ids=[1, 2],
+        checked_item_titles=["1) Les denominateurs sont differents", "Exemples :"],
+        note_text="",
+        source_text="",
+        provider="fallback",
+        unit_map={
+            "section_plans": [
+                {
+                    "section_title": "1) Les denominateurs sont differents",
+                    "section_path": ["Les nombres rationnels", "1) Les denominateurs sont differents"],
+                    "delivery_sequence": ["Propriete", "Exemples", "Exercices d'application"],
+                    "activity_titles": [],
+                    "content_titles": ["Propriete"],
+                    "example_titles": ["Exemples"],
+                    "exercise_titles": ["Exercices d'application"],
+                }
+            ]
+        },
+        content_blocks=[
+            {
+                "section_title": "1) Les denominateurs sont differents",
+                "section_path": ["Les nombres rationnels", "1) Les denominateurs sont differents"],
+                "kind": "property",
+                "teaching_phase": "content",
+                "title": "Propriete",
+                "source_excerpt": "Propriete",
+                "teaching_material": "Rappeler la propriete utilisee pour additionner deux fractions de denominateurs differents.",
+                "student_visible": True,
+                "teacher_only": False,
+                "order_index": 1,
+            },
+            {
+                "section_title": "1) Les denominateurs sont differents",
+                "section_path": ["Les nombres rationnels", "1) Les denominateurs sont differents"],
+                "kind": "example",
+                "teaching_phase": "example",
+                "title": "Exemples",
+                "source_excerpt": "Exemples",
+                "teaching_material": "Montrer un exemple guide avec PPCM puis simplification.",
+                "student_visible": True,
+                "teacher_only": False,
+                "order_index": 2,
+            },
+            {
+                "section_title": "1) Les denominateurs sont differents",
+                "section_path": ["Les nombres rationnels", "1) Les denominateurs sont differents"],
+                "kind": "exercise",
+                "teaching_phase": "practice",
+                "title": "Exercices d'application",
+                "source_excerpt": "Exercices d'application",
+                "teaching_material": "Faire pratiquer plusieurs additions de fractions de denominateurs differents.",
+                "student_visible": True,
+                "teacher_only": False,
+                "order_index": 3,
+            },
+        ],
+        saved_guidance=[
+            {
+                "artifact_kind": "guided_practice",
+                "section_title": "1) Les denominateurs sont differents",
+                "section_path": ["Les nombres rationnels", "1) Les denominateurs sont differents"],
+                "title": "Practice ladder",
+                "content_markdown": "Commencer par un exemple de PPCM puis donner trois calculs progressifs.",
+            }
+        ],
+    )
+
+    assert package["provider"] == "fallback"
+    assert package["source_payload"]["unit_brain_used"] is True
+    assert "1) Les denominateurs sont differents" in package["source_payload"]["matched_section_titles"]
+    assert "Exercices d'application" in package["source_payload"]["matched_block_titles"]
+    assert "Practice ladder" in package["source_payload"]["matched_guidance_titles"]
+    assert any(row == "Exercices d'application." for row in package["practice_items"])
+    assert any("PPCM" in row for row in package["teaching_content"])
 
 def test_timetable_import_preview_csv(client):
     headers = _auth_headers(client)
