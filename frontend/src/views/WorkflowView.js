@@ -32,6 +32,7 @@ let _checklistCollapseUnitId = null;
 const WORKFLOW_VIEW_INTENT_KEY = 'workflow_view_intent';
 const CALENDAR_VIEW_INTENT_KEY = 'calendar_view_intent';
 let _workflowEntryContext = null;
+let _workflowPreviewScrollKey = null;
 const _collapsedChecklistIds = new Set();
 const _inFlightActions = new Set();
 const _sessionProgressCache = new Map();
@@ -2594,7 +2595,7 @@ function _render(el, classId) {
     const previewMatch = previewSessionTitleKeys.has(String(item?.title || '').trim().toLowerCase());
     return `
               <div class="todo-node group checklist-draggable-node ${isDone ? 'done' : ''} ${previewMatch ? '!bg-blue-50/70 !border-blue-200' : ''}"
-                   data-item-id="${item.id}" data-dnd-target-id="${item.id}"
+                   data-item-id="${item.id}" data-dnd-target-id="${item.id}" ${previewMatch ? 'data-preview-match="1"' : ''}
                    style="padding-left:${depthPad}px">
                 ${hasChildren
       ? `<button class="btn btn-ghost btn-sm !text-slate-500 btn-checklist-toggle" data-item-id="${item.id}" title="${isCollapsed ? 'Expand branch' : 'Collapse branch'}">${isCollapsed ? '+' : '-'}</button>`
@@ -2969,6 +2970,21 @@ function _render(el, classId) {
     </div>`;
 
   _bindWorkflowEvents(el, classId);
+
+  const previewScrollKey = previewSessionNumber && unit?.id && !session && _activeTab === 0
+    ? `${Number(unit.id)}:${Number(previewSessionNumber)}:${String(_workflowEntryContext?.session_date || '')}`
+    : null;
+  if (previewScrollKey) {
+    if (_workflowPreviewScrollKey !== previewScrollKey) {
+      _workflowPreviewScrollKey = previewScrollKey;
+      queueMicrotask(() => {
+        const target = el.querySelector('[data-preview-match="1"]');
+        target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      });
+    }
+  } else {
+    _workflowPreviewScrollKey = null;
+  }
 }
 
 /*  flat item list from nested tree  */
