@@ -317,7 +317,7 @@ function _renderBlueprintTree(nodes, depth = 0) {
     </ul>`;
 }
 
-function _openUnitBlueprintModal(unit, blueprint) {
+function _openUnitBlueprintModal(unit, blueprint, classId) {
   const provider = String(blueprint?.provider || unit?.extraction_source || 'unknown');
   const model = String(blueprint?.model || unit?.extraction_model || '').trim();
   const status = String(blueprint?.status || unit?.extraction_status || '').trim();
@@ -484,6 +484,30 @@ function _openUnitBlueprintModal(unit, blueprint) {
       ` : ''}
     `;
   };
+  const renderSavedGuidanceLibrary = rows => {
+    const values = Array.isArray(rows) ? rows.filter(Boolean) : [];
+    if (!values.length) {
+      return '<p class="text-[12px] text-slate-500">No saved guidance has been kept for this unit yet.</p>';
+    }
+    return values.map(row => `
+      <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+          <div class="flex items-center gap-2 flex-wrap">
+            <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(row?.title || 'Saved guidance'))}</p>
+            <span class="badge badge-blue">${_escapeHtml(_assistantArtifactKindLabel(row?.artifact_kind))}</span>
+            ${row?.action ? `<span class="badge badge-gray">${_escapeHtml(_assistantActionLabel(row.action))}</span>` : ''}
+          </div>
+          <button class="btn btn-secondary btn-sm btn-blueprint-artifact-download" data-artifact-id="${_escapeHtml(String(row?.id || ''))}">
+            Download
+          </button>
+        </div>
+        ${row?.section_title ? `<p class="text-[11px] text-slate-500 mt-2"><span class="font-semibold">Section:</span> ${_escapeHtml(String(row.section_title || ''))}</p>` : ''}
+        ${Array.isArray(row?.section_path) && row.section_path.length ? `<p class="text-[11px] text-slate-500 mt-1"><span class="font-semibold">Path:</span> ${_escapeHtml(row.section_path.join(' -> '))}</p>` : '' }
+        ${row?.content_markdown ? `<p class="text-[12px] text-slate-700 leading-6 mt-3">${_escapeHtml(String(row.content_markdown).split('\n').slice(0, 4).join(' '))}</p>` : ''}
+        <p class="text-[11px] text-slate-500 mt-3"><span class="font-semibold">Updated:</span> ${_escapeHtml(fmtDateTime(row?.updated_at))}</p>
+      </div>
+    `).join('');
+  };
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -575,6 +599,13 @@ function _openUnitBlueprintModal(unit, blueprint) {
               ${renderMaterialStudio(materialStudio)}
             </div>
           </div>
+          <div class="mt-4">
+            <h4 class="text-[13px] font-semibold text-slate-800 mb-2">Saved guidance library</h4>
+            <p class="text-[12px] text-slate-500 mb-3">These are the section-level NotebookLM answers the teacher decided to keep for reuse.</p>
+            <div id="unit-blueprint-artifacts" class="space-y-3">
+              <p class="text-[12px] text-slate-500">Loading saved guidance…</p>
+            </div>
+          </div>
         </div>
 
         <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
@@ -624,6 +655,28 @@ function _openUnitBlueprintModal(unit, blueprint) {
   overlay.querySelector('#unit-blueprint-close-top')?.addEventListener('click', cleanup);
   overlay.querySelector('#unit-blueprint-close')?.addEventListener('click', cleanup);
   document.body.appendChild(overlay);
+  const artifactsNode = overlay.querySelector('#unit-blueprint-artifacts');
+  const loadArtifacts = async () => {
+    if (!artifactsNode || !classId || !unit?.id) return;
+    try {
+      const rows = await api(`/workflow/classes/${classId}/units/${unit.id}/assistant/artifacts`);
+      artifactsNode.innerHTML = renderSavedGuidanceLibrary(rows);
+      artifactsNode.querySelectorAll('.btn-blueprint-artifact-download').forEach(button => {
+        button.addEventListener('click', async () => {
+          const artifactId = Number(button.dataset.artifactId || 0);
+          if (!artifactId) return;
+          try {
+            await downloadWithAuth(`/workflow/classes/${classId}/units/${unit.id}/assistant/artifacts/${artifactId}/download`, 'guidance.md');
+          } catch (err) {
+            showToast(String(err?.message || 'Failed to download the saved guidance.'), 'error');
+          }
+        });
+      });
+    } catch (err) {
+      artifactsNode.innerHTML = `<p class="text-[12px] text-red-600">${_escapeHtml(String(err?.message || 'Failed to load saved guidance.'))}</p>`;
+    }
+  };
+  loadArtifacts();
 }
 
 function _buildUnitAssistantSections(blueprint) {
@@ -1396,6 +1449,78 @@ async function _openUnitMaterialStudioModal({ classId, unit, blueprint }) {
   submitButton.addEventListener('click', generateMaterial);
   document.body.appendChild(overlay);
   await loadExisting();
+}
+
+async function _openSessionGuidanceImportModal({ classId, unit }) {
+  return new Promise(async resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal max-w-3xl w-[96vw]">
+        <div class="px-6 py-5 border-b border-slate-100">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h2 class="text-[17px] font-bold text-slate-800">Use Saved Guidance</h2>
+              <p class="text-[12px] text-slate-500 mt-1">Import a saved NotebookLM answer into this session write-up draft.</p>
+            </div>
+            <button id="session-guidance-close-top" class="btn btn-ghost btn-sm">Close</button>
+          </div>
+        </div>
+        <div class="px-6 py-4 max-h-[72vh] overflow-y-auto">
+          <div id="session-guidance-list" class="space-y-3">
+            <p class="text-[12px] text-slate-500">Loading saved guidance…</p>
+          </div>
+        </div>
+        <div class="px-6 py-4 border-t border-slate-100 flex justify-end">
+          <button id="session-guidance-close" class="btn btn-ghost">Close</button>
+        </div>
+      </div>
+    `;
+    const listNode = overlay.querySelector('#session-guidance-list');
+    const cleanup = value => {
+      overlay.remove();
+      resolve(value ?? null);
+    };
+    const renderRows = rows => {
+      const values = Array.isArray(rows) ? rows.filter(Boolean) : [];
+      if (!values.length) {
+        listNode.innerHTML = '<p class="text-[12px] text-slate-500">No saved guidance yet for this unit. Save a good result from Ask This Unit first.</p>';
+        return;
+      }
+      listNode.innerHTML = values.map(item => `
+        <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap">
+              <p class="text-[13px] font-semibold text-slate-700">${_escapeHtml(String(item?.title || 'Saved guidance'))}</p>
+              <span class="badge badge-blue">${_escapeHtml(_assistantArtifactKindLabel(item?.artifact_kind))}</span>
+              ${item?.action ? `<span class="badge badge-gray">${_escapeHtml(_assistantActionLabel(item.action))}</span>` : ''}
+            </div>
+            <button class="btn btn-primary btn-sm btn-session-guidance-import" data-artifact-id="${_escapeHtml(String(item?.id || ''))}">
+              Import
+            </button>
+          </div>
+          ${item?.section_title ? `<p class="text-[11px] text-slate-500 mt-2"><span class="font-semibold">Section:</span> ${_escapeHtml(String(item.section_title || ''))}</p>` : ''}
+          ${Array.isArray(item?.section_path) && item.section_path.length ? `<p class="text-[11px] text-slate-500 mt-1"><span class="font-semibold">Path:</span> ${_escapeHtml(item.section_path.join(' -> '))}</p>` : ''}
+          ${item?.content_markdown ? `<p class="text-[12px] text-slate-700 leading-6 mt-3">${_escapeHtml(String(item.content_markdown).split('\n').slice(0, 4).join(' '))}</p>` : ''}
+        </div>
+      `).join('');
+      listNode.querySelectorAll('.btn-session-guidance-import').forEach(button => {
+        button.addEventListener('click', () => cleanup(Number(button.dataset.artifactId || 0) || null));
+      });
+    };
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) cleanup(null);
+    });
+    overlay.querySelector('#session-guidance-close-top')?.addEventListener('click', () => cleanup(null));
+    overlay.querySelector('#session-guidance-close')?.addEventListener('click', () => cleanup(null));
+    document.body.appendChild(overlay);
+    try {
+      const rows = await api(`/workflow/classes/${classId}/units/${unit.id}/assistant/artifacts`);
+      renderRows(rows);
+    } catch (err) {
+      listNode.innerHTML = `<p class="text-[12px] text-red-600">${_escapeHtml(String(err?.message || 'Failed to load saved guidance.'))}</p>`;
+    }
+  });
 }
 
 function _sortSessionProgressItems(rows) {
@@ -2322,6 +2447,7 @@ function _render(el, classId) {
                 <div class="flex gap-2 flex-wrap">
                   <button id="btn-generate-session-writeup" class="btn btn-primary btn-sm">${session?.has_saved_writeup ? 'Re-generate' : 'Generate'}</button>
                   <button id="btn-edit-session-writeup" class="btn btn-ghost btn-sm" ${sessionWriteupState.item ? '' : 'disabled'}>Edit</button>
+                  <button id="btn-import-session-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>
                 </div>
               </div>
               ${sessionWriteupState.loading
@@ -3862,6 +3988,35 @@ function _bindWorkflowEvents(el, classId) {
     });
   });
 
+  el.querySelector('#btn-import-session-guidance')?.addEventListener('click', async () => {
+    await _withActionLock(`workflow:session-writeup-import:${classId}`, async () => {
+      const session = getActiveSession();
+      const unit = getActiveUnit();
+      if (!session || !unit) return;
+      const artifactId = await _openSessionGuidanceImportModal({ classId, unit });
+      if (!artifactId) return;
+      try {
+        const updated = await api(`/workflow/classes/${classId}/sessions/${session.id}/writeup/import-assistant-artifact`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ artifact_id: artifactId }),
+        });
+        _setSessionWriteupState(session.id, {
+          loading: false,
+          loaded: true,
+          error: null,
+          item: updated || null,
+        });
+        const ws = await api(`/workflow/classes/${classId}`).catch(() => null);
+        if (ws) setWorkspace(ws);
+        _render(el, classId);
+        showToast('Saved guidance imported into the session write-up.', 'ok');
+      } catch (err) {
+        showToast(String(err?.message || 'Failed to import the saved guidance.'), 'error');
+      }
+    });
+  });
+
   const autoLoadSession = getActiveSession();
   if (autoLoadSession) {
     const autoState = _getSessionProgressState(autoLoadSession.id);
@@ -4041,7 +4196,7 @@ function _bindWorkflowEvents(el, classId) {
           return;
         }
         _setBusy(button, false);
-        _openUnitBlueprintModal(unit, state.item);
+        _openUnitBlueprintModal(unit, state.item, classId);
       } catch (err) {
         _setBusy(button, false);
         showToast(String(err?.message || 'Failed to load AI extraction details.'), 'error');

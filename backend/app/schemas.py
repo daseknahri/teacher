@@ -708,6 +708,10 @@ class WorkflowSessionWriteupGenerateIn(BaseModel):
     regenerate: bool = True
 
 
+class WorkflowSessionWriteupImportAssistantIn(BaseModel):
+    artifact_id: int
+
+
 class WorkflowSessionWriteupUpdateIn(BaseModel):
     title: str | None = None
     learning_focus: list[str] | None = None

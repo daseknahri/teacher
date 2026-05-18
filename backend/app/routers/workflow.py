@@ -87,6 +87,7 @@ from ..schemas import (
     WorkflowSessionEndIn,
     WorkflowSessionOut,
     WorkflowSessionWriteupGenerateIn,
+    WorkflowSessionWriteupImportAssistantIn,
     WorkflowSessionWriteupOut,
     WorkflowSessionWriteupUpdateIn,
     WorkflowSessionStartIn,
@@ -2071,6 +2072,92 @@ def _normalize_writeup_rows(values: list[str] | None) -> list[str] | None:
         seen.add(key)
         output.append(value)
     return output
+
+
+def _extract_assistant_artifact_answer_rows(artifact: WorkflowUnitAssistantArtifact) -> list[str]:
+    payload = artifact.source_payload_json if isinstance(artifact.source_payload_json, dict) else {}
+    raw_rows = payload.get("answer_rows") if isinstance(payload.get("answer_rows"), list) else None
+    normalized = _normalize_writeup_rows([str(value) for value in (raw_rows or []) if str(value or "").strip()])
+    if normalized:
+        return normalized
+    content = str(artifact.content_markdown or "").strip()
+    if not content:
+        return []
+    rows: list[str] = []
+    in_guidance = False
+    for raw_line in content.splitlines():
+        line = str(raw_line or "").strip()
+        if not line:
+            continue
+        if line.startswith("## "):
+            in_guidance = line.lower() == "## guidance"
+            continue
+        if not in_guidance:
+            continue
+        if line.startswith("- "):
+            rows.append(line[2:].strip())
+    return _normalize_writeup_rows(rows) or []
+
+
+def _merge_writeup_rows(existing: list[str] | None, incoming: list[str] | None) -> list[str]:
+    merged = [str(value) for value in (existing or []) if str(value or "").strip()]
+    merged.extend(str(value) for value in (incoming or []) if str(value or "").strip())
+    return _normalize_writeup_rows(merged) or []
+
+
+def _merge_assistant_artifact_into_writeup(
+    *,
+    row: WorkflowSessionWriteup,
+    artifact: WorkflowUnitAssistantArtifact,
+) -> None:
+    answer_rows = _extract_assistant_artifact_answer_rows(artifact)
+    focus_rows = row.learning_focus_json if isinstance(row.learning_focus_json, list) else []
+    content_rows = row.teaching_content_json if isinstance(row.teaching_content_json, list) else []
+    practice_rows = row.practice_items_json if isinstance(row.practice_items_json, list) else []
+    section_title = str(artifact.section_title or "").strip()
+    if section_title:
+        focus_rows = _merge_writeup_rows(focus_rows, [section_title])
+    kind = str(artifact.artifact_kind or "").strip().lower()
+    if kind == "teacher_notes":
+        content_rows = _merge_writeup_rows(content_rows, answer_rows)
+    elif kind in {"guided_practice", "quick_quiz_draft"}:
+        practice_rows = _merge_writeup_rows(practice_rows, answer_rows)
+    else:
+        content_rows = _merge_writeup_rows(content_rows, answer_rows)
+    row.learning_focus_json = focus_rows
+    row.teaching_content_json = content_rows
+    row.practice_items_json = practice_rows
+    if not row.title:
+        row.title = (str(artifact.title or "").strip() or section_title or row.title or "")[:255] or None
+    row.provider = str(row.provider or artifact.provider or "notebooklm").strip() or "notebooklm"
+    row.model = row.model or artifact.model
+    row.status = "ready"
+    row.approved = False
+    base_payload = row.source_payload_json if isinstance(row.source_payload_json, dict) else {}
+    imported = base_payload.get("imported_assistant_artifacts") if isinstance(base_payload.get("imported_assistant_artifacts"), list) else []
+    imported.append(
+        {
+            "artifact_id": int(artifact.id),
+            "artifact_kind": kind or None,
+            "section_title": section_title or None,
+            "action": str(artifact.action or "").strip() or None,
+        }
+    )
+    deduped: list[dict[str, Any]] = []
+    seen_ids: set[int] = set()
+    for entry in imported:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            artifact_id = int(entry.get("artifact_id"))
+        except Exception:
+            continue
+        if artifact_id in seen_ids:
+            continue
+        seen_ids.add(artifact_id)
+        deduped.append(entry)
+    base_payload["imported_assistant_artifacts"] = deduped
+    row.source_payload_json = base_payload
 
 
 def _serialize_session(db: Session, session: ClassSession) -> WorkflowSessionOut:
@@ -5518,7 +5605,14 @@ def save_workflow_unit_assistant_artifact(
         action=str(payload.action or "").strip() or None,
         title=str(payload.title or "").strip() or None,
         content_markdown=_build_unit_assistant_artifact_markdown(unit=unit, payload=payload),
-        source_payload_json=payload.source_payload if isinstance(payload.source_payload, dict) else None,
+        source_payload_json={
+            **(payload.source_payload if isinstance(payload.source_payload, dict) else {}),
+            "answer_rows": [str(value).strip() for value in (payload.answer_rows or []) if str(value).strip()],
+            "suggested_followups": [str(value).strip() for value in (payload.suggested_followups or []) if str(value).strip()],
+            "section_title": str(payload.section_title or "").strip() or None,
+            "section_path": [str(value).strip() for value in (payload.section_path or []) if str(value).strip()],
+            "action": str(payload.action or "").strip() or None,
+        },
         raw_provider_response=payload.raw_provider_response if isinstance(payload.raw_provider_response, dict) else None,
         created_by_user_id=int(current_user.id),
     )
@@ -5810,6 +5904,61 @@ def update_workflow_session_writeup(
             "session_id": int(session_id),
             "unit_id": int(session.unit_id) if session.unit_id is not None else None,
             "approved": bool(row.approved),
+        },
+    )
+    db.commit()
+    db.refresh(row)
+    return _serialize_session_writeup(row)
+
+
+@router.post("/classes/{class_id}/sessions/{session_id}/writeup/import-assistant-artifact", response_model=WorkflowSessionWriteupOut)
+def import_workflow_session_writeup_assistant_artifact(
+    class_id: int,
+    session_id: int,
+    payload: WorkflowSessionWriteupImportAssistantIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkflowSessionWriteupOut:
+    _ = ensure_class_writable(db, class_id, current_user)
+    session = db.get(ClassSession, int(session_id))
+    if session is None or int(session.class_id) != int(class_id) or session.unit_id is None:
+        raise HTTPException(status_code=404, detail="Workflow session not found.")
+    artifact = db.get(WorkflowUnitAssistantArtifact, int(payload.artifact_id))
+    if artifact is None or int(artifact.unit_id) != int(session.unit_id):
+        raise HTTPException(status_code=404, detail="Saved guidance not found for this session unit.")
+
+    row = db.scalar(select(WorkflowSessionWriteup).where(WorkflowSessionWriteup.session_id == int(session_id)))
+    if row is None:
+        row = WorkflowSessionWriteup(
+            session_id=int(session.id),
+            unit_id=int(session.unit_id),
+            provider=str(artifact.provider or "notebooklm").strip() or "notebooklm",
+            model=str(artifact.model or "").strip() or None,
+            status="ready",
+            title=(str(artifact.title or "").strip() or str(artifact.section_title or "").strip() or None),
+            checked_item_ids_json=[],
+            checked_item_titles_json=[],
+            learning_focus_json=[],
+            teaching_content_json=[],
+            practice_items_json=[],
+            approved=False,
+        )
+        db.add(row)
+        db.flush()
+
+    _merge_assistant_artifact_into_writeup(row=row, artifact=artifact)
+    log_audit(
+        db,
+        user=current_user,
+        action="workflow.session.writeup.import_assistant_artifact",
+        entity_type="workflow_session_writeup",
+        entity_id=int(row.id),
+        class_id=int(class_id),
+        details={
+            "session_id": int(session_id),
+            "unit_id": int(session.unit_id),
+            "artifact_id": int(artifact.id),
+            "artifact_kind": str(artifact.artifact_kind or "").strip() or None,
         },
     )
     db.commit()

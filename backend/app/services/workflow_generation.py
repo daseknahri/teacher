@@ -2630,6 +2630,7 @@ def _build_notebooklm_checklist_prompt(
         "- Conserve le texte et le systeme de numerotation visibles dans le document (I, II, 1, 1.1, A, etc.).",
         "- Quand l'ordre pedagogique est implicite ou ambigu, organise la progression comme un enseignant: activites d'amorce, puis notions/lecon, puis definitions/proprietes/regles, puis exemples, puis exercices ou evaluation.",
         "- Dans chaque grande section, essaie de garder une structure exploitable en classe: activite -> contenu/notions -> exemples -> exercices.",
+        "- N'utilise pas des conteneurs generiques comme 'Activites', 'Contenu de la lecon', 'Exercices' ou 'Evaluation' comme structure principale si une section ou sous-section pedagogique plus precise est visible; rattache plutot chaque activite, exemple ou exercice a la section exacte qu'il prepare, illustre ou evalue.",
         "- Ne saute aucun titre visible, meme s'il y a plusieurs activites ou plusieurs exercices.",
         "- Si une rubrique contient Activite 1, Activite 2, ... ou Exercice 1, Exercice 2, ..., garde-les tous comme enfants de cette rubrique.",
         "- N'inclus pas dans la checklist les rubriques meta enseignant comme Objectifs d'apprentissage, Competences, Capacites, Prerequis, Outils didactiques, Ressources, Gestion du temps, Demarche pedagogique ou rubriques similaires.",
@@ -2700,6 +2701,7 @@ def _build_notebooklm_unit_map_prompt(
             "- Garde le titre du chapitre comme racine si visible.",
             "- Inclure activites, contenu de la lecon, sections, sous-sections, definitions, proprietes, exemples, exercices et evaluation quand ils sont visibles.",
             "- Si l'ordre pedagogique est flou, recompose-le comme un enseignant: activites d'amorce, puis notions/lecon, puis definitions/proprietes/regles, puis exemples, puis exercices ou evaluation.",
+            "- N'utilise pas des conteneurs generiques comme 'Activites', 'Contenu de la lecon', 'Exercices' ou 'Evaluation' comme noeuds principaux si une section ou sous-section pedagogique plus precise est visible; rattache les blocs a la section d'enseignement la plus exacte.",
             "- N'inclus pas dans ordered_outline les rubriques meta enseignant comme Objectifs d'apprentissage, Competences, Capacites, Prerequis, Outils didactiques, Ressources, Gestion du temps ou Demarche pedagogique; range-les plutot dans teaching_goals, prerequisites ou teacher_resources.",
             "- teaching_goals doit resumer les objectifs d'apprentissage visibles ou clairement implicites.",
             "- prerequisites doit lister les prerequis visibles ou tres evidents.",
@@ -2740,6 +2742,7 @@ def _build_notebooklm_content_pack_prompt(
             "Contraintes:",
             "- Garde les content_blocks dans l'ordre pedagogique du document.",
             "- section_title et section_path doivent pointer vers la section d'enseignement la plus precise, pas vers des rubriques generiques comme 'Contenu de la lecon' s'il existe un vrai titre pedagogique plus bas.",
+            "- Pour une activite, un exemple ou un exercice, rattache le bloc a la section exacte qu'il prepare, illustre ou evalue. N'utilise 'Activites', 'Contenu de la lecon' ou 'Exercices' comme section_path finale que s'il n'existe vraiment aucun titre pedagogique plus precis.",
             "- Inclure les activites, notions, definitions, proprietes, methodes, exemples, exercices et evaluation visibles ou clairement relies a la progression.",
             "- source_excerpt doit rester court, fidele au document, et sans longues corrections detaillees.",
             "- teaching_material doit etre une formulation propre et exploitable en classe, en 1 a 3 phrases maximum.",
@@ -3037,6 +3040,10 @@ GENERIC_SECTION_BUCKET_KEYS: set[str] = {
 }
 
 
+def _is_generic_section_bucket_title(title: Any) -> bool:
+    return _semantic_title_key(title) in GENERIC_SECTION_BUCKET_KEYS
+
+
 def _normalize_content_block_kind(value: Any) -> str:
     folded = _fold_text_key(value)
     if not folded:
@@ -3096,6 +3103,61 @@ def _normalize_content_block_phase(value: Any, *, kind: str, title: str) -> str:
     if kind in {"exercise", "evaluation"}:
         return "assessment" if kind == "evaluation" else "practice"
     return "content"
+
+
+def _has_precise_content_block_path(path: list[str] | None) -> bool:
+    if not isinstance(path, list):
+        return False
+    for part in path:
+        normalized = _normalize_outline_title(part)
+        if not normalized:
+            continue
+        if _is_teacher_meta_outline_title(normalized):
+            continue
+        if _is_generic_section_bucket_title(normalized):
+            continue
+        return True
+    return False
+
+
+def _retarget_generic_content_block_paths(blocks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not isinstance(blocks, list) or not blocks:
+        return blocks
+    precise_paths: list[tuple[int, list[str]]] = []
+    for index, row in enumerate(blocks):
+        if not isinstance(row, dict) or bool(row.get("teacher_only")):
+            continue
+        path = row.get("section_path") if isinstance(row.get("section_path"), list) else []
+        normalized_path = [_normalize_outline_title(value) for value in path if _normalize_outline_title(value)]
+        if _has_precise_content_block_path(normalized_path):
+            precise_paths.append((index, normalized_path))
+
+    def nearest_precise_path(current_index: int, *, prefer_forward: bool) -> list[str] | None:
+        forward = [path for index, path in precise_paths if index > current_index]
+        backward = [path for index, path in reversed(precise_paths) if index < current_index]
+        if prefer_forward:
+            return (forward[0] if forward else (backward[0] if backward else None))
+        return (backward[0] if backward else (forward[0] if forward else None))
+
+    for index, row in enumerate(blocks):
+        if not isinstance(row, dict) or bool(row.get("teacher_only")):
+            continue
+        path = row.get("section_path") if isinstance(row.get("section_path"), list) else []
+        normalized_path = [_normalize_outline_title(value) for value in path if _normalize_outline_title(value)]
+        if _has_precise_content_block_path(normalized_path):
+            continue
+        section_title = _normalize_outline_title(row.get("section_title"))
+        if not _is_generic_section_bucket_title(section_title) and not (normalized_path and _is_generic_section_bucket_title(normalized_path[-1])):
+            continue
+        kind = _normalize_content_block_kind(row.get("kind"))
+        if kind == "evaluation":
+            continue
+        candidate = nearest_precise_path(index, prefer_forward=kind in {"activity", "lesson", "definition", "property", "example"})
+        if not candidate:
+            continue
+        row["section_path"] = list(candidate)
+        row["section_title"] = candidate[-1]
+    return blocks
 
 
 def _derive_content_blocks_from_outline(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -3201,6 +3263,7 @@ def _normalize_content_blocks_payload(
         last_section_title = section_title
     if not output:
         output = _derive_content_blocks_from_outline(fallback_outline or (unit_map.get("ordered_outline") if isinstance(unit_map, dict) and isinstance(unit_map.get("ordered_outline"), list) else []))
+    output = _retarget_generic_content_block_paths(output)
     output.sort(key=lambda row: (int(row.get("order_index") or 0), _semantic_title_key(row.get("section_title")), _semantic_title_key(row.get("title"))))
     for idx, row in enumerate(output, start=1):
         row["order_index"] = idx

@@ -1996,6 +1996,82 @@ def test_workflow_unit_assistant_artifact_save_and_download(client):
     assert list_after_delete_resp.json() == []
 
 
+def test_workflow_session_writeup_can_import_saved_assistant_guidance(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Assistant Import Class", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    roster_content = _build_roster_file([("A1", "Student One")])
+    roster_resp = client.post(
+        f"/classes/{class_id}/students/import",
+        headers=headers,
+        files={"file": ("roster.xlsx", roster_content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert roster_resp.status_code == 200
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Les nombres rationnels",
+            "source_text": (
+                "Les nombres rationnels : Somme et difference\n"
+                "I- Addition\n"
+                "1) Les denominateurs sont les memes\n"
+                "Exemples\n"
+                "Exercices\n"
+            ),
+        },
+    )
+    assert unit_resp.status_code == 201
+    unit_id = unit_resp.json()["id"]
+
+    start_session_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/start",
+        headers=headers,
+        json={"absent_student_ids": []},
+    )
+    assert start_session_resp.status_code == 201
+    session_id = start_session_resp.json()["id"]
+
+    save_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/assistant/artifacts",
+        headers=headers,
+        json={
+            "artifact_kind": "guided_practice",
+            "provider": "notebooklm",
+            "model": "notebooklm-py",
+            "section_title": "1) Les denominateurs sont les memes",
+            "section_path": ["I- Addition", "1) Les denominateurs sont les memes"],
+            "action": "generate_harder_practice",
+            "title": "Harder fraction practice",
+            "answer_rows": [
+                "Calcule 7/12 + 5/18 en justifiant le PPCM choisi.",
+                "Calcule 11/15 + 7/10 puis simplifie le resultat.",
+            ],
+            "suggested_followups": ["Prepare a short correction for these items."],
+            "source_payload": {"teacher_request": "Give me harder practice."},
+            "raw_provider_response": {"answer": "{\"title\":\"Harder fraction practice\"}"},
+        },
+    )
+    assert save_resp.status_code == 200
+    artifact_id = save_resp.json()["id"]
+
+    import_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/{session_id}/writeup/import-assistant-artifact",
+        headers=headers,
+        json={"artifact_id": artifact_id},
+    )
+    assert import_resp.status_code == 200
+    writeup = import_resp.json()
+    assert writeup["approved"] is False
+    assert "1) Les denominateurs sont les memes" in writeup["learning_focus"]
+    assert "Calcule 7/12 + 5/18 en justifiant le PPCM choisi." in writeup["practice_items"]
+    assert writeup["source_payload"]["imported_assistant_artifacts"][0]["artifact_id"] == artifact_id
+
+
 def test_workflow_unit_material_generation_persists_study_guide(client, monkeypatch):
     from app.routers import workflow as workflow_router
 
