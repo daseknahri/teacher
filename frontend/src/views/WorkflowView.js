@@ -2530,6 +2530,12 @@ function _render(el, classId) {
                   ${_escapeHtml(_workflowEntryContext?.session_label || `Unit Session ${previewSessionNumber}`)}
                   ${_workflowEntryContext?.session_date ? ` • ${_escapeHtml(fmtDate(_workflowEntryContext.session_date))}` : ''}
                 </p>
+                <div class="mt-3 flex gap-2 flex-wrap">
+                  ${!session ? `<button id="btn-start-preview-session" class="btn btn-success btn-sm">Start This Session</button>` : ''}
+                  <button id="btn-preview-session-assistant" class="btn btn-primary btn-sm">Ask This Unit</button>
+                  <button id="btn-preview-session-materials" class="btn btn-secondary btn-sm">Material Studio</button>
+                  <button id="btn-preview-session-ai-details" class="btn btn-secondary btn-sm">AI Details</button>
+                </div>
               </div>
               <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 <div class="rounded-xl border border-blue-100 bg-white p-3">
@@ -4760,6 +4766,22 @@ function _bindWorkflowEvents(el, classId) {
         showToast(String(err?.message || 'Failed to open unit guidance.'), 'error');
       }
     });
+  });
+
+  el.querySelector('#btn-start-preview-session')?.addEventListener('click', () => {
+    el.querySelector('#btn-start-session')?.click();
+  });
+
+  el.querySelector('#btn-preview-session-assistant')?.addEventListener('click', () => {
+    el.querySelector('#btn-ask-unit-assistant')?.click();
+  });
+
+  el.querySelector('#btn-preview-session-materials')?.addEventListener('click', () => {
+    el.querySelector('#btn-open-material-studio')?.click();
+  });
+
+  el.querySelector('#btn-preview-session-ai-details')?.addEventListener('click', () => {
+    el.querySelector('#btn-view-ai-details')?.click();
   });
 
   el.querySelectorAll('.btn-session-playbook-request').forEach(button => {
