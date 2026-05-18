@@ -51,6 +51,18 @@ const UNIT_TYPES = [
   { key: 'exam', icon: 'TE', label: 'Exam' },
   { key: 'exam_correction', icon: 'CR', label: 'Correction' },
 ];
+const UNIT_ASSISTANT_ACTION_LABELS = {
+  explain_section: 'Explain Section',
+  generate_teacher_notes: 'Teacher Notes',
+  generate_slides: 'Slide Outline',
+  create_warmup_variant: 'Warm-up Variant',
+  simplify_explanation: 'Simplify Explanation',
+  generate_guided_examples: 'Guided Examples',
+  generate_easier_practice: 'Easier Practice',
+  generate_harder_practice: 'Harder Practice',
+  generate_quick_quiz: 'Quick Quiz',
+  generate_remediation: 'Remediation Support',
+};
 
 //    busy state helpers   
 function _setBusy(btn, busy) {
@@ -555,6 +567,286 @@ function _openUnitBlueprintModal(unit, blueprint) {
   });
   overlay.querySelector('#unit-blueprint-close-top')?.addEventListener('click', cleanup);
   overlay.querySelector('#unit-blueprint-close')?.addEventListener('click', cleanup);
+  document.body.appendChild(overlay);
+}
+
+function _buildUnitAssistantSections(blueprint) {
+  const unitMap = blueprint?.unit_map_json && typeof blueprint.unit_map_json === 'object' ? blueprint.unit_map_json : {};
+  const teacherPlaybook = Array.isArray(unitMap?.teacher_playbook) ? unitMap.teacher_playbook.filter(Boolean) : [];
+  const sections = [{
+    key: '__whole_unit__',
+    section_title: '',
+    section_path: [],
+    label: 'Whole unit',
+    available_actions: ['explain_section', 'generate_teacher_notes', 'generate_slides', 'generate_quick_quiz'],
+    suggested_requests: [
+      'Give me a clean overview of this unit for teaching.',
+      'Suggest the best progression to teach this unit.',
+      'Prepare a quick revision quiz for the unit.',
+    ],
+  }];
+  const seen = new Set(['__whole_unit__']);
+  teacherPlaybook.forEach((row, index) => {
+    const sectionTitle = String(row?.section_title || '').trim();
+    const sectionPath = Array.isArray(row?.section_path)
+      ? row.section_path.map(value => String(value || '').trim()).filter(Boolean)
+      : [];
+    const key = (sectionPath.length ? sectionPath.join('||') : sectionTitle || `section-${index}`).toLowerCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    sections.push({
+      key,
+      section_title: sectionTitle,
+      section_path: sectionPath,
+      label: sectionPath.length ? sectionPath.join(' -> ') : sectionTitle || `Section ${index + 1}`,
+      available_actions: Array.isArray(row?.available_actions)
+        ? row.available_actions.map(value => String(value || '').trim()).filter(Boolean)
+        : [],
+      suggested_requests: Array.isArray(row?.suggested_requests)
+        ? row.suggested_requests.map(value => String(value || '').trim()).filter(Boolean)
+        : [],
+    });
+  });
+  return sections;
+}
+
+function _assistantActionLabel(value) {
+  const key = String(value || '').trim();
+  return UNIT_ASSISTANT_ACTION_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase()) || 'Action';
+}
+
+function _openUnitAssistantModal({ classId, unit, blueprint }) {
+  const sections = _buildUnitAssistantSections(blueprint);
+  const initialSection = sections[1] || sections[0];
+  const initialActions = Array.isArray(initialSection?.available_actions) && initialSection.available_actions.length
+    ? initialSection.available_actions
+    : ['explain_section'];
+  const state = {
+    sectionKey: String(initialSection?.key || '__whole_unit__'),
+    action: String(initialActions[0] || 'explain_section'),
+    teacherRequest: '',
+    loading: false,
+    result: null,
+    error: '',
+  };
+
+  const getSection = () => sections.find(row => row.key === state.sectionKey) || sections[0];
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal max-w-4xl w-[96vw]">
+      <div class="px-6 py-5 border-b border-slate-100">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-[17px] font-bold text-slate-800">Ask This Unit</h2>
+            <p class="text-[12px] text-slate-500 mt-1">
+              Use the saved NotebookLM unit brain to get practical help for teaching this topic.
+            </p>
+          </div>
+          <button id="unit-assistant-close-top" class="btn btn-ghost btn-sm">Close</button>
+        </div>
+      </div>
+      <div class="px-6 py-4 max-h-[78vh] overflow-y-auto flex flex-col gap-4">
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+          <div class="grid gap-4 md:grid-cols-2">
+            <div class="flex flex-col gap-1">
+              <label class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Target section</label>
+              <select id="unit-assistant-section"></select>
+              <p id="unit-assistant-section-path" class="text-[11px] text-slate-500 mt-1"></p>
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Action</label>
+              <select id="unit-assistant-action"></select>
+            </div>
+          </div>
+          <div class="mt-4">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Suggested requests</p>
+            <div id="unit-assistant-suggestions" class="flex flex-wrap gap-2"></div>
+          </div>
+          <div class="mt-4 flex flex-col gap-1">
+            <label class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Teacher request</label>
+            <textarea id="unit-assistant-request" rows="5" placeholder="Example: Give me 4 harder practice tasks for this section, with short teacher notes."></textarea>
+            <p class="text-[11px] text-slate-500">We’ll ground this request on the saved unit context, section path, and extracted teaching blocks.</p>
+          </div>
+          <p id="unit-assistant-error" class="text-[12px] text-red-600 hidden mt-3"></p>
+        </div>
+
+        <div id="unit-assistant-result" class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+          <p class="text-[12px] text-slate-500">No guidance generated yet. Pick a section, choose an action, and ask NotebookLM for help.</p>
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+        <button id="unit-assistant-close" class="btn btn-ghost">Close</button>
+        <button id="unit-assistant-submit" class="btn btn-primary">Ask NotebookLM</button>
+      </div>
+    </div>
+  `;
+
+  const sectionSelect = overlay.querySelector('#unit-assistant-section');
+  const actionSelect = overlay.querySelector('#unit-assistant-action');
+  const requestInput = overlay.querySelector('#unit-assistant-request');
+  const suggestionsWrap = overlay.querySelector('#unit-assistant-suggestions');
+  const resultWrap = overlay.querySelector('#unit-assistant-result');
+  const errorNode = overlay.querySelector('#unit-assistant-error');
+  const sectionPathNode = overlay.querySelector('#unit-assistant-section-path');
+  const submitButton = overlay.querySelector('#unit-assistant-submit');
+
+  const setError = message => {
+    const text = String(message || '').trim();
+    state.error = text;
+    if (!errorNode) return;
+    errorNode.textContent = text;
+    errorNode.classList.toggle('hidden', !text);
+  };
+
+  const renderResult = () => {
+    if (!resultWrap) return;
+    const result = state.result;
+    if (!result) {
+      resultWrap.innerHTML = '<p class="text-[12px] text-slate-500">No guidance generated yet. Pick a section, choose an action, and ask NotebookLM for help.</p>';
+      return;
+    }
+    const answerRows = Array.isArray(result?.answer_rows) ? result.answer_rows.filter(Boolean) : [];
+    const followups = Array.isArray(result?.suggested_followups) ? result.suggested_followups.filter(Boolean) : [];
+    resultWrap.innerHTML = `
+      <div class="flex items-center gap-2 flex-wrap">
+        <h3 class="text-[15px] font-semibold text-slate-800">${_escapeHtml(String(result?.title || 'NotebookLM guidance'))}</h3>
+        ${result?.action ? `<span class="badge badge-blue">${_escapeHtml(_assistantActionLabel(result.action))}</span>` : ''}
+        ${result?.provider ? `<span class="badge badge-gray">${_escapeHtml(String(result.provider))}</span>` : ''}
+      </div>
+      ${answerRows.length ? `
+        <ul class="list-disc pl-5 mt-3 text-[13px] text-slate-700 space-y-2">
+          ${answerRows.map(row => `<li>${_escapeHtml(String(row || ''))}</li>`).join('')}
+        </ul>
+      ` : '<p class="text-[12px] text-slate-500 mt-3">NotebookLM did not return structured teaching rows for this request.</p>'}
+      ${followups.length ? `
+        <div class="mt-4">
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Suggested next requests</p>
+          <div class="flex flex-wrap gap-2">
+            ${followups.map((row, index) => `<button class="btn btn-ghost btn-sm !text-slate-600 btn-unit-assistant-followup" data-followup-index="${index}">${_escapeHtml(String(row || ''))}</button>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+      ${result?.error_message ? `<p class="text-[12px] text-amber-700 mt-4"><span class="font-semibold">Provider note:</span> ${_escapeHtml(String(result.error_message || ''))}</p>` : ''}
+    `;
+    resultWrap.querySelectorAll('.btn-unit-assistant-followup').forEach(button => {
+      button.addEventListener('click', () => {
+        const index = Number(button.dataset.followupIndex || -1);
+        if (!Number.isFinite(index) || index < 0 || index >= followups.length || !requestInput) return;
+        requestInput.value = String(followups[index] || '').trim();
+        state.teacherRequest = requestInput.value;
+        requestInput.focus();
+      });
+    });
+  };
+
+  const renderSuggestions = () => {
+    if (!suggestionsWrap) return;
+    const section = getSection();
+    const rows = Array.isArray(section?.suggested_requests) ? section.suggested_requests.filter(Boolean) : [];
+    sectionPathNode.textContent = Array.isArray(section?.section_path) && section.section_path.length
+      ? `Path: ${section.section_path.join(' -> ')}`
+      : (section?.section_title ? `Section: ${section.section_title}` : 'Whole unit guidance');
+    if (!rows.length) {
+      suggestionsWrap.innerHTML = '<p class="text-[12px] text-slate-500">No suggested requests yet for this section. You can still write your own request below.</p>';
+      return;
+    }
+    suggestionsWrap.innerHTML = rows.map((row, index) => `
+      <button class="btn btn-ghost btn-sm !text-slate-600 btn-unit-assistant-suggestion" data-suggestion-index="${index}">
+        ${_escapeHtml(String(row || ''))}
+      </button>
+    `).join('');
+    suggestionsWrap.querySelectorAll('.btn-unit-assistant-suggestion').forEach(button => {
+      button.addEventListener('click', () => {
+        const index = Number(button.dataset.suggestionIndex || -1);
+        if (!Number.isFinite(index) || index < 0 || index >= rows.length || !requestInput) return;
+        requestInput.value = String(rows[index] || '').trim();
+        state.teacherRequest = requestInput.value;
+        requestInput.focus();
+      });
+    });
+  };
+
+  const renderActions = () => {
+    if (!actionSelect) return;
+    const section = getSection();
+    const actions = Array.isArray(section?.available_actions) && section.available_actions.length
+      ? section.available_actions
+      : ['explain_section'];
+    if (!actions.includes(state.action)) {
+      state.action = String(actions[0] || 'explain_section');
+    }
+    actionSelect.innerHTML = actions.map(value => `
+      <option value="${_escapeHtmlAttr(String(value || ''))}" ${value === state.action ? 'selected' : ''}>
+        ${_escapeHtml(_assistantActionLabel(value))}
+      </option>
+    `).join('');
+  };
+
+  const renderSections = () => {
+    if (!sectionSelect) return;
+    sectionSelect.innerHTML = sections.map(row => `
+      <option value="${_escapeHtmlAttr(String(row.key || ''))}" ${row.key === state.sectionKey ? 'selected' : ''}>
+        ${_escapeHtml(String(row.label || 'Section'))}
+      </option>
+    `).join('');
+  };
+
+  const cleanup = () => overlay.remove();
+
+  renderSections();
+  renderActions();
+  renderSuggestions();
+  renderResult();
+
+  sectionSelect?.addEventListener('change', () => {
+    state.sectionKey = String(sectionSelect.value || '__whole_unit__');
+    renderActions();
+    renderSuggestions();
+  });
+  actionSelect?.addEventListener('change', () => {
+    state.action = String(actionSelect.value || 'explain_section');
+  });
+  requestInput?.addEventListener('input', () => {
+    state.teacherRequest = String(requestInput.value || '').trim();
+  });
+  submitButton?.addEventListener('click', async () => {
+    const section = getSection();
+    setError('');
+    state.result = null;
+    renderResult();
+    _setBusy(submitButton, true);
+    try {
+      const payload = {
+        section_title: section?.section_title || null,
+        section_path: Array.isArray(section?.section_path) && section.section_path.length ? section.section_path : null,
+        action: state.action || 'explain_section',
+        teacher_request: String(requestInput?.value || '').trim() || null,
+      };
+      const result = await api(`/workflow/classes/${classId}/units/${unit.id}/assistant`, {
+        method: 'POST',
+        body: payload,
+      });
+      state.result = result || null;
+      renderResult();
+      if (String(result?.status || '').trim().toLowerCase() === 'degraded' && result?.error_message) {
+        setError(String(result.error_message || 'Failed to generate NotebookLM guidance.'));
+      } else {
+        showToast('NotebookLM guidance is ready.', 'ok');
+      }
+    } catch (err) {
+      setError(String(err?.message || 'Failed to ask NotebookLM for guidance.'));
+    } finally {
+      _setBusy(submitButton, false);
+    }
+  });
+
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) cleanup();
+  });
+  overlay.querySelector('#unit-assistant-close-top')?.addEventListener('click', cleanup);
+  overlay.querySelector('#unit-assistant-close')?.addEventListener('click', cleanup);
   document.body.appendChild(overlay);
 }
 
@@ -1177,6 +1469,7 @@ function _render(el, classId) {
                   ${unit.document_name ? `<button id="btn-download-unit-doc" class="btn btn-secondary btn-sm">Unit PDF</button>` : ''}
                   <button id="btn-toggle-extraction-review" class="btn ${extractionReviewPending ? 'btn-primary' : 'btn-secondary'} btn-sm">${extractionReviewPending ? 'Approve Extraction' : 'Mark Needs Review'}</button>
                   <button id="btn-rerun-ai-extraction" class="btn btn-secondary btn-sm">Re-run AI</button>
+                  <button id="btn-ask-unit-assistant" class="btn btn-secondary btn-sm">Ask This Unit</button>
                   <button id="btn-view-ai-details" class="btn btn-secondary btn-sm">AI Details</button>
                   <button id="btn-plan-active-unit" class="btn btn-secondary btn-sm">Plan Sessions</button>
                   <button id="btn-add-item-root" class="btn btn-secondary btn-sm">Add Item</button>
@@ -3203,6 +3496,33 @@ function _bindWorkflowEvents(el, classId) {
       } catch (err) {
         _setBusy(button, false);
         showToast(String(err?.message || 'Failed to load AI extraction details.'), 'error');
+      }
+    });
+  });
+
+  el.querySelector('#btn-ask-unit-assistant')?.addEventListener('click', async function () {
+    const button = this;
+    await _withActionLock(`workflow:unit-assistant:${classId}`, async () => {
+      const unit = getActiveUnit();
+      if (!unit?.id) return;
+      _setBusy(button, true);
+      try {
+        const state = await _loadUnitBlueprint(classId, unit.id, { force: false });
+        if (state?.error) {
+          showToast(state.error, 'error');
+          _setBusy(button, false);
+          return;
+        }
+        if (!state?.item) {
+          showToast('No saved unit intelligence is available for this unit yet.', 'warning');
+          _setBusy(button, false);
+          return;
+        }
+        _setBusy(button, false);
+        _openUnitAssistantModal({ classId, unit, blueprint: state.item });
+      } catch (err) {
+        _setBusy(button, false);
+        showToast(String(err?.message || 'Failed to open unit guidance.'), 'error');
       }
     });
   });

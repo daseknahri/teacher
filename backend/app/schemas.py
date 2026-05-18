@@ -720,6 +720,29 @@ class WorkflowUnitExtractionReviewIn(BaseModel):
     reviewed: bool = True
 
 
+class WorkflowUnitAssistantIn(BaseModel):
+    section_title: str | None = None
+    section_path: list[str] | None = None
+    action: str | None = None
+    teacher_request: str | None = None
+
+
+class WorkflowUnitAssistantOut(BaseModel):
+    provider: str
+    requested_provider: str
+    model: str | None = None
+    status: str
+    section_title: str | None = None
+    section_path: list[str] = Field(default_factory=list)
+    action: str | None = None
+    title: str | None = None
+    answer_rows: list[str] = Field(default_factory=list)
+    suggested_followups: list[str] = Field(default_factory=list)
+    source_payload: dict | None = None
+    raw_provider_response: dict | None = None
+    error_message: str | None = None
+
+
 class WorkflowSessionConfirmOut(BaseModel):
     session: WorkflowSessionOut
     checked_items_count: int = 0

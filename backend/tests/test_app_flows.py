@@ -1827,6 +1827,90 @@ def test_workflow_unit_reextract_updates_checklist_and_blueprint(client, monkeyp
     assert blueprint["raw_provider_response"]["raw_provider_response"]["responses"][0]["prompt"] == "Extract the pedagogical outline only."
 
 
+def test_workflow_unit_assistant_returns_guided_notebook_response(client, monkeypatch):
+    from app.routers import workflow as workflow_router
+
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Assistant Class", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Les nombres rationnels",
+            "source_text": (
+                "Les nombres rationnels : Somme et difference\n"
+                "Activites\n"
+                "Contenu de la lecon\n"
+                "Evaluation\n"
+            ),
+        },
+    )
+    assert unit_resp.status_code == 201
+    unit_id = unit_resp.json()["id"]
+
+    captured: dict[str, object] = {}
+
+    def _fake_generate_unit_assistant_package(**kwargs):
+        captured.update(kwargs)
+        return {
+            "provider": "notebooklm",
+            "requested_provider": "notebooklm",
+            "model": "notebooklm-py",
+            "status": "ready",
+            "section_title": "1) Les denominateurs sont les memes",
+            "section_path": ["I- Addition", "1) Les denominateurs sont les memes"],
+            "action": "generate_harder_practice",
+            "title": "Practice extension",
+            "answer_rows": [
+                "Propose two harder fraction additions with unlike denominators.",
+                "Ask students to justify the common denominator they choose.",
+            ],
+            "suggested_followups": [
+                "Generate a quick correction for these harder tasks.",
+                "Prepare one oral warm-up before the harder exercises.",
+            ],
+            "source_payload": {
+                "teacher_request": "Give me harder practice for this section.",
+                "section_title": "1) Les denominateurs sont les memes",
+                "section_path": ["I- Addition", "1) Les denominateurs sont les memes"],
+                "action": "generate_harder_practice",
+            },
+            "raw_provider_response": {"answer": "{\"title\":\"Practice extension\"}"},
+            "error_message": None,
+        }
+
+    monkeypatch.setattr(workflow_router, "generate_unit_assistant_package", _fake_generate_unit_assistant_package)
+
+    assistant_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/assistant",
+        headers=headers,
+        json={
+            "section_title": "1) Les denominateurs sont les memes",
+            "section_path": ["I- Addition", "1) Les denominateurs sont les memes"],
+            "action": "generate_harder_practice",
+            "teacher_request": "Give me harder practice for this section.",
+        },
+    )
+    assert assistant_resp.status_code == 200
+    payload = assistant_resp.json()
+    assert payload["provider"] == "notebooklm"
+    assert payload["status"] == "ready"
+    assert payload["action"] == "generate_harder_practice"
+    assert payload["title"] == "Practice extension"
+    assert len(payload["answer_rows"]) == 2
+    assert payload["suggested_followups"][0].startswith("Generate a quick correction")
+
+    assert captured["provider"] == "notebooklm"
+    assert captured["teacher_request"] == "Give me harder practice for this section."
+    assert captured["section_title"] == "1) Les denominateurs sont les memes"
+    assert captured["section_path"] == ["I- Addition", "1) Les denominateurs sont les memes"]
+    assert isinstance(captured["unit_map"], dict)
+
+
 def test_workflow_unit_reextract_is_blocked_after_teaching_starts(client):
     from app.database import SessionLocal
     from app.models import ClassSession

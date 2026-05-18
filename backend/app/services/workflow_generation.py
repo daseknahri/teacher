@@ -22,6 +22,7 @@ class NotebookLMGenerationUnavailableError(RuntimeError):
 
 SUPPORTED_UNIT_PLANNER_PROVIDERS = {"openai", "fallback", "notebooklm"}
 SUPPORTED_SESSION_WRITER_PROVIDERS = {"openai", "fallback", "notebooklm"}
+SUPPORTED_UNIT_ASSISTANT_PROVIDERS = {"notebooklm"}
 NUMBERED_HEADING_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)*)(?:\s*[-.):]\s*|\s+)(.+)$")
 CHAPTER_START_PATTERN = re.compile(r"^\s*(chapter|chapitre|title|titre|lesson|lecon)\b", re.IGNORECASE)
 NUMBERED_ROW_START_PATTERN = re.compile(r"(?<!\S)\d+(?:\.\d+)+(?:[)\].:-])?(?:\s+|$)")
@@ -814,6 +815,43 @@ def generate_session_writeup_package(
     return package
 
 
+def generate_unit_assistant_package(
+    *,
+    unit_title: str,
+    unit_type: WorkflowUnitType | None,
+    section_title: str | None,
+    section_path: list[str] | None,
+    action: str | None,
+    teacher_request: str | None,
+    source_text: str,
+    document_path: str | None,
+    provider_context: dict[str, Any] | None,
+    unit_map: dict[str, Any] | None,
+    content_blocks: list[dict[str, Any]] | None,
+    provider: str | None = None,
+) -> dict[str, Any]:
+    requested_provider = _normalize_provider_name(
+        provider or "notebooklm",
+        supported=SUPPORTED_UNIT_ASSISTANT_PROVIDERS,
+        default="notebooklm",
+    )
+    ensure_notebooklm_generation_ready(action_label="unit assistant guidance")
+    return _notebooklm_generate_unit_assistant(
+        unit_title=unit_title,
+        unit_type=unit_type,
+        section_title=section_title,
+        section_path=section_path,
+        action=action,
+        teacher_request=teacher_request,
+        source_text=source_text,
+        document_path=document_path,
+        provider_context=provider_context,
+        unit_map=unit_map,
+        content_blocks=content_blocks,
+        requested_provider=requested_provider,
+    )
+
+
 def delete_provider_unit_context(*, provider_context: dict[str, Any] | None) -> bool:
     if not isinstance(provider_context, dict):
         return False
@@ -1427,6 +1465,355 @@ def _notebooklm_delete_notebook(notebook_id: str) -> bool:
         return asyncio.run(_notebooklm_delete_notebook_async(notebook_id))
     except Exception:
         return False
+
+
+def _normalize_unit_assistant_action(value: Any) -> str:
+    action = re.sub(r"[^a-z_]+", "_", str(value or "").strip().lower()).strip("_")
+    return action or "explain_section"
+
+
+def _normalize_unit_assistant_rows(values: Any, *, limit: int = 8) -> list[str]:
+    if isinstance(values, str):
+        values = [values]
+    if not isinstance(values, list):
+        return []
+    output: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        text = _normalize_content_block_text(raw, limit=420)
+        if not text:
+            continue
+        key = text.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(text)
+        if len(output) >= limit:
+            break
+    return output
+
+
+def _find_teacher_playbook_entry(unit_map: dict[str, Any] | None, section_title: str | None, section_path: list[str] | None) -> dict[str, Any] | None:
+    rows = unit_map.get("teacher_playbook") if isinstance(unit_map, dict) and isinstance(unit_map.get("teacher_playbook"), list) else []
+    if not rows:
+        return None
+    section_key = _semantic_title_key(section_title)
+    path_key = "|".join(_semantic_title_key(row) for row in (section_path or []) if _semantic_title_key(row))
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row_section_key = _semantic_title_key(row.get("section_title"))
+        row_path_key = "|".join(_semantic_title_key(value) for value in (row.get("section_path") or []) if _semantic_title_key(value))
+        if path_key and row_path_key == path_key:
+            return row
+        if section_key and row_section_key == section_key:
+            return row
+    return None
+
+
+def _filter_content_blocks_for_section(
+    blocks: list[dict[str, Any]] | None,
+    *,
+    section_title: str | None,
+    section_path: list[str] | None,
+) -> list[dict[str, Any]]:
+    if not isinstance(blocks, list):
+        return []
+    title_key = _semantic_title_key(section_title)
+    path_key = "|".join(_semantic_title_key(value) for value in (section_path or []) if _semantic_title_key(value))
+    matched: list[dict[str, Any]] = []
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        block_title_key = _semantic_title_key(block.get("section_title"))
+        block_path_key = "|".join(_semantic_title_key(value) for value in (block.get("section_path") or []) if _semantic_title_key(value))
+        if path_key and block_path_key == path_key:
+            matched.append(block)
+        elif title_key and block_title_key == title_key:
+            matched.append(block)
+    if matched:
+        return matched
+    return [block for block in blocks if isinstance(block, dict) and not bool(block.get("teacher_only"))][:18]
+
+
+def _build_notebooklm_unit_assistant_prompt(
+    *,
+    unit_title: str,
+    unit_type: WorkflowUnitType | None,
+    section_title: str | None,
+    section_path: list[str] | None,
+    action: str,
+    teacher_request: str | None,
+    playbook_entry: dict[str, Any] | None,
+    content_blocks: list[dict[str, Any]],
+) -> str:
+    section_label = _normalize_outline_title(section_title) or "Toute l'unite"
+    path_label = " > ".join(_normalize_outline_title(value) for value in (section_path or []) if _normalize_outline_title(value))
+    available_actions = [str(value).strip() for value in ((playbook_entry or {}).get("available_actions") or []) if str(value).strip()]
+    suggested_requests = [str(value).strip() for value in ((playbook_entry or {}).get("suggested_requests") or []) if str(value).strip()]
+    block_rows = []
+    for block in content_blocks[:12]:
+        title = _normalize_outline_title(block.get("title"))
+        kind = _normalize_content_block_kind(block.get("kind"))
+        phase = str(block.get("teaching_phase") or "").strip() or _normalize_content_block_phase(None, kind=kind, title=title)
+        material = _normalize_content_block_text(block.get("teaching_material"), limit=260)
+        excerpt = _normalize_content_block_text(block.get("source_excerpt"), limit=180)
+        if not title:
+            continue
+        block_rows.append(
+            {
+                "title": title,
+                "kind": kind,
+                "teaching_phase": phase,
+                "teaching_material": material,
+                "source_excerpt": excerpt,
+            }
+        )
+    compact_json = json.dumps(block_rows, ensure_ascii=False, indent=2)
+    return "\n".join(
+        [
+            "Tu es un expert pedagogique qui aide un enseignant a preparer et ajuster son cours a partir d'une unite deja comprise.",
+            "Reponds uniquement avec un JSON strict de la forme suivante:",
+            "{",
+            '  "title": "titre court de la reponse",',
+            '  "answer_rows": ["conseil ou contenu 1", "conseil ou contenu 2"],',
+            '  "suggested_followups": ["suite utile 1", "suite utile 2"]',
+            "}",
+            "Contraintes:",
+            "- Reponds pour un enseignant, de facon pratique et exploitable en classe.",
+            "- Base-toi sur le contexte de l'unite et de la section demandee.",
+            "- answer_rows doit contenir 3 a 8 lignes utiles, concretes et courtes.",
+            "- suggested_followups doit proposer 2 a 4 suites utiles pour un enseignant.",
+            "- Si l'action demande une adaptation de difficulte, produis un resultat utilisable directement en classe.",
+            f"Unite: {unit_title or 'Unite'}",
+            f"Type d'unite: {unit_type.value if unit_type else 'chapter'}",
+            f"Section cible: {section_label}",
+            f"Chemin de section: {path_label or '-'}",
+            f"Action demandee: {action}",
+            f"Demande du professeur: {str(teacher_request or '').strip() or '-'}",
+            f"Actions disponibles pour cette section: {', '.join(available_actions) if available_actions else '-'}",
+            "Requetes suggerees pour cette section:",
+            *(f"- {row}" for row in suggested_requests[:4]),
+            "Blocs pedagogiques deja extraits pour cette section:",
+            compact_json,
+        ]
+    )
+
+
+def _normalize_unit_assistant_payload(
+    *,
+    parsed: dict[str, Any] | None,
+    requested_provider: str,
+    action: str,
+    section_title: str | None,
+    section_path: list[str] | None,
+    teacher_request: str | None,
+    raw_provider_response: dict[str, Any] | None,
+    error_message: str | None,
+) -> dict[str, Any]:
+    title = _normalize_content_block_text((parsed or {}).get("title"), limit=180) or _normalize_outline_title(section_title) or "Teacher guidance"
+    answer_rows = _normalize_unit_assistant_rows((parsed or {}).get("answer_rows"))
+    suggested_followups = _normalize_unit_assistant_rows((parsed or {}).get("suggested_followups"), limit=6)
+    if not answer_rows and teacher_request:
+        answer_rows = [_normalize_content_block_text(teacher_request, limit=220)]
+    return {
+        "provider": "notebooklm" if not error_message else "fallback",
+        "requested_provider": requested_provider,
+        "model": "notebooklm-py" if not error_message else None,
+        "status": "ready" if not error_message else "degraded",
+        "section_title": _normalize_outline_title(section_title) or None,
+        "section_path": [_normalize_outline_title(value) for value in (section_path or []) if _normalize_outline_title(value)],
+        "action": action,
+        "title": title,
+        "answer_rows": answer_rows,
+        "suggested_followups": suggested_followups,
+        "source_payload": {
+            "teacher_request": str(teacher_request or "").strip() or None,
+            "section_title": _normalize_outline_title(section_title) or None,
+            "section_path": [_normalize_outline_title(value) for value in (section_path or []) if _normalize_outline_title(value)],
+            "action": action,
+        },
+        "raw_provider_response": raw_provider_response,
+        "error_message": error_message,
+    }
+
+
+def _notebooklm_generate_unit_assistant(
+    *,
+    unit_title: str,
+    unit_type: WorkflowUnitType | None,
+    section_title: str | None,
+    section_path: list[str] | None,
+    action: str | None,
+    teacher_request: str | None,
+    source_text: str,
+    document_path: str | None,
+    provider_context: dict[str, Any] | None,
+    unit_map: dict[str, Any] | None,
+    content_blocks: list[dict[str, Any]] | None,
+    requested_provider: str,
+) -> dict[str, Any]:
+    try:
+        return asyncio.run(
+            _notebooklm_generate_unit_assistant_async(
+                unit_title=unit_title,
+                unit_type=unit_type,
+                section_title=section_title,
+                section_path=section_path,
+                action=action,
+                teacher_request=teacher_request,
+                source_text=source_text,
+                document_path=document_path,
+                provider_context=provider_context,
+                unit_map=unit_map,
+                content_blocks=content_blocks,
+                requested_provider=requested_provider,
+            )
+        )
+    except Exception as exc:
+        _record_notebooklm_health(
+            source="unit_assistant",
+            ok=False,
+            error_message=f"notebooklm_runtime_error:{exc.__class__.__name__}:{exc}",
+            refresh_required=_looks_like_notebooklm_auth_error_message(str(exc)),
+        )
+        return _normalize_unit_assistant_payload(
+            parsed=None,
+            requested_provider=requested_provider,
+            action=_normalize_unit_assistant_action(action),
+            section_title=section_title,
+            section_path=section_path,
+            teacher_request=teacher_request,
+            raw_provider_response=None,
+            error_message=f"notebooklm_runtime_error:{exc.__class__.__name__}",
+        )
+
+
+async def _notebooklm_generate_unit_assistant_async(
+    *,
+    unit_title: str,
+    unit_type: WorkflowUnitType | None,
+    section_title: str | None,
+    section_path: list[str] | None,
+    action: str | None,
+    teacher_request: str | None,
+    source_text: str,
+    document_path: str | None,
+    provider_context: dict[str, Any] | None,
+    unit_map: dict[str, Any] | None,
+    content_blocks: list[dict[str, Any]] | None,
+    requested_provider: str,
+) -> dict[str, Any]:
+    client = await _create_notebooklm_client()
+    action_name = _normalize_unit_assistant_action(action)
+    if client is None:
+        return _normalize_unit_assistant_payload(
+            parsed=None,
+            requested_provider=requested_provider,
+            action=action_name,
+            section_title=section_title,
+            section_path=section_path,
+            teacher_request=teacher_request,
+            raw_provider_response=None,
+            error_message="notebooklm_client_unavailable",
+        )
+
+    playbook_entry = _find_teacher_playbook_entry(unit_map, section_title, section_path)
+    normalized_section_path = [
+        _normalize_outline_title(value)
+        for value in (
+            section_path
+            or (playbook_entry.get("section_path") if isinstance(playbook_entry, dict) and isinstance(playbook_entry.get("section_path"), list) else [])
+        )
+        if _normalize_outline_title(value)
+    ]
+    selected_blocks = _filter_content_blocks_for_section(
+        content_blocks,
+        section_title=section_title or (playbook_entry.get("section_title") if isinstance(playbook_entry, dict) else None),
+        section_path=normalized_section_path or None,
+    )
+    prompt = _build_notebooklm_unit_assistant_prompt(
+        unit_title=unit_title,
+        unit_type=unit_type,
+        section_title=section_title or (playbook_entry.get("section_title") if isinstance(playbook_entry, dict) else None),
+        section_path=normalized_section_path or None,
+        action=action_name,
+        teacher_request=teacher_request,
+        playbook_entry=playbook_entry,
+        content_blocks=selected_blocks,
+    )
+
+    notebook_id = str((provider_context or {}).get("notebook_id") or "").strip()
+    notebook_title = f"{app_config.NOTEBOOKLM_NOTEBOOK_PREFIX}{unit_title or 'Unit'}".strip()
+    created_temporary_notebook = False
+    source_ids = [str(value).strip() for value in ((provider_context or {}).get("source_ids") or []) if str(value).strip()]
+    raw_provider_response: dict[str, Any] | None = None
+    try:
+        async with client as opened:
+            if not notebook_id:
+                notebook = await opened.notebooks.create(notebook_title)
+                notebook_id = str(getattr(notebook, "id", "") or "").strip()
+                created_temporary_notebook = True
+                source_ids = await _notebooklm_attach_source(
+                    client=opened,
+                    notebook_id=notebook_id,
+                    unit_title=unit_title,
+                    source_text=source_text,
+                    document_path=document_path,
+                )
+            result = await _ask_notebooklm_with_source_retry(
+                opened=opened,
+                notebook_id=notebook_id,
+                prompt=prompt,
+                source_ids=source_ids,
+                retries=3,
+            )
+            answer = str(getattr(result, "answer", "") or "").strip()
+            parsed = _json_object_from_text(answer)
+            raw_provider_response = {
+                "notebook_id": notebook_id,
+                "source_ids": source_ids,
+                "conversation_id": str(getattr(result, "conversation_id", "") or "").strip() or None,
+                "prompt": prompt,
+                "answer": answer,
+            }
+    except Exception as exc:
+        _record_notebooklm_health(
+            source="unit_assistant",
+            ok=False,
+            error_message=f"notebooklm_request_failed:{exc.__class__.__name__}:{exc}",
+            refresh_required=_looks_like_notebooklm_auth_error_message(str(exc)),
+        )
+        return _normalize_unit_assistant_payload(
+            parsed=None,
+            requested_provider=requested_provider,
+            action=action_name,
+            section_title=section_title,
+            section_path=normalized_section_path,
+            teacher_request=teacher_request,
+            raw_provider_response=raw_provider_response,
+            error_message=f"notebooklm_request_failed:{exc.__class__.__name__}",
+        )
+    finally:
+        if created_temporary_notebook and notebook_id:
+            await _safe_delete_notebook_async(notebook_id)
+
+    _record_notebooklm_health(
+        source="unit_assistant",
+        ok=True,
+        error_message=None,
+        refresh_required=False,
+    )
+    return _normalize_unit_assistant_payload(
+        parsed=parsed if isinstance(parsed, dict) else None,
+        requested_provider=requested_provider,
+        action=action_name,
+        section_title=section_title or (playbook_entry.get("section_title") if isinstance(playbook_entry, dict) else None),
+        section_path=normalized_section_path,
+        teacher_request=teacher_request,
+        raw_provider_response=raw_provider_response,
+        error_message=None if isinstance(parsed, dict) else "notebooklm_invalid_json",
+    )
 
 
 async def _notebooklm_delete_notebook_async(notebook_id: str) -> bool:

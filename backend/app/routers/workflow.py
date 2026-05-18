@@ -89,6 +89,8 @@ from ..schemas import (
     WorkflowSessionWriteupUpdateIn,
     WorkflowSessionStartIn,
     WorkflowToggleItemIn,
+    WorkflowUnitAssistantIn,
+    WorkflowUnitAssistantOut,
     WorkflowUnitExtractionReviewIn,
     WorkflowUnitBlueprintOut,
     WorkflowUnitDeleteOut,
@@ -117,7 +119,11 @@ from ..services.workflow_content import (
     generate_and_store_session_writeup,
     save_unit_blueprint,
 )
-from ..services.workflow_generation import NotebookLMGenerationUnavailableError, delete_provider_unit_context
+from ..services.workflow_generation import (
+    NotebookLMGenerationUnavailableError,
+    delete_provider_unit_context,
+    generate_unit_assistant_package,
+)
 from ..services.report import build_calendar_summary_pdf
 from ..services.excel import build_holiday_export_workbook, build_holiday_import_template, parse_holiday_excel
 
@@ -5289,6 +5295,69 @@ def reextract_workflow_unit(
 
     db.refresh(unit)
     return _serialize_unit(db, unit)
+
+
+@router.post("/classes/{class_id}/units/{unit_id}/assistant", response_model=WorkflowUnitAssistantOut)
+def ask_workflow_unit_assistant(
+    class_id: int,
+    unit_id: int,
+    payload: WorkflowUnitAssistantIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkflowUnitAssistantOut:
+    _ = ensure_class_access(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    row = db.scalar(select(WorkflowUnitBlueprint).where(WorkflowUnitBlueprint.unit_id == int(unit_id)))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Unit blueprint not found.")
+
+    source_text = ""
+    if unit.document_path and Path(str(unit.document_path)).exists():
+        source_text = extract_text_from_document(str(unit.document_path), None)
+    elif row.source_text_excerpt:
+        source_text = str(row.source_text_excerpt or "").strip()
+
+    provider_context = None
+    if isinstance(row.blueprint_json, dict):
+        raw_context = row.blueprint_json.get("provider_context")
+        if isinstance(raw_context, dict):
+            provider_context = raw_context
+
+    try:
+        result = generate_unit_assistant_package(
+            unit_title=unit.title,
+            unit_type=unit.unit_type,
+            section_title=payload.section_title,
+            section_path=payload.section_path,
+            action=payload.action,
+            teacher_request=payload.teacher_request,
+            source_text=source_text,
+            document_path=unit.document_path,
+            provider_context=provider_context,
+            unit_map=row.unit_map_json if isinstance(row.unit_map_json, dict) else None,
+            content_blocks=row.content_blocks_json if isinstance(row.content_blocks_json, list) else None,
+            provider="notebooklm",
+        )
+    except NotebookLMGenerationUnavailableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    log_audit(
+        db,
+        user=current_user,
+        action="workflow.unit.ask_assistant",
+        entity_type="workflow_unit",
+        entity_id=unit.id,
+        class_id=class_id,
+        details={
+            "section_title": str(payload.section_title or "").strip() or None,
+            "action": str(payload.action or "").strip() or None,
+            "provider": str(result.get("provider") or "notebooklm"),
+            "status": str(result.get("status") or "ready"),
+        },
+    )
+    return WorkflowUnitAssistantOut(**result)
 
 
 @router.get("/classes/{class_id}/sessions/{session_id}/writeup", response_model=WorkflowSessionWriteupOut)
