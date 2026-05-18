@@ -20,6 +20,7 @@ let _holidayByDate = new Map();
 const _timetableRulesByClass = new Map();
 const _timetableExceptionsByClass = new Map();
 const WORKFLOW_VIEW_INTENT_KEY = 'workflow_view_intent';
+const CALENDAR_VIEW_INTENT_KEY = 'calendar_view_intent';
 
 const _sessionDetailCache = new Map();
 const _calendarUnitBlueprintCache = new Map();
@@ -154,6 +155,35 @@ function _setWorkflowViewIntent(intent) {
     }));
   } catch {
     // Non-fatal. Navigation still works without the shortcut intent.
+  }
+}
+
+function _setCalendarViewIntent(intent) {
+  try {
+    sessionStorage.setItem(CALENDAR_VIEW_INTENT_KEY, JSON.stringify({
+      ...intent,
+      created_at: Date.now(),
+    }));
+  } catch {
+    // Non-fatal. Calendar can still render without the restored context.
+  }
+}
+
+function _consumeCalendarViewIntent() {
+  try {
+    const raw = sessionStorage.getItem(CALENDAR_VIEW_INTENT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const ageMs = Date.now() - Number(parsed?.created_at || 0);
+    sessionStorage.removeItem(CALENDAR_VIEW_INTENT_KEY);
+    if (!parsed || typeof parsed !== 'object' || ageMs > 10 * 60 * 1000) return null;
+    return {
+      session_id: Number(parsed.session_id || 0) || null,
+      session_date: String(parsed.session_date || '').trim(),
+    };
+  } catch {
+    try { sessionStorage.removeItem(CALENDAR_VIEW_INTENT_KEY); } catch {}
+    return null;
   }
 }
 
@@ -2547,6 +2577,18 @@ export async function renderCalendarView() {
   _showChrome();
   const el = document.getElementById('app-content');
   const classId = getSelectedId();
+  const pendingCalendarIntent = _consumeCalendarViewIntent();
+  if (pendingCalendarIntent?.session_date) {
+    const restoreDate = _dateFromKey(pendingCalendarIntent.session_date) || new Date(`${pendingCalendarIntent.session_date}T00:00:00`);
+    if (restoreDate && !Number.isNaN(restoreDate.getTime())) {
+      _weekStart = _startOfWeek(restoreDate);
+    }
+  }
+  if (pendingCalendarIntent?.session_id) {
+    _selectedSessionId = Number(pendingCalendarIntent.session_id);
+    _selectedSessionError = null;
+    _selectedSessionLoading = false;
+  }
 
   if (!classId) {
     el.innerHTML = `<div class="view-container">
@@ -2593,6 +2635,9 @@ export async function renderCalendarView() {
   }
 
   _renderCalendar(el, classId);
+  if (pendingCalendarIntent?.session_id) {
+    await _selectSession(Number(pendingCalendarIntent.session_id), el, classId);
+  }
 }
 
 function _renderCalendar(el, classId) {

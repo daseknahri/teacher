@@ -30,6 +30,7 @@ let _recentWindow = 'month';
 let _selectedUnitType = 'chapter';
 let _checklistCollapseUnitId = null;
 const WORKFLOW_VIEW_INTENT_KEY = 'workflow_view_intent';
+const CALENDAR_VIEW_INTENT_KEY = 'calendar_view_intent';
 let _workflowEntryContext = null;
 const _collapsedChecklistIds = new Set();
 const _inFlightActions = new Set();
@@ -87,6 +88,17 @@ function _consumeWorkflowViewIntent(expectedUnitId) {
   } catch {
     try { sessionStorage.removeItem(WORKFLOW_VIEW_INTENT_KEY); } catch {}
     return null;
+  }
+}
+
+function _setCalendarViewIntent(intent) {
+  try {
+    sessionStorage.setItem(CALENDAR_VIEW_INTENT_KEY, JSON.stringify({
+      ...intent,
+      created_at: Date.now(),
+    }));
+  } catch {
+    // Non-fatal. Navigation can still proceed without restored calendar context.
   }
 }
 const UNIT_ASSISTANT_ACTION_LABELS = {
@@ -4737,6 +4749,12 @@ function _bindWorkflowEvents(el, classId) {
   }
 
   el.querySelector('#btn-return-to-calendar')?.addEventListener('click', () => {
+    if (_workflowEntryContext?.source === 'calendar') {
+      _setCalendarViewIntent({
+        session_id: _workflowEntryContext.session_id,
+        session_date: _workflowEntryContext.session_date,
+      });
+    }
     navigate('calendar');
   });
 
