@@ -40,6 +40,7 @@ def save_unit_blueprint(
     source_text: str,
     blueprint_json: dict,
     unit_map_json: dict | None = None,
+    content_blocks_json: list[dict] | None = None,
     raw_provider_response: dict | None = None,
     status: str = "ready",
     error_message: str | None = None,
@@ -62,6 +63,7 @@ def save_unit_blueprint(
             source_text_excerpt=excerpt or None,
             blueprint_json=blueprint_json,
             unit_map_json=unit_map_json,
+            content_blocks_json=content_blocks_json,
             raw_provider_response=raw_provider_response,
             error_message=error_message,
             reviewed=bool(reviewed) if reviewed is not None else False,
@@ -80,6 +82,7 @@ def save_unit_blueprint(
     row.source_text_excerpt = excerpt or None
     row.blueprint_json = blueprint_json
     row.unit_map_json = unit_map_json
+    row.content_blocks_json = content_blocks_json
     row.raw_provider_response = raw_provider_response
     row.error_message = error_message
     if reviewed is not None:

@@ -2656,6 +2656,83 @@ def test_unit_map_section_plans_capture_delivery_sequence(monkeypatch):
     assert matching["exercise_titles"] == ["Exercices"]
 
 
+def test_generate_unit_checklist_package_keeps_notebooklm_content_blocks(monkeypatch):
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    outline_items = [
+        {
+            "title": "Les nombres rationnels : Somme et difference",
+            "kind": "chapter",
+            "children": [
+                {"title": "Activites", "kind": "other", "children": []},
+                {"title": "Contenu de la lecon", "kind": "section", "children": []},
+                {"title": "Evaluation", "kind": "section", "children": []},
+            ],
+        }
+    ]
+    content_pack = {
+        "content_blocks": [
+            {
+                "section_title": "Activites",
+                "kind": "activity",
+                "title": "Activite 1 : Calculer",
+                "source_excerpt": "Calcule puis compare les resultats.",
+                "teaching_material": "Faire calculer les eleves en binomes avant la mise en commun.",
+                "student_visible": True,
+                "teacher_only": False,
+                "order_index": 1,
+            },
+            {
+                "section_title": "Contenu de la lecon",
+                "kind": "property",
+                "title": "Regle",
+                "source_excerpt": "Les denominateurs sont les memes.",
+                "teaching_material": "Institutionnaliser la regle avant les applications longues.",
+                "student_visible": True,
+                "teacher_only": False,
+                "order_index": 2,
+            },
+        ]
+    }
+
+    monkeypatch.setattr(workflow_generation.app_config, "OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        workflow_generation,
+        "_notebooklm_generate_checklist",
+        lambda **kwargs: (
+            outline_items,
+            {"provider": "notebooklm"},
+            {"response_mode": "outline", "content_pack": content_pack, "responses": []},
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_generation,
+        "_openai_generate_checklist",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("shadow_should_not_run")),
+    )
+
+    package = workflow_generation.generate_unit_checklist_package(
+        unit_type=WorkflowUnitType.CHAPTER,
+        title="Les nombres rationnels : Somme et difference",
+        source_text="Activite 1\nRegle\nEvaluation",
+        provider="notebooklm",
+    )
+
+    assert package["source"] == "notebooklm"
+    assert package["unit_map"]["future_actions"][1] == "content_pack"
+    assert package["content_blocks"][0]["title"] == "Activite 1 : Calculer"
+    assert package["content_blocks"][0]["kind"] == "activity"
+    assert package["content_blocks"][1]["teaching_material"].startswith("Institutionnaliser")
+    section_plans = package["unit_map"]["section_plans"]
+    activity_plan = next(plan for plan in section_plans if plan["section_title"] == "Activites")
+    assert activity_plan["delivery_sequence"][0] == "Activite 1 : Calculer"
+    assert activity_plan["blocks"][0]["teaching_material"].startswith("Faire calculer")
+    lesson_plan = next(plan for plan in section_plans if plan["section_title"] == "Contenu de la lecon")
+    assert lesson_plan["content_titles"] == ["Regle"]
+
+
 def test_workflow_unit_start_returns_clear_error_when_notebooklm_refresh_is_required(client, monkeypatch):
     from app.routers import workflow as workflow_router
     from app.services.workflow_generation import NotebookLMGenerationUnavailableError

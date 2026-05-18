@@ -313,6 +313,7 @@ function _openUnitBlueprintModal(unit, blueprint) {
   const reviewedAt = blueprint?.reviewed_at || unit?.extraction_reviewed_at || null;
   const blueprintJson = blueprint?.blueprint_json && typeof blueprint.blueprint_json === 'object' ? blueprint.blueprint_json : {};
   const unitMap = blueprint?.unit_map_json && typeof blueprint.unit_map_json === 'object' ? blueprint.unit_map_json : {};
+  const contentBlocks = Array.isArray(blueprint?.content_blocks_json) ? blueprint.content_blocks_json.filter(Boolean) : [];
   const rawPackage = blueprint?.raw_provider_response && typeof blueprint.raw_provider_response === 'object'
     ? blueprint.raw_provider_response
     : {};
@@ -361,6 +362,47 @@ function _openUnitBlueprintModal(unit, blueprint) {
           ${renderMapList('Examples', plan?.example_titles)}
           ${renderMapList('Exercises', plan?.exercise_titles)}
         </div>
+        ${Array.isArray(plan?.blocks) && plan.blocks.length ? `
+          <div class="mt-4 border-t border-slate-200 pt-3">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Saved teaching blocks</p>
+            <div class="space-y-2">
+              ${plan.blocks.map(block => `
+                <div class="rounded-lg border border-slate-200 bg-white px-3 py-2">
+                  <div class="flex gap-2 flex-wrap items-center">
+                    <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(block?.title || 'Block'))}</p>
+                    ${block?.kind ? `<span class="badge badge-gray">${_escapeHtml(String(block.kind))}</span>` : ''}
+                  </div>
+                  ${block?.teaching_material ? `<p class="text-[12px] text-slate-700 leading-6 mt-2">${_escapeHtml(String(block.teaching_material || ''))}</p>` : ''}
+                  ${block?.source_excerpt ? `<p class="text-[11px] text-slate-500 leading-5 mt-2"><span class="font-semibold">Source:</span> ${_escapeHtml(String(block.source_excerpt || ''))}</p>` : ''}
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+      </div>
+    `).join('');
+  };
+  const renderContentBlocks = rows => {
+    const values = Array.isArray(rows) ? rows.filter(Boolean) : [];
+    if (!values.length) {
+      return '<p class="text-[12px] text-slate-500">No saved content blocks were generated for this unit yet.</p>';
+    }
+    return values.map(row => `
+      <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+        <div class="flex gap-2 flex-wrap items-center">
+          <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(row?.title || 'Bloc'))}</p>
+          ${row?.kind ? `<span class="badge badge-gray">${_escapeHtml(String(row.kind))}</span>` : ''}
+          ${row?.student_visible === false ? '<span class="badge badge-amber">Teacher only</span>' : '<span class="badge badge-green">Student-visible</span>'}
+        </div>
+        <p class="text-[11px] text-slate-500 mt-1"><span class="font-semibold">Section:</span> ${_escapeHtml(String(row?.section_title || '-'))}</p>
+        ${row?.source_excerpt ? `<div class="mt-3">
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Source excerpt</p>
+          <p class="text-[12px] text-slate-700 leading-6">${_escapeHtml(String(row.source_excerpt || ''))}</p>
+        </div>` : ''}
+        ${row?.teaching_material ? `<div class="mt-3">
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Teaching material</p>
+          <p class="text-[12px] text-slate-700 leading-6">${_escapeHtml(String(row.teaching_material || ''))}</p>
+        </div>` : ''}
       </div>
     `).join('');
   };
@@ -432,6 +474,13 @@ function _openUnitBlueprintModal(unit, blueprint) {
             <p class="text-[12px] text-slate-500 mb-3">These section plans are derived from the saved unit map so we can reuse the same NotebookLM understanding later for write-ups, teaching material, and guided teacher help.</p>
             <div class="space-y-3">
               ${renderSectionPlans(sectionPlans)}
+            </div>
+          </div>
+          <div class="mt-4">
+            <h4 class="text-[13px] font-semibold text-slate-800 mb-2">Saved content blocks</h4>
+            <p class="text-[12px] text-slate-500 mb-3">This is the ordered teaching material extracted from the unit. Each block keeps a short faithful excerpt and a classroom-ready version we can reuse later for sessions, slides, and richer teacher help.</p>
+            <div class="space-y-3">
+              ${renderContentBlocks(contentBlocks)}
             </div>
           </div>
         </div>

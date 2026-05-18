@@ -115,6 +115,7 @@ def ensure_schema_compatibility() -> None:
         _ensure_column("workflow_unit_blueprints", "source_text_excerpt", "TEXT NULL")
         _ensure_column("workflow_unit_blueprints", "blueprint_json", f"{json_type} NULL")
         _ensure_column("workflow_unit_blueprints", "unit_map_json", f"{json_type} NULL")
+        _ensure_column("workflow_unit_blueprints", "content_blocks_json", f"{json_type} NULL")
         _ensure_column("workflow_unit_blueprints", "raw_provider_response", f"{json_type} NULL")
         _ensure_column("workflow_unit_blueprints", "error_message", "TEXT NULL")
         _ensure_column("workflow_unit_blueprints", "reviewed", "BOOLEAN DEFAULT FALSE")
