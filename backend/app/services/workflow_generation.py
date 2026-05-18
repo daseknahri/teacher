@@ -2101,6 +2101,9 @@ def _normalize_unit_map_payload(
             "ask_unit",
             "adaptive_practice",
             "teacher_guidance",
+            "material_studio",
+            "study_guide",
+            "quiz_generation",
             "slide_outline",
         ],
     }
