@@ -23,6 +23,7 @@ import { showToast } from '../utils/toast.js';
 import { askConfirm } from '../utils/modal.js';
 import { mountRetryCard } from '../utils/retryView.js';
 import { fmtDate, fmtTime } from '../utils/format.js';
+import { copyText } from '../utils/password.js';
 
 let _activeTab = 0;
 let _recentWindow = 'month';
@@ -767,6 +768,52 @@ function _buildUnitMaterialOptions(blueprint) {
   return options;
 }
 
+function _buildUnitAssistantMarkdown(result, unitTitle) {
+  const title = String(result?.title || 'NotebookLM guidance').trim() || 'NotebookLM guidance';
+  const action = String(result?.action || '').trim();
+  const provider = String(result?.provider || '').trim();
+  const sectionTitle = String(result?.section_title || '').trim();
+  const sectionPath = Array.isArray(result?.section_path) ? result.section_path.filter(Boolean).map(value => String(value)) : [];
+  const answerRows = Array.isArray(result?.answer_rows) ? result.answer_rows.filter(Boolean).map(value => String(value)) : [];
+  const followups = Array.isArray(result?.suggested_followups) ? result.suggested_followups.filter(Boolean).map(value => String(value)) : [];
+  const lines = [
+    `# ${title}`,
+    '',
+    `- Unit: ${String(unitTitle || 'Unit').trim() || 'Unit'}`,
+  ];
+  if (sectionTitle) lines.push(`- Section: ${sectionTitle}`);
+  if (sectionPath.length) lines.push(`- Path: ${sectionPath.join(' -> ')}`);
+  if (action) lines.push(`- Action: ${_assistantActionLabel(action)}`);
+  if (provider) lines.push(`- Provider: ${provider}`);
+  lines.push('');
+  lines.push('## Guidance');
+  lines.push('');
+  if (answerRows.length) {
+    answerRows.forEach(row => lines.push(`- ${row}`));
+  } else {
+    lines.push('- No structured guidance returned.');
+  }
+  if (followups.length) {
+    lines.push('');
+    lines.push('## Suggested follow-ups');
+    lines.push('');
+    followups.forEach(row => lines.push(`- ${row}`));
+  }
+  return lines.join('\n').trim();
+}
+
+function _downloadTextContent(text, filename) {
+  const blob = new Blob([String(text || '')], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename || 'download.md';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 function _openUnitAssistantModal({ classId, unit, blueprint }) {
   const sections = _buildUnitAssistantSections(blueprint);
   const initialSection = sections[1] || sections[0];
@@ -867,6 +914,10 @@ function _openUnitAssistantModal({ classId, unit, blueprint }) {
         ${result?.action ? `<span class="badge badge-blue">${_escapeHtml(_assistantActionLabel(result.action))}</span>` : ''}
         ${result?.provider ? `<span class="badge badge-gray">${_escapeHtml(String(result.provider))}</span>` : ''}
       </div>
+      <div class="flex items-center justify-end gap-2 mt-3">
+        <button class="btn btn-secondary btn-sm" id="unit-assistant-copy">Copy</button>
+        <button class="btn btn-secondary btn-sm" id="unit-assistant-download">Download</button>
+      </div>
       ${answerRows.length ? `
         <ul class="list-disc pl-5 mt-3 text-[13px] text-slate-700 space-y-2">
           ${answerRows.map(row => `<li>${_escapeHtml(String(row || ''))}</li>`).join('')}
@@ -890,6 +941,19 @@ function _openUnitAssistantModal({ classId, unit, blueprint }) {
         state.teacherRequest = requestInput.value;
         requestInput.focus();
       });
+    });
+    resultWrap.querySelector('#unit-assistant-copy')?.addEventListener('click', async () => {
+      try {
+        await copyText(_buildUnitAssistantMarkdown(result, unit?.title));
+        showToast('Guidance copied.', 'ok');
+      } catch {
+        setError('Failed to copy the guidance.');
+      }
+    });
+    resultWrap.querySelector('#unit-assistant-download')?.addEventListener('click', () => {
+      const unitName = String(unit?.title || 'unit').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unit';
+      const sectionName = String(result?.section_title || 'guidance').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'guidance';
+      _downloadTextContent(_buildUnitAssistantMarkdown(result, unit?.title), `${unitName}-${sectionName}-guidance.md`);
     });
   };
 
