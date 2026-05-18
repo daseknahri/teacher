@@ -2430,6 +2430,25 @@ function _render(el, classId) {
   const checklistChildrenCount = _buildChecklistChildrenCount(checklist);
   const visibleChecklist = _visibleChecklistRows(checklist, _collapsedChecklistIds);
   const previewFocusIds = previewSessionNumber ? _collectPreviewFocusIds(checklist, previewSessionTitleKeys) : new Set();
+  const previewMatchedChecklist = previewSessionNumber
+    ? checklist.filter(item => previewSessionTitleKeys.has(String(item?.title || '').trim().toLowerCase()))
+    : [];
+  const previewMatchedDone = previewMatchedChecklist.filter(item => Boolean(item?.is_completed || item?.done)).length;
+  const previewKindCounts = previewMatchedChecklist.reduce((acc, item) => {
+    const kind = String(item?.item_kind || '').trim().toLowerCase();
+    if (!kind || kind === 'other') return acc;
+    acc[kind] = Number(acc[kind] || 0) + 1;
+    return acc;
+  }, {});
+  const previewSummaryBadges = [
+    previewMatchedChecklist.length ? `${previewMatchedChecklist.length} planned items` : '',
+    previewMatchedChecklist.length ? `${previewMatchedDone}/${previewMatchedChecklist.length} done` : '',
+    previewKindCounts.activity ? `${previewKindCounts.activity} activities` : '',
+    previewKindCounts.example ? `${previewKindCounts.example} examples` : '',
+    previewKindCounts.exercise ? `${previewKindCounts.exercise} exercises` : '',
+    previewKindCounts.definition ? `${previewKindCounts.definition} definitions` : '',
+    previewKindCounts.property ? `${previewKindCounts.property} properties` : '',
+  ].filter(Boolean);
   const displayChecklist = previewSessionNumber && _workflowPreviewFocusOnly && previewFocusIds.size
     ? visibleChecklist.filter(item => previewFocusIds.has(Number(item?.id || 0)))
     : visibleChecklist;
@@ -2552,6 +2571,10 @@ function _render(el, classId) {
                   ${_escapeHtml(_workflowEntryContext?.session_label || `Unit Session ${previewSessionNumber}`)}
                   ${_workflowEntryContext?.session_date ? ` • ${_escapeHtml(fmtDate(_workflowEntryContext.session_date))}` : ''}
                 </p>
+                ${previewSummaryBadges.length ? `
+                <div class="mt-3 flex flex-wrap gap-2">
+                  ${previewSummaryBadges.map(label => `<span class="badge badge-blue">${_escapeHtml(label)}</span>`).join('')}
+                </div>` : ''}
                 <div class="mt-3 flex gap-2 flex-wrap">
                   ${!session ? `<button id="btn-start-preview-session" class="btn btn-success btn-sm">Start This Session</button>` : ''}
                   <button id="btn-preview-session-assistant" class="btn btn-primary btn-sm">Ask This Unit</button>
@@ -2599,6 +2622,10 @@ function _render(el, classId) {
                     ? `Showing only the planned route for ${_escapeHtml(_workflowEntryContext?.session_label || `Unit Session ${previewSessionNumber}`)}. Use "Show Full Unit" if you want the complete checklist.`
                     : `Highlighted rows belong to the planned route for ${_escapeHtml(_workflowEntryContext?.session_label || `Unit Session ${previewSessionNumber}`)}.`}
                 </p>
+              </div>` : ''}
+              ${previewSessionNumber && previewSummaryBadges.length ? `
+              <div class="flex flex-wrap gap-2 px-1 mb-1">
+                ${previewSummaryBadges.map(label => `<span class="badge badge-gray">${_escapeHtml(label)}</span>`).join('')}
               </div>` : ''}
               <div class="flex items-center gap-2 px-2 py-1.5 bg-blue-50/50 rounded-lg border border-blue-100/50 mb-1">
                 <span class="text-[10px] font-bold">INFO</span>
