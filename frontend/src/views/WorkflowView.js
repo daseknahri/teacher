@@ -74,6 +74,7 @@ function _consumeWorkflowViewIntent(expectedUnitId) {
     return {
       action: String(parsed.action || '').trim().toLowerCase(),
       unit_id: intentUnitId,
+      unit_session_number: Number(parsed.unit_session_number || 0) || null,
       source: String(parsed.source || '').trim().toLowerCase(),
       session_id: Number(parsed.session_id || 0) || null,
       session_label: String(parsed.session_label || '').trim(),
@@ -106,6 +107,7 @@ function _peekWorkflowViewIntent() {
     return {
       action: String(parsed.action || '').trim().toLowerCase(),
       unit_id: intentUnitId,
+      unit_session_number: Number(parsed.unit_session_number || 0) || null,
       source: String(parsed.source || '').trim().toLowerCase(),
       session_id: Number(parsed.session_id || 0) || null,
       session_label: String(parsed.session_label || '').trim(),
@@ -2394,6 +2396,11 @@ function _render(el, classId) {
   const activeUnitMap = activeBlueprint?.unit_map_json && typeof activeBlueprint.unit_map_json === 'object'
     ? activeBlueprint.unit_map_json
     : {};
+  const previewSessionNumber = !session && _workflowEntryContext?.source === 'calendar'
+    ? Number(_workflowEntryContext.unit_session_number || 0) || null
+    : null;
+  const previewSessionPlanTree = previewSessionNumber ? _collectSessionPlannedNodes(activeBlueprintTree, previewSessionNumber) : [];
+  const previewSessionPlanTitles = _flattenSessionPlannedTitles(previewSessionPlanTree, []);
   const activeSessionPlanTree = session?.unit_session_number ? _collectSessionPlannedNodes(activeBlueprintTree, session.unit_session_number) : [];
   const activeSessionPlanTitles = _flattenSessionPlannedTitles(activeSessionPlanTree, []);
 
@@ -2513,6 +2520,32 @@ function _render(el, classId) {
                 </div>
               </div>
             </div>
+            ${previewSessionNumber ? `
+            <div class="rounded-2xl border border-blue-200 bg-blue-50 p-4 flex flex-col gap-4">
+              <div>
+                <p class="text-[13px] font-semibold text-blue-800">Calendar Session Prep</p>
+                <p class="text-[12px] text-blue-700 mt-1">
+                  ${_escapeHtml(_workflowEntryContext?.session_label || `Unit Session ${previewSessionNumber}`)}
+                  ${_workflowEntryContext?.session_date ? ` • ${_escapeHtml(fmtDate(_workflowEntryContext.session_date))}` : ''}
+                </p>
+              </div>
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <div class="rounded-xl border border-blue-100 bg-white p-3">
+                  <h4 class="text-[12px] font-semibold text-slate-700">Planned Session Route</h4>
+                  <div class="mt-2">
+                    ${previewSessionPlanTree.length
+                      ? _renderSessionPlannedTree(previewSessionPlanTree)
+                      : '<p class="text-[12px] text-slate-500">No planned checklist flow saved for this unit session yet.</p>'}
+                  </div>
+                </div>
+                <div class="rounded-xl border border-blue-100 bg-white p-3">
+                  <h4 class="text-[12px] font-semibold text-slate-700">Teacher Prep Suggestions</h4>
+                  <div class="mt-2">
+                    ${_renderSessionPlaybookPreview(activeUnitMap, previewSessionPlanTitles)}
+                  </div>
+                </div>
+              </div>
+            </div>` : ''}
             <!-- Checklist tree -->
             ${checklist.length ? `
             <div class="flex flex-col gap-1 checklist-dnd-root" data-checklist-dnd-root>

@@ -195,6 +195,7 @@ function _buildCalendarWorkflowIntent(selectedEvent, action = '', extra = {}) {
   return {
     action: String(action || '').trim().toLowerCase(),
     unit_id: Number(selectedEvent.unit_id),
+    unit_session_number: Number(selectedEvent.unit_session_number || 0) || null,
     source: 'calendar',
     session_id: Number(selectedEvent.session_id || 0) || null,
     session_label: sessionLabel,
@@ -216,6 +217,7 @@ function _buildWorkflowSessionIntent(session, action = '') {
   return {
     action: String(action || '').trim().toLowerCase(),
     unit_id: Number(session.unit_id),
+    unit_session_number: Number(session.unit_session_number || 0) || null,
     source: 'calendar',
     session_id: Number(session.id || session.session_id || 0) || null,
     session_label: sessionLabel,
