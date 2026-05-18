@@ -429,6 +429,175 @@ function _renderCalendarTeacherPrep(unitMap, plannedTitles) {
     </div>`;
 }
 
+function _listToMultiline(values) {
+  return Array.isArray(values) ? values.map(value => String(value || '').trim()).filter(Boolean).join('\n') : '';
+}
+
+function _multilineToList(value) {
+  return String(value || '')
+    .split(/\r?\n+/)
+    .map(row => row.trim())
+    .filter(Boolean);
+}
+
+function _assistantArtifactKindLabel(kind) {
+  const normalized = String(kind || '').trim().toLowerCase();
+  const labels = {
+    teacher_notes: 'Teacher notes',
+    guided_practice: 'Guided practice',
+    quick_quiz_draft: 'Quick quiz draft',
+  };
+  return labels[normalized] || normalized.replace(/_/g, ' ') || 'Saved guidance';
+}
+
+function _assistantActionLabel(action) {
+  return _teacherActionLabel(action);
+}
+
+function _openCalendarSessionWriteupModal(writeup) {
+  return new Promise(resolve => {
+    const item = writeup && typeof writeup === 'object' ? writeup : {};
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal max-w-3xl w-[96vw]">
+        <div class="px-6 py-5 border-b border-slate-100">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h2 class="text-[17px] font-bold text-slate-800">Edit Session Write-Up</h2>
+              <p class="text-[12px] text-slate-500 mt-1">Refine the generated textbook content before you rely on it.</p>
+            </div>
+            <button id="calendar-writeup-close-top" class="btn btn-ghost btn-sm">Close</button>
+          </div>
+        </div>
+        <div class="px-6 py-4 max-h-[72vh] overflow-y-auto flex flex-col gap-4">
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Title</label>
+            <input id="calendar-writeup-title" type="text" value="${_escapeHtml(item.title || '')}" />
+          </div>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div class="flex flex-col gap-1">
+              <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Learning Focus</label>
+              <textarea id="calendar-writeup-focus" rows="8">${_escapeHtml(_listToMultiline(item.learning_focus))}</textarea>
+              <p class="text-[11px] text-slate-500">One line per point.</p>
+            </div>
+            <div class="flex flex-col gap-1">
+              <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Practice Items</label>
+              <textarea id="calendar-writeup-practice" rows="8">${_escapeHtml(_listToMultiline(item.practice_items))}</textarea>
+              <p class="text-[11px] text-slate-500">One line per exercise or reinforcement task.</p>
+            </div>
+          </div>
+          <div class="flex flex-col gap-1">
+            <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Teaching Content</label>
+            <textarea id="calendar-writeup-content" rows="10">${_escapeHtml(_listToMultiline(item.teaching_content))}</textarea>
+            <p class="text-[11px] text-slate-500">One paragraph per line.</p>
+          </div>
+          <label class="flex items-center gap-2 text-[13px] text-slate-700">
+            <input id="calendar-writeup-approved" type="checkbox" ${item.approved === false ? '' : 'checked'} />
+            Mark this write-up as approved
+          </label>
+        </div>
+        <div class="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-2">
+          <button id="calendar-writeup-cancel" class="btn btn-ghost">Cancel</button>
+          <button id="calendar-writeup-save" class="btn btn-primary">Save Write-Up</button>
+        </div>
+      </div>
+    `;
+    const cleanup = result => {
+      overlay.remove();
+      resolve(result ?? null);
+    };
+    overlay.querySelector('#calendar-writeup-close-top')?.addEventListener('click', () => cleanup(null));
+    overlay.querySelector('#calendar-writeup-cancel')?.addEventListener('click', () => cleanup(null));
+    overlay.querySelector('#calendar-writeup-save')?.addEventListener('click', () => {
+      cleanup({
+        title: overlay.querySelector('#calendar-writeup-title')?.value?.trim() || '',
+        learning_focus: _multilineToList(overlay.querySelector('#calendar-writeup-focus')?.value || ''),
+        practice_items: _multilineToList(overlay.querySelector('#calendar-writeup-practice')?.value || ''),
+        teaching_content: _multilineToList(overlay.querySelector('#calendar-writeup-content')?.value || ''),
+        approved: Boolean(overlay.querySelector('#calendar-writeup-approved')?.checked),
+      });
+    });
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) cleanup(null);
+    });
+    document.body.appendChild(overlay);
+    overlay.querySelector('#calendar-writeup-title')?.focus();
+  });
+}
+
+async function _openCalendarSessionGuidanceImportModal({ classId, unitId }) {
+  return new Promise(async resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal max-w-3xl w-[96vw]">
+        <div class="px-6 py-5 border-b border-slate-100">
+          <div class="flex items-start justify-between gap-4">
+            <div>
+              <h2 class="text-[17px] font-bold text-slate-800">Use Saved Guidance</h2>
+              <p class="text-[12px] text-slate-500 mt-1">Import saved NotebookLM guidance into this session write-up.</p>
+            </div>
+            <button id="calendar-guidance-close-top" class="btn btn-ghost btn-sm">Close</button>
+          </div>
+        </div>
+        <div class="px-6 py-4 max-h-[72vh] overflow-y-auto">
+          <div id="calendar-guidance-list" class="space-y-3">
+            <p class="text-[12px] text-slate-500">Loading saved guidance...</p>
+          </div>
+        </div>
+        <div class="px-6 py-4 border-t border-slate-100 flex justify-end">
+          <button id="calendar-guidance-close" class="btn btn-ghost">Close</button>
+        </div>
+      </div>
+    `;
+    const listNode = overlay.querySelector('#calendar-guidance-list');
+    const cleanup = value => {
+      overlay.remove();
+      resolve(value ?? null);
+    };
+    const renderRows = rows => {
+      const values = Array.isArray(rows) ? rows.filter(Boolean) : [];
+      if (!values.length) {
+        listNode.innerHTML = '<p class="text-[12px] text-slate-500">No saved guidance yet for this unit. Save a good result from Ask This Unit first.</p>';
+        return;
+      }
+      listNode.innerHTML = values.map(item => `
+        <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap">
+              <p class="text-[13px] font-semibold text-slate-700">${_escapeHtml(String(item?.title || 'Saved guidance'))}</p>
+              <span class="badge badge-blue">${_escapeHtml(_assistantArtifactKindLabel(item?.artifact_kind))}</span>
+              ${item?.action ? `<span class="badge badge-gray">${_escapeHtml(_assistantActionLabel(item.action))}</span>` : ''}
+            </div>
+            <button class="btn btn-primary btn-sm btn-calendar-guidance-import" data-artifact-id="${_escapeHtml(String(item?.id || ''))}">
+              Import
+            </button>
+          </div>
+          ${item?.section_title ? `<p class="text-[11px] text-slate-500 mt-2"><span class="font-semibold">Section:</span> ${_escapeHtml(String(item.section_title || ''))}</p>` : ''}
+          ${Array.isArray(item?.section_path) && item.section_path.length ? `<p class="text-[11px] text-slate-500 mt-1"><span class="font-semibold">Path:</span> ${_escapeHtml(item.section_path.join(' -> '))}</p>` : ''}
+          ${item?.content_markdown ? `<p class="text-[12px] text-slate-700 leading-6 mt-3">${_escapeHtml(String(item.content_markdown).split('\n').slice(0, 4).join(' '))}</p>` : ''}
+        </div>
+      `).join('');
+      listNode.querySelectorAll('.btn-calendar-guidance-import').forEach(button => {
+        button.addEventListener('click', () => cleanup(Number(button.dataset.artifactId || 0) || null));
+      });
+    };
+    overlay.addEventListener('click', event => {
+      if (event.target === overlay) cleanup(null);
+    });
+    overlay.querySelector('#calendar-guidance-close-top')?.addEventListener('click', () => cleanup(null));
+    overlay.querySelector('#calendar-guidance-close')?.addEventListener('click', () => cleanup(null));
+    document.body.appendChild(overlay);
+    try {
+      const rows = await api(`/workflow/classes/${classId}/units/${Number(unitId)}/assistant/artifacts`);
+      renderRows(rows);
+    } catch (err) {
+      listNode.innerHTML = `<p class="text-[12px] text-red-600">${_escapeHtml(String(err?.message || 'Failed to load saved guidance.'))}</p>`;
+    }
+  });
+}
+
 function _coerceCalendarEvent(row) {
   const sessionId = Number(row?.session_id ?? row?.id ?? 0);
   if (!sessionId) return null;
@@ -2708,6 +2877,12 @@ function _renderCalendar(el, classId) {
                   ? `<button id="btn-generate-selected-writeup" class="btn btn-ghost btn-sm">${selectedWriteup ? 'Re-generate' : 'Generate'}</button>`
                   : ''}
                 ${selectedWriteup
+                  ? `<button id="btn-edit-selected-writeup" class="btn btn-ghost btn-sm">Edit</button>`
+                  : ''}
+                ${selectedEvent.unit_id != null && !selectedIsFuture
+                  ? `<button id="btn-import-selected-guidance" class="btn btn-ghost btn-sm">Use Saved Guidance</button>`
+                  : ''}
+                ${selectedWriteup
                   ? `<button id="btn-toggle-selected-writeup-approval" class="btn btn-ghost btn-sm">${selectedWriteup.approved === false ? 'Approve' : 'Mark Draft'}</button>`
                   : ''}
               </div>
@@ -3262,6 +3437,67 @@ function _renderCalendar(el, classId) {
     } finally {
       _mutationInFlight = false;
       if (button) button.disabled = false;
+    }
+  });
+
+  el.querySelector('#btn-edit-selected-writeup')?.addEventListener('click', async () => {
+    if (!selectedEvent || !selectedWriteup) return;
+    if (_mutationInFlight) {
+      showToast('Please wait for the current update to finish.', 'info');
+      return;
+    }
+    const sessionId = Number(selectedEvent.session_id || 0);
+    if (!sessionId) return;
+    const draft = await _openCalendarSessionWriteupModal(selectedWriteup);
+    if (!draft) return;
+    _mutationInFlight = true;
+    try {
+      await api(`/workflow/classes/${classId}/sessions/${sessionId}/writeup`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(draft),
+      });
+      _sessionDetailCache.delete(sessionId);
+      await _selectSession(sessionId, el, classId);
+      showToast('Write-up updated.', 'ok');
+    } catch (err) {
+      showToast(String(err?.message || 'Failed to update write-up.'), 'error');
+    } finally {
+      _mutationInFlight = false;
+    }
+  });
+
+  el.querySelector('#btn-import-selected-guidance')?.addEventListener('click', async () => {
+    if (!selectedEvent || selectedEvent.unit_id == null) return;
+    if (selectedIsFuture) {
+      showToast('Future sessions cannot import saved guidance yet.', 'info');
+      return;
+    }
+    if (_mutationInFlight) {
+      showToast('Please wait for the current update to finish.', 'info');
+      return;
+    }
+    const sessionId = Number(selectedEvent.session_id || 0);
+    if (!sessionId) return;
+    const artifactId = await _openCalendarSessionGuidanceImportModal({
+      classId,
+      unitId: selectedEvent.unit_id,
+    });
+    if (!artifactId) return;
+    _mutationInFlight = true;
+    try {
+      await api(`/workflow/classes/${classId}/sessions/${sessionId}/writeup/import-assistant-artifact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifact_id: artifactId }),
+      });
+      _sessionDetailCache.delete(sessionId);
+      await _selectSession(sessionId, el, classId);
+      showToast('Saved guidance imported into the session write-up.', 'ok');
+    } catch (err) {
+      showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
+    } finally {
+      _mutationInFlight = false;
     }
   });
 
