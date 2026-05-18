@@ -2401,6 +2401,7 @@ function _render(el, classId) {
     : null;
   const previewSessionPlanTree = previewSessionNumber ? _collectSessionPlannedNodes(activeBlueprintTree, previewSessionNumber) : [];
   const previewSessionPlanTitles = _flattenSessionPlannedTitles(previewSessionPlanTree, []);
+  const previewSessionTitleKeys = new Set(previewSessionPlanTitles.map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
   const activeSessionPlanTree = session?.unit_session_number ? _collectSessionPlannedNodes(activeBlueprintTree, session.unit_session_number) : [];
   const activeSessionPlanTitles = _flattenSessionPlannedTitles(activeSessionPlanTree, []);
 
@@ -2550,12 +2551,22 @@ function _render(el, classId) {
             ${checklist.length ? `
             <div class="flex flex-col gap-1 checklist-dnd-root" data-checklist-dnd-root>
               <div class="flex items-center justify-between gap-2 mb-1">
-                <h4 class="text-[12px] font-semibold text-slate-600">Checklist</h4>
-                <div class="flex items-center gap-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h4 class="text-[12px] font-semibold text-slate-600">Checklist</h4>
+                  ${previewSessionNumber ? `<span class="badge badge-blue">Focused on Session ${previewSessionNumber}</span>` : ''}
+                </div>
+                <div class="flex items-center gap-1 flex-wrap">
                   <button id="btn-checklist-expand-all" class="btn btn-ghost btn-sm !text-slate-500" title="Expand all checklist branches">Expand All</button>
                   <button id="btn-checklist-collapse-all" class="btn btn-ghost btn-sm !text-slate-500" title="Collapse all checklist branches">Collapse All</button>
                 </div>
               </div>
+              ${previewSessionNumber ? `
+              <div class="flex items-center gap-2 px-2 py-1.5 bg-blue-50 rounded-lg border border-blue-100 mb-1">
+                <span class="text-[10px] font-bold text-blue-700">FOCUS</span>
+                <p class="text-[11px] text-blue-700 leading-tight">
+                  Highlighted rows belong to the planned route for ${_escapeHtml(_workflowEntryContext?.session_label || `Unit Session ${previewSessionNumber}`)}.
+                </p>
+              </div>` : ''}
               <div class="flex items-center gap-2 px-2 py-1.5 bg-blue-50/50 rounded-lg border border-blue-100/50 mb-1">
                 <span class="text-[10px] font-bold">INFO</span>
                 <p class="text-[11px] text-blue-700 leading-tight">
@@ -2573,8 +2584,9 @@ function _render(el, classId) {
     const hasChildren = Number(checklistChildrenCount.get(itemId) || 0) > 0;
     const isCollapsed = hasChildren && _collapsedChecklistIds.has(itemId);
     const depthPad = _checklistDepthPadding(item.depth);
+    const previewMatch = previewSessionTitleKeys.has(String(item?.title || '').trim().toLowerCase());
     return `
-              <div class="todo-node group checklist-draggable-node ${isDone ? 'done' : ''}"
+              <div class="todo-node group checklist-draggable-node ${isDone ? 'done' : ''} ${previewMatch ? '!bg-blue-50/70 !border-blue-200' : ''}"
                    data-item-id="${item.id}" data-dnd-target-id="${item.id}"
                    style="padding-left:${depthPad}px">
                 ${hasChildren
@@ -2589,6 +2601,7 @@ function _render(el, classId) {
                   ${isDone ? 'Y' : ''}
                 </button>
                 <span class="todo-title text-[13px] leading-snug flex-1">${item.title}</span>
+                ${previewMatch ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 flex-shrink-0">Planned now</span>` : ''}
                 ${item.item_kind && item.item_kind !== 'other' ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 flex-shrink-0">${item.item_kind}</span>` : ''}
                 <div class="row-hover-actions flex items-center gap-1 ml-auto flex-wrap">
                   <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-up ${meta.canUp ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Move up">Up</button>
