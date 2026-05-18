@@ -392,9 +392,11 @@ function _openUnitBlueprintModal(unit, blueprint) {
         <div class="flex gap-2 flex-wrap items-center">
           <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(row?.title || 'Bloc'))}</p>
           ${row?.kind ? `<span class="badge badge-gray">${_escapeHtml(String(row.kind))}</span>` : ''}
+          ${row?.teaching_phase ? `<span class="badge badge-blue">${_escapeHtml(String(row.teaching_phase))}</span>` : ''}
           ${row?.student_visible === false ? '<span class="badge badge-amber">Teacher only</span>' : '<span class="badge badge-green">Student-visible</span>'}
         </div>
         <p class="text-[11px] text-slate-500 mt-1"><span class="font-semibold">Section:</span> ${_escapeHtml(String(row?.section_title || '-'))}</p>
+        ${Array.isArray(row?.section_path) && row.section_path.length ? `<p class="text-[11px] text-slate-500 mt-1"><span class="font-semibold">Path:</span> ${_escapeHtml(row.section_path.join(' -> '))}</p>` : ''}
         ${row?.source_excerpt ? `<div class="mt-3">
           <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-1">Source excerpt</p>
           <p class="text-[12px] text-slate-700 leading-6">${_escapeHtml(String(row.source_excerpt || ''))}</p>

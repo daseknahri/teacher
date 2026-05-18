@@ -607,7 +607,30 @@ def generate_unit_checklist_package(
                     )
                 content_blocks = raw_provider_response.get("content_blocks") if isinstance(raw_provider_response, dict) and isinstance(raw_provider_response.get("content_blocks"), list) else None
                 unit_map = _apply_content_blocks_to_unit_map(unit_map, content_blocks)
+                content_pack_outline = _build_checklist_from_content_blocks(
+                    content_blocks,
+                    unit_title=title,
+                    unit_type=unit_type,
+                    fallback_outline=selected_outline,
+                )
+                if content_pack_outline:
+                    outline_meta_count = _count_teacher_meta_outline_nodes(selected_outline)
+                    content_meta_count = _count_teacher_meta_outline_nodes(content_pack_outline)
+                    prefer_content_blocks = _content_blocks_have_structured_paths(content_blocks) or content_meta_count < outline_meta_count
+                    selected_name, selected_items = _select_best_checklist_candidate(
+                        [("outline_response", selected_outline), ("content_blocks", content_pack_outline)],
+                        reference_outline=selected_outline,
+                        unit_type=unit_type,
+                        unit_title=title,
+                    )
+                    if prefer_content_blocks:
+                        selected_outline = content_pack_outline
+                        selected_structure_source = "content_blocks"
+                    elif selected_name == "content_blocks":
+                        selected_outline = selected_items
+                        selected_structure_source = "content_blocks"
                 if isinstance(raw_provider_response, dict):
+                    raw_provider_response["selected_structure_source"] = selected_structure_source
                     raw_provider_response["unit_map"] = unit_map
                 items = _copy_jsonable(selected_outline)
                 items = _apply_session_numbers(items, session_count=session_count)
@@ -1584,8 +1607,10 @@ def _build_notebooklm_content_pack_prompt(
             "{",
             '  "content_blocks": [',
             "    {",
-            '      "section_title": "titre de la section mere",',
+            '      "section_title": "titre de la section ou sous-section pedagogique la plus precise",',
+            '      "section_path": ["grande section", "sous-section precise"],',
             '      "kind": "activity|lesson|definition|property|example|exercise|evaluation",',
+            '      "teaching_phase": "activity|discovery|content|example|practice|assessment",',
             '      "title": "titre du bloc",',
             '      "source_excerpt": "court extrait fidele du document",',
             '      "teaching_material": "version concise et bien formulee pour enseigner ce bloc",',
@@ -1597,11 +1622,13 @@ def _build_notebooklm_content_pack_prompt(
             "}",
             "Contraintes:",
             "- Garde les content_blocks dans l'ordre pedagogique du document.",
+            "- section_title et section_path doivent pointer vers la section d'enseignement la plus precise, pas vers des rubriques generiques comme 'Contenu de la lecon' s'il existe un vrai titre pedagogique plus bas.",
             "- Inclure les activites, notions, definitions, proprietes, methodes, exemples, exercices et evaluation visibles ou clairement relies a la progression.",
             "- source_excerpt doit rester court, fidele au document, et sans longues corrections detaillees.",
             "- teaching_material doit etre une formulation propre et exploitable en classe, en 1 a 3 phrases maximum.",
             "- teacher_only = true seulement pour un bloc reserve a l'enseignant; dans ce cas student_visible = false.",
             "- Exclure les rubriques meta enseignant ordinaires comme Objectifs, Prerequis, Outils didactiques, Gestion du temps, sauf si elles apportent une vraie valeur pedagogique et alors marque-les teacher_only.",
+            "- Si l'ordre naturel d'une section est ambigu, privilegie: activite -> contenu/notion -> definition/propriete/regle -> exemple -> exercice -> evaluation.",
             "- Ne renvoie aucun commentaire hors JSON.",
             f"Type d'unite: {unit_type.value}",
             f"Titre attendu: {title or 'Unite'}",
@@ -1843,6 +1870,44 @@ CONTENT_BLOCK_KIND_MAP: dict[str, str] = {
     "evaluation": "evaluation",
 }
 
+CONTENT_BLOCK_PHASE_MAP: dict[str, str] = {
+    "activity": "activity",
+    "activite": "activity",
+    "discovery": "discovery",
+    "decouverte": "discovery",
+    "découverte": "discovery",
+    "content": "content",
+    "lesson": "content",
+    "lecon": "content",
+    "cours": "content",
+    "definition": "content",
+    "property": "content",
+    "propriete": "content",
+    "propriété": "content",
+    "regle": "content",
+    "règle": "content",
+    "example": "example",
+    "exemple": "example",
+    "practice": "practice",
+    "exercise": "practice",
+    "exercice": "practice",
+    "application": "practice",
+    "assessment": "assessment",
+    "evaluation": "assessment",
+}
+
+GENERIC_SECTION_BUCKET_KEYS: set[str] = {
+    "activites",
+    "activite",
+    "contenu de la lecon",
+    "contenu",
+    "cours",
+    "lecon",
+    "evaluation",
+    "exercices",
+    "exercice",
+}
+
 
 def _normalize_content_block_kind(value: Any) -> str:
     folded = _fold_text_key(value)
@@ -1859,6 +1924,50 @@ def _normalize_content_block_text(value: Any, *, limit: int) -> str:
     if len(text) > limit:
         text = text[:limit].rstrip(" ;,-") + "..."
     return text
+
+
+def _normalize_content_block_path(value: Any, *, fallback_section_title: str) -> list[str]:
+    if isinstance(value, str):
+        candidates = [value]
+    elif isinstance(value, list):
+        candidates = value
+    else:
+        candidates = []
+    output: list[str] = []
+    seen: set[str] = set()
+    for item in candidates:
+        title = _normalize_content_block_text(item, limit=180)
+        if not title:
+            continue
+        key = _semantic_title_key(title)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        output.append(title)
+    fallback = _normalize_content_block_text(fallback_section_title, limit=180)
+    if not output and fallback:
+        output = [fallback]
+    if len(output) > 1:
+        trimmed = list(output)
+        while len(trimmed) > 1 and _semantic_title_key(trimmed[0]) in GENERIC_SECTION_BUCKET_KEYS:
+            trimmed.pop(0)
+        output = trimmed or output
+    return output[:6]
+
+
+def _normalize_content_block_phase(value: Any, *, kind: str, title: str) -> str:
+    folded = _fold_text_key(value)
+    if folded:
+        resolved = CONTENT_BLOCK_PHASE_MAP.get(folded)
+        if resolved:
+            return resolved
+    if kind == "activity" or _is_activity_outline_title(title, kind):
+        return "activity"
+    if kind == "example":
+        return "example"
+    if kind in {"exercise", "evaluation"}:
+        return "assessment" if kind == "evaluation" else "practice"
+    return "content"
 
 
 def _derive_content_blocks_from_outline(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1891,7 +2000,9 @@ def _derive_content_blocks_from_outline(items: list[dict[str, Any]]) -> list[dic
                 blocks.append(
                     {
                         "section_title": current_section or title,
+                        "section_path": [current_section or title],
                         "kind": block_kind,
+                        "teaching_phase": _normalize_content_block_phase(None, kind=block_kind, title=title),
                         "title": title,
                         "source_excerpt": title,
                         "teaching_material": title,
@@ -1927,6 +2038,9 @@ def _normalize_content_blocks_payload(
             continue
         if not section_title:
             section_title = last_section_title or title
+        section_path = _normalize_content_block_path(row.get("section_path"), fallback_section_title=section_title)
+        if section_path:
+            section_title = section_path[-1]
         source_excerpt = _normalize_content_block_text(row.get("source_excerpt"), limit=320)
         teaching_material = _normalize_content_block_text(row.get("teaching_material"), limit=520)
         student_visible = bool(row.get("student_visible", True))
@@ -1945,7 +2059,9 @@ def _normalize_content_blocks_payload(
         seen.add(key)
         block = {
             "section_title": section_title,
+            "section_path": section_path,
             "kind": kind,
+            "teaching_phase": _normalize_content_block_phase(row.get("teaching_phase"), kind=kind, title=title),
             "title": title,
             "source_excerpt": source_excerpt or title,
             "teaching_material": teaching_material or source_excerpt or title,
@@ -1971,27 +2087,32 @@ def _build_unit_section_plans_from_content_blocks(
     if not isinstance(blocks, list) or not blocks:
         return _copy_jsonable(fallback_plans or [])
 
-    grouped: dict[str, dict[str, Any]] = {}
-    ordering: list[tuple[int, str]] = []
+    grouped: dict[tuple[str, ...], dict[str, Any]] = {}
+    ordering: list[tuple[int, tuple[str, ...]]] = []
 
     for raw_block in blocks:
         if not isinstance(raw_block, dict):
             continue
         section_title = _normalize_outline_title(raw_block.get("section_title"))
+        section_path = _normalize_content_block_path(raw_block.get("section_path"), fallback_section_title=section_title)
         title = _normalize_outline_title(raw_block.get("title"))
         kind = _normalize_content_block_kind(raw_block.get("kind"))
         if not section_title or not title:
             continue
         if _is_teacher_meta_outline_title(section_title):
             continue
+        path_key = tuple(_semantic_title_key(part) for part in section_path if _semantic_title_key(part))
+        if not path_key:
+            path_key = (_semantic_title_key(section_title),)
         try:
             order_index = int(raw_block.get("order_index") or 0)
         except Exception:
             order_index = 0
-        plan = grouped.get(section_title)
+        plan = grouped.get(path_key)
         if plan is None:
             plan = {
                 "section_title": section_title,
+                "section_path": section_path,
                 "activity_titles": [],
                 "content_titles": [],
                 "example_titles": [],
@@ -1999,8 +2120,8 @@ def _build_unit_section_plans_from_content_blocks(
                 "delivery_sequence": [],
                 "blocks": [],
             }
-            grouped[section_title] = plan
-            ordering.append((order_index or len(ordering) + 1, section_title))
+            grouped[path_key] = plan
+            ordering.append((order_index or len(ordering) + 1, path_key))
 
         student_visible = bool(raw_block.get("student_visible", True))
         teacher_only = bool(raw_block.get("teacher_only", False))
@@ -2029,7 +2150,7 @@ def _build_unit_section_plans_from_content_blocks(
         else:
             plan["content_titles"].append(title)
 
-    ordered_titles = [title for _, title in sorted(ordering, key=lambda row: (row[0], _semantic_title_key(row[1])))]
+    ordered_titles = [title for _, title in sorted(ordering, key=lambda row: (row[0], " ".join(row[1])))]
     plans: list[dict[str, Any]] = []
     for title in ordered_titles:
         plan = grouped.get(title)
@@ -2059,6 +2180,101 @@ def _build_unit_section_plans_from_content_blocks(
     return plans[:24]
 
 
+def _content_block_to_checklist_kind(kind: str, *, title: str) -> WorkflowChecklistItemKind:
+    if kind == "definition":
+        return WorkflowChecklistItemKind.DEFINITION
+    if kind == "property":
+        return WorkflowChecklistItemKind.PROPERTY
+    if kind == "example":
+        return WorkflowChecklistItemKind.EXAMPLE
+    if kind in {"exercise", "evaluation"}:
+        return WorkflowChecklistItemKind.EXERCISE
+    if kind == "activity":
+        return WorkflowChecklistItemKind.OTHER
+    if _is_explicit_topic_outline_title(title):
+        return WorkflowChecklistItemKind.SECTION
+    return WorkflowChecklistItemKind.OTHER
+
+
+def _build_checklist_from_content_blocks(
+    blocks: list[dict[str, Any]] | None,
+    *,
+    unit_title: str,
+    unit_type: WorkflowUnitType,
+    fallback_outline: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    if not isinstance(blocks, list) or not blocks:
+        return []
+
+    chapter_title = _normalize_outline_title(unit_title) or "Unite"
+    if unit_type == WorkflowUnitType.CHAPTER and isinstance(fallback_outline, list) and fallback_outline:
+        first = fallback_outline[0] if isinstance(fallback_outline[0], dict) else None
+        if isinstance(first, dict):
+            first_title = _normalize_outline_title(first.get("title"))
+            first_kind = str(first.get("kind") or "").strip().lower()
+            if first_title and first_kind == WorkflowChecklistItemKind.CHAPTER.value:
+                chapter_title = first_title
+
+    def make_node(title: str, kind: WorkflowChecklistItemKind) -> dict[str, Any]:
+        return {"title": title, "kind": kind.value, "children": []}
+
+    root = make_node(chapter_title, WorkflowChecklistItemKind.CHAPTER)
+    roots: list[dict[str, Any]] = [root] if unit_type == WorkflowUnitType.CHAPTER else []
+    root_children = root["children"] if unit_type == WorkflowUnitType.CHAPTER else roots
+    path_index: dict[tuple[str, ...], dict[str, Any]] = {}
+    node_child_keys: dict[int, set[str]] = {}
+
+    def register_child(parent_children: list[dict[str, Any]], parent_path: tuple[str, ...], title: str, kind: WorkflowChecklistItemKind) -> dict[str, Any]:
+        key = _semantic_title_key(title)
+        existing_keys = node_child_keys.setdefault(id(parent_children), set())
+        for node in parent_children:
+            if _semantic_title_key(node.get("title")) == key:
+                return node
+        node = make_node(title, kind)
+        parent_children.append(node)
+        existing_keys.add(key)
+        if parent_path:
+            path_index[parent_path + (title,)] = node
+        return node
+
+    ordered_blocks = sorted(
+        [row for row in blocks if isinstance(row, dict)],
+        key=lambda row: (int(row.get("order_index") or 0), _semantic_title_key(row.get("section_title")), _semantic_title_key(row.get("title"))),
+    )
+    for row in ordered_blocks:
+        if bool(row.get("teacher_only")) and not bool(row.get("student_visible", True)):
+            continue
+        title = _normalize_outline_title(row.get("title"))
+        kind = _normalize_content_block_kind(row.get("kind"))
+        if not title:
+            continue
+        raw_path = row.get("section_path")
+        path_titles = _normalize_content_block_path(raw_path, fallback_section_title=str(row.get("section_title") or ""))
+        path_titles = [value for value in path_titles if _semantic_title_key(value) not in GENERIC_SECTION_BUCKET_KEYS or len(path_titles) == 1]
+
+        parent_children = root_children
+        parent_path: tuple[str, ...] = ()
+        for depth, part in enumerate(path_titles):
+            if _semantic_title_key(part) == _semantic_title_key(chapter_title):
+                continue
+            if _is_teacher_meta_outline_title(part):
+                continue
+            part_kind = WorkflowChecklistItemKind.SECTION if depth == 0 else WorkflowChecklistItemKind.SUBSECTION
+            node = register_child(parent_children, parent_path, part, part_kind)
+            parent_children = node["children"]
+            parent_path = parent_path + (part,)
+
+        leaf_key = _semantic_title_key(title)
+        last_path_key = _semantic_title_key(path_titles[-1]) if path_titles else ""
+        if leaf_key and leaf_key == last_path_key and kind in {"lesson", "content"}:
+            continue
+
+        leaf_kind = _content_block_to_checklist_kind(kind, title=title)
+        register_child(parent_children, parent_path, title, leaf_kind)
+
+    return _sanitize_items(roots)
+
+
 def _apply_content_blocks_to_unit_map(
     unit_map: dict[str, Any] | None,
     content_blocks: list[dict[str, Any]] | None,
@@ -2075,6 +2291,18 @@ def _apply_content_blocks_to_unit_map(
     if not updated.get("assessment_blocks"):
         updated["assessment_blocks"] = [plan.get("section_title") for plan in updated["section_plans"] if plan.get("exercise_titles")]
     return updated
+
+
+def _content_blocks_have_structured_paths(blocks: list[dict[str, Any]] | None) -> bool:
+    if not isinstance(blocks, list):
+        return False
+    for block in blocks:
+        if not isinstance(block, dict):
+            continue
+        path = block.get("section_path")
+        if isinstance(path, list) and len([row for row in path if _normalize_outline_title(row)]) >= 2:
+            return True
+    return False
 
 
 def _extract_unit_map_section_titles(items: list[dict[str, Any]], *, keywords: tuple[str, ...]) -> list[str]:
@@ -2169,7 +2397,7 @@ def _build_unit_section_plans(items: list[dict[str, Any]]) -> list[dict[str, Any
     deduped: list[dict[str, Any]] = []
     seen: set[str] = set()
     for plan in plans:
-        key = _semantic_title_key(plan.get("section_title"))
+        key = "|".join(_semantic_title_key(part) for part in (plan.get("section_path") or []) if _semantic_title_key(part)) or _semantic_title_key(plan.get("section_title"))
         if not key or key in seen:
             continue
         seen.add(key)
@@ -2274,6 +2502,15 @@ def _count_notebooklm_outline_noise(items: list[dict[str, Any]]) -> int:
         if re.fullmatch(r"[a-z]", folded):
             noise += 1
     return noise
+
+
+def _count_teacher_meta_outline_nodes(items: list[dict[str, Any]]) -> int:
+    count = 0
+    for node in _flatten_checklist_nodes(items):
+        title = _normalize_outline_title(node.get("title"))
+        if title and _is_teacher_meta_outline_title(title):
+            count += 1
+    return count
 
 
 def _extract_notebooklm_outline_lines(text: str) -> list[tuple[int, str]]:
@@ -3350,6 +3587,8 @@ def _score_checklist_quality(
             score -= 5
         if _is_metadata_noise_line(title):
             score -= 6
+        if _is_teacher_meta_outline_title(title):
+            score -= 9
         if len(re.findall(r"[.;!?]", title)) >= 2:
             score -= 3
         if folded.startswith(("examples - mathematique", "exemples - mathematique", "exercices - seance", "examples - seance")):

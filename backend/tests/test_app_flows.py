@@ -2665,7 +2665,7 @@ def test_generate_unit_checklist_package_keeps_notebooklm_content_blocks(monkeyp
             "title": "Les nombres rationnels : Somme et difference",
             "kind": "chapter",
             "children": [
-                {"title": "Activites", "kind": "other", "children": []},
+                {"title": "Objectifs d'apprentissage", "kind": "section", "children": []},
                 {"title": "Contenu de la lecon", "kind": "section", "children": []},
                 {"title": "Evaluation", "kind": "section", "children": []},
             ],
@@ -2674,8 +2674,10 @@ def test_generate_unit_checklist_package_keeps_notebooklm_content_blocks(monkeyp
     content_pack = {
         "content_blocks": [
             {
-                "section_title": "Activites",
+                "section_title": "1) Les denominateurs sont les memes",
+                "section_path": ["I- Addition et soustraction", "1) Les denominateurs sont les memes"],
                 "kind": "activity",
+                "teaching_phase": "activity",
                 "title": "Activite 1 : Calculer",
                 "source_excerpt": "Calcule puis compare les resultats.",
                 "teaching_material": "Faire calculer les eleves en binomes avant la mise en commun.",
@@ -2684,8 +2686,10 @@ def test_generate_unit_checklist_package_keeps_notebooklm_content_blocks(monkeyp
                 "order_index": 1,
             },
             {
-                "section_title": "Contenu de la lecon",
+                "section_title": "1) Les denominateurs sont les memes",
+                "section_path": ["I- Addition et soustraction", "1) Les denominateurs sont les memes"],
                 "kind": "property",
+                "teaching_phase": "content",
                 "title": "Regle",
                 "source_excerpt": "Les denominateurs sont les memes.",
                 "teaching_material": "Institutionnaliser la regle avant les applications longues.",
@@ -2724,13 +2728,16 @@ def test_generate_unit_checklist_package_keeps_notebooklm_content_blocks(monkeyp
     assert package["unit_map"]["future_actions"][1] == "content_pack"
     assert package["content_blocks"][0]["title"] == "Activite 1 : Calculer"
     assert package["content_blocks"][0]["kind"] == "activity"
+    assert package["content_blocks"][0]["section_path"] == ["I- Addition et soustraction", "1) Les denominateurs sont les memes"]
     assert package["content_blocks"][1]["teaching_material"].startswith("Institutionnaliser")
     section_plans = package["unit_map"]["section_plans"]
-    activity_plan = next(plan for plan in section_plans if plan["section_title"] == "Activites")
+    activity_plan = next(plan for plan in section_plans if plan["section_title"] == "1) Les denominateurs sont les memes")
     assert activity_plan["delivery_sequence"][0] == "Activite 1 : Calculer"
     assert activity_plan["blocks"][0]["teaching_material"].startswith("Faire calculer")
-    lesson_plan = next(plan for plan in section_plans if plan["section_title"] == "Contenu de la lecon")
-    assert lesson_plan["content_titles"] == ["Regle"]
+    assert activity_plan["content_titles"] == ["Regle"]
+    rendered_titles = {node["title"] for node in workflow_generation._flatten_checklist_nodes(package["items"])}
+    assert "Objectifs d'apprentissage" not in rendered_titles
+    assert "Activite 1 : Calculer" in rendered_titles
 
 
 def test_workflow_unit_start_returns_clear_error_when_notebooklm_refresh_is_required(client, monkeypatch):
