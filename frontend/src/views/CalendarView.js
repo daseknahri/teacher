@@ -525,6 +525,10 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
       <div class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2">
         <p class="text-[12px] font-semibold text-slate-600">Recommended next step</p>
         <p class="text-[12px] text-slate-500 mt-1">Generate the write-up after confirming what was really covered in class.</p>
+        <div class="mt-3 flex gap-2 flex-wrap">
+          <button id="btn-calendar-next-generate" class="btn btn-primary btn-sm">Generate now</button>
+          <button id="btn-calendar-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>
+        </div>
       </div>`;
   }
   if (writeup.approved === false) {
@@ -532,12 +536,20 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
       <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
         <p class="text-[12px] font-semibold text-amber-800">Recommended next step</p>
         <p class="text-[12px] text-amber-700 mt-1">Review this draft, edit it if needed, and approve it once it matches the actual lesson.</p>
+        <div class="mt-3 flex gap-2 flex-wrap">
+          <button id="btn-calendar-next-edit" class="btn btn-primary btn-sm">Edit draft</button>
+          <button id="btn-calendar-next-approve" class="btn btn-secondary btn-sm">Approve now</button>
+        </div>
       </div>`;
   }
   return `
     <div class="rounded-xl border border-green-200 bg-green-50 px-3 py-2">
       <p class="text-[12px] font-semibold text-green-800">Recommended next step</p>
       <p class="text-[12px] text-green-700 mt-1">This write-up is approved. You can copy it, download it, or reopen it as a draft if you need changes.</p>
+      <div class="mt-3 flex gap-2 flex-wrap">
+        <button id="btn-calendar-next-copy" class="btn btn-primary btn-sm">Copy</button>
+        <button id="btn-calendar-next-download" class="btn btn-secondary btn-sm">Download</button>
+      </div>
     </div>`;
 }
 
@@ -3635,6 +3647,25 @@ function _renderCalendar(el, classId) {
       }),
       `${unitSlug}-${sessionSlug}.md`
     );
+  });
+
+  el.querySelector('#btn-calendar-next-generate')?.addEventListener('click', () => {
+    el.querySelector('#btn-generate-selected-writeup')?.click();
+  });
+  el.querySelector('#btn-calendar-next-guidance')?.addEventListener('click', () => {
+    el.querySelector('#btn-import-selected-guidance')?.click();
+  });
+  el.querySelector('#btn-calendar-next-edit')?.addEventListener('click', () => {
+    el.querySelector('#btn-edit-selected-writeup')?.click();
+  });
+  el.querySelector('#btn-calendar-next-approve')?.addEventListener('click', () => {
+    el.querySelector('#btn-toggle-selected-writeup-approval')?.click();
+  });
+  el.querySelector('#btn-calendar-next-copy')?.addEventListener('click', () => {
+    el.querySelector('#btn-copy-selected-writeup')?.click();
+  });
+  el.querySelector('#btn-calendar-next-download')?.addEventListener('click', () => {
+    el.querySelector('#btn-download-selected-writeup')?.click();
   });
 
   el.querySelector('#btn-import-selected-guidance')?.addEventListener('click', async () => {

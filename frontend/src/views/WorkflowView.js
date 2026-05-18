@@ -931,6 +931,10 @@ function _renderSessionWriteupNextStep(writeup, { hasSession = true } = {}) {
       <div class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2">
         <p class="text-[12px] font-semibold text-slate-600">Recommended next step</p>
         <p class="text-[12px] text-slate-500 mt-1">Generate the write-up once you have checked what was actually covered in class.</p>
+        <div class="mt-3 flex gap-2 flex-wrap">
+          <button id="btn-session-next-generate" class="btn btn-primary btn-sm">Generate now</button>
+          <button id="btn-session-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>
+        </div>
       </div>`;
   }
   if (writeup.approved === false) {
@@ -938,12 +942,20 @@ function _renderSessionWriteupNextStep(writeup, { hasSession = true } = {}) {
       <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
         <p class="text-[12px] font-semibold text-amber-800">Recommended next step</p>
         <p class="text-[12px] text-amber-700 mt-1">Review this draft, edit it if needed, then mark it approved when it matches the real lesson.</p>
+        <div class="mt-3 flex gap-2 flex-wrap">
+          <button id="btn-session-next-edit" class="btn btn-primary btn-sm">Edit draft</button>
+          <button id="btn-session-next-approve" class="btn btn-secondary btn-sm">Approve now</button>
+        </div>
       </div>`;
   }
   return `
     <div class="rounded-xl border border-green-200 bg-green-50 px-3 py-2">
       <p class="text-[12px] font-semibold text-green-800">Recommended next step</p>
       <p class="text-[12px] text-green-700 mt-1">This write-up is approved. Copy it, download it, or mark it draft again if you need to revise it.</p>
+      <div class="mt-3 flex gap-2 flex-wrap">
+        <button id="btn-session-next-copy" class="btn btn-primary btn-sm">Copy</button>
+        <button id="btn-session-next-download" class="btn btn-secondary btn-sm">Download</button>
+      </div>
     </div>`;
 }
 
@@ -4333,6 +4345,46 @@ function _bindWorkflowEvents(el, classId) {
       }),
       `${unitSlug}-${sessionSlug}.md`
     );
+  });
+
+  el.querySelector('#btn-session-next-generate')?.addEventListener('click', () => {
+    el.querySelector('#btn-generate-session-writeup')?.click();
+  });
+  el.querySelector('#btn-session-next-guidance')?.addEventListener('click', () => {
+    el.querySelector('#btn-import-session-guidance')?.click();
+  });
+  el.querySelector('#btn-session-next-edit')?.addEventListener('click', () => {
+    el.querySelector('#btn-edit-session-writeup')?.click();
+  });
+  el.querySelector('#btn-session-next-approve')?.addEventListener('click', async () => {
+    const session = getActiveSession();
+    const item = session ? _getSessionWriteupState(session.id).item : null;
+    if (!session || !item) return;
+    try {
+      const updated = await api(`/workflow/classes/${classId}/sessions/${session.id}/writeup`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approved: true }),
+      });
+      _setSessionWriteupState(session.id, {
+        loading: false,
+        loaded: true,
+        error: null,
+        item: updated || null,
+      });
+      const ws = await api(`/workflow/classes/${classId}`).catch(() => null);
+      if (ws) setWorkspace(ws);
+      _render(el, classId);
+      showToast('Write-up approved.', 'ok');
+    } catch (err) {
+      showToast(String(err?.message || 'Failed to approve session write-up.'), 'error');
+    }
+  });
+  el.querySelector('#btn-session-next-copy')?.addEventListener('click', () => {
+    el.querySelector('#btn-copy-session-writeup')?.click();
+  });
+  el.querySelector('#btn-session-next-download')?.addEventListener('click', () => {
+    el.querySelector('#btn-download-session-writeup')?.click();
   });
 
   const autoLoadSession = getActiveSession();
