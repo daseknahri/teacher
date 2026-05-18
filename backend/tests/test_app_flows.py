@@ -2122,6 +2122,83 @@ def test_workflow_unit_material_download_returns_markdown(client, monkeypatch):
     assert "# Guide d'etude" in download_resp.text
 
 
+def test_workflow_unit_material_download_returns_slide_deck_file(client, monkeypatch, tmp_path):
+    from app.routers import workflow as workflow_router
+
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Slide Deck Material Class", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Les nombres rationnels",
+            "source_text": (
+                "Les nombres rationnels : Somme et difference\n"
+                "Activites\n"
+                "Contenu de la lecon\n"
+                "Evaluation\n"
+            ),
+        },
+    )
+    assert unit_resp.status_code == 201
+    unit_id = unit_resp.json()["id"]
+
+    artifact_path = tmp_path / "presenter-slides.pptx"
+    artifact_path.write_bytes(b"PPTX-DATA")
+
+    def _fake_generate_unit_material_package(**kwargs):
+        return {
+            "provider": "notebooklm",
+            "requested_provider": "notebooklm",
+            "model": "notebooklm-py",
+            "status": "ready",
+            "material_type": "presenter_slides",
+            "title": "Presenter slide deck",
+            "notebook_artifact_id": "artifact-slides-1",
+            "source_payload": {
+                "provider_context": {"provider": "notebooklm", "notebook_id": "nb-unit-1", "source_ids": ["src-1"]},
+                "notebooklm_method": "generate_slide_deck",
+            },
+            "content_markdown": None,
+            "file_path": str(artifact_path),
+            "file_name": "presenter-slides.pptx",
+            "file_content_type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            "raw_provider_response": {"completion": {"status": "completed"}},
+            "error_message": None,
+        }
+
+    monkeypatch.setattr(workflow_router, "generate_unit_material_package", _fake_generate_unit_material_package)
+
+    generate_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/materials/generate",
+        headers=headers,
+        json={"material_type": "presenter_slides"},
+    )
+    assert generate_resp.status_code == 200
+    payload = generate_resp.json()
+    material_id = payload["id"]
+    assert payload["material_type"] == "presenter_slides"
+    assert payload["file_name"] == "presenter-slides.pptx"
+    assert payload["content_markdown"] is None
+
+    download_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/materials/{material_id}/download",
+        headers=headers,
+    )
+    assert download_resp.status_code == 200
+    assert (
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        in str(download_resp.headers.get("content-type") or "").lower()
+    )
+    disposition = str(download_resp.headers.get("content-disposition") or "")
+    assert "presenter-slides.pptx" in disposition
+    assert download_resp.content == b"PPTX-DATA"
+
+
 def test_workflow_unit_reextract_is_blocked_after_teaching_starts(client):
     from app.database import SessionLocal
     from app.models import ClassSession

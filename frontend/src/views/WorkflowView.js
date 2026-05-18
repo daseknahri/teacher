@@ -1104,9 +1104,18 @@ async function _openUnitMaterialStudioModal({ classId, unit, blueprint }) {
         </button>
       </div>
       ${item.error_message ? `<p class="text-[12px] text-amber-700 mb-3"><span class="font-semibold">Provider note:</span> ${_escapeHtml(String(item.error_message || ''))}</p>` : ''}
-      <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
-        ${_renderMaterialMarkdown(item.content_markdown)}
-      </div>
+      ${item.file_name ? `
+        <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+          <p class="text-[13px] font-semibold text-slate-700">Generated file</p>
+          <p class="text-[12px] text-slate-600 mt-2"><span class="font-semibold">File:</span> ${_escapeHtml(String(item.file_name || ''))}</p>
+          ${item.file_content_type ? `<p class="text-[12px] text-slate-500 mt-1"><span class="font-semibold">Type:</span> ${_escapeHtml(String(item.file_content_type || ''))}</p>` : ''}
+          <p class="text-[12px] text-slate-500 mt-3">This material is saved as a downloadable file artifact. Use the download button to open it in PowerPoint or your preferred presentation tool.</p>
+        </div>
+      ` : `
+        <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+          ${_renderMaterialMarkdown(item.content_markdown)}
+        </div>
+      `}
       <p class="text-[11px] text-slate-500 mt-3"><span class="font-semibold">Updated:</span> ${_escapeHtml(fmtDateTime(item.updated_at))}</p>
     `;
   }

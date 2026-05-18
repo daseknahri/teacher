@@ -746,7 +746,7 @@ class WorkflowUnitAssistantOut(BaseModel):
 class WorkflowUnitMaterialGenerateIn(BaseModel):
     material_type: str = Field(
         default="study_guide",
-        pattern="^(study_guide|formative_quiz|mastery_quiz_hard|revision_flashcards)$",
+        pattern="^(study_guide|formative_quiz|mastery_quiz_hard|revision_flashcards|presenter_slides|detailed_slides)$",
     )
 
 
@@ -761,6 +761,8 @@ class WorkflowUnitMaterialOut(BaseModel):
     notebook_artifact_id: str | None = None
     source_payload: dict | None = None
     content_markdown: str | None = None
+    file_name: str | None = None
+    file_content_type: str | None = None
     raw_provider_response: dict | None = None
     error_message: str | None = None
     created_by_user_id: int | None = None

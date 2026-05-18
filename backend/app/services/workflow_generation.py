@@ -6,6 +6,7 @@ import json
 from importlib.util import find_spec
 from pathlib import Path
 import re
+import shutil
 from statistics import median
 import tempfile
 from typing import Any
@@ -856,6 +857,7 @@ def generate_unit_assistant_package(
 
 def generate_unit_material_package(
     *,
+    unit_id: int | None = None,
     unit_title: str,
     material_type: str | None,
     source_text: str,
@@ -872,6 +874,7 @@ def generate_unit_material_package(
     )
     ensure_notebooklm_generation_ready(action_label="unit material generation")
     return _notebooklm_generate_unit_material(
+        unit_id=unit_id,
         unit_title=unit_title,
         material_type=material_type,
         source_text=source_text,
@@ -1505,7 +1508,14 @@ def _normalize_unit_assistant_action(value: Any) -> str:
 
 def _normalize_unit_material_type(value: Any) -> str:
     material_type = re.sub(r"[^a-z_]+", "_", str(value or "").strip().lower()).strip("_")
-    if material_type in {"study_guide", "formative_quiz", "mastery_quiz_hard", "revision_flashcards"}:
+    if material_type in {
+        "study_guide",
+        "formative_quiz",
+        "mastery_quiz_hard",
+        "revision_flashcards",
+        "presenter_slides",
+        "detailed_slides",
+    }:
         return material_type
     return "study_guide"
 
@@ -1762,8 +1772,11 @@ def _normalize_unit_material_payload(
     notebook_artifact_id: str | None,
     source_payload: dict[str, Any] | None,
     content_markdown: str | None,
-    raw_provider_response: dict[str, Any] | None,
-    error_message: str | None,
+    file_path: str | None = None,
+    file_name: str | None = None,
+    file_content_type: str | None = None,
+    raw_provider_response: dict[str, Any] | None = None,
+    error_message: str | None = None,
 ) -> dict[str, Any]:
     normalized_material_type = _normalize_unit_material_type(material_type)
     normalized_title = _normalize_content_block_text(title, limit=180) or "Study guide"
@@ -1778,6 +1791,9 @@ def _normalize_unit_material_payload(
         "notebook_artifact_id": str(notebook_artifact_id or "").strip() or None,
         "source_payload": source_payload if isinstance(source_payload, dict) else None,
         "content_markdown": markdown,
+        "file_path": str(file_path or "").strip() or None,
+        "file_name": str(file_name or "").strip() or None,
+        "file_content_type": str(file_content_type or "").strip() or None,
         "raw_provider_response": raw_provider_response if isinstance(raw_provider_response, dict) else None,
         "error_message": error_message,
     }
@@ -1790,8 +1806,37 @@ def _unit_material_default_title(material_type: str) -> str:
         "formative_quiz": "Formative quiz",
         "mastery_quiz_hard": "Mastery quiz",
         "revision_flashcards": "Revision flashcards",
+        "presenter_slides": "Presenter slide deck",
+        "detailed_slides": "Detailed slide deck",
     }
     return mapping.get(normalized, "Unit material")
+
+
+def _slugify_unit_material_filename(value: Any, *, fallback: str) -> str:
+    raw = str(value or "").strip()
+    folded = unicodedata.normalize("NFKD", raw).encode("ascii", "ignore").decode("ascii")
+    folded = re.sub(r"[^a-zA-Z0-9]+", "-", folded).strip("-").lower()
+    return folded or fallback
+
+
+def _persist_unit_material_file(
+    *,
+    unit_id: int | None,
+    unit_title: str,
+    material_type: str,
+    material_title: str,
+    source_path: str,
+    extension: str,
+) -> tuple[str, str]:
+    root = Path(app_config.STORAGE_DIR) / "workflow_materials" / f"unit-{int(unit_id or 0)}"
+    root.mkdir(parents=True, exist_ok=True)
+    unit_slug = _slugify_unit_material_filename(unit_title, fallback=f"unit-{int(unit_id or 0)}")
+    material_slug = _slugify_unit_material_filename(material_title or material_type, fallback=material_type)
+    suffix = extension if str(extension).startswith(".") else f".{extension}"
+    filename = f"{unit_slug}-{material_slug}{suffix}"
+    target = root / filename
+    shutil.copyfile(str(source_path), str(target))
+    return str(target), filename
 
 
 def _find_material_studio_artifact(unit_map: dict[str, Any] | None, material_type: str) -> dict[str, Any] | None:
@@ -2006,6 +2051,7 @@ async def _notebooklm_generate_unit_assistant_async(
 
 def _notebooklm_generate_unit_material(
     *,
+    unit_id: int | None,
     unit_title: str,
     material_type: str | None,
     source_text: str,
@@ -2018,6 +2064,7 @@ def _notebooklm_generate_unit_material(
     try:
         return asyncio.run(
             _notebooklm_generate_unit_material_async(
+                unit_id=unit_id,
                 unit_title=unit_title,
                 material_type=material_type,
                 source_text=source_text,
@@ -2040,7 +2087,7 @@ def _notebooklm_generate_unit_material(
         return _normalize_unit_material_payload(
             requested_provider=requested_provider,
             material_type=material_type or "study_guide",
-            title="Study guide",
+            title=_unit_material_default_title(material_type or "study_guide"),
             notebook_artifact_id=None,
             source_payload={
                 "unit_title": _normalize_outline_title(unit_title) or None,
@@ -2054,6 +2101,7 @@ def _notebooklm_generate_unit_material(
 
 async def _notebooklm_generate_unit_material_async(
     *,
+    unit_id: int | None,
     unit_title: str,
     material_type: str | None,
     source_text: str,
@@ -2064,7 +2112,14 @@ async def _notebooklm_generate_unit_material_async(
     requested_provider: str,
 ) -> dict[str, Any]:
     normalized_material_type = _normalize_unit_material_type(material_type)
-    if normalized_material_type not in {"study_guide", "formative_quiz", "mastery_quiz_hard", "revision_flashcards"}:
+    if normalized_material_type not in {
+        "study_guide",
+        "formative_quiz",
+        "mastery_quiz_hard",
+        "revision_flashcards",
+        "presenter_slides",
+        "detailed_slides",
+    }:
         return _normalize_unit_material_payload(
             requested_provider=requested_provider,
             material_type=normalized_material_type,
@@ -2072,6 +2127,9 @@ async def _notebooklm_generate_unit_material_async(
             notebook_artifact_id=None,
             source_payload={"unit_title": _normalize_outline_title(unit_title) or None},
             content_markdown=None,
+            file_path=None,
+            file_name=None,
+            file_content_type=None,
             raw_provider_response=None,
             error_message=f"unsupported_material_type:{normalized_material_type}",
         )
@@ -2088,6 +2146,9 @@ async def _notebooklm_generate_unit_material_async(
     created_temp_notebook = False
     artifact_id = ""
     markdown_text = ""
+    file_path = ""
+    file_name = ""
+    file_content_type = ""
     raw_provider_response: dict[str, Any] = {}
     temp_output_path = ""
     artifact_plan = _find_material_studio_artifact(unit_map, normalized_material_type)
@@ -2136,6 +2197,33 @@ async def _notebooklm_generate_unit_material_async(
                 )
                 download_handler = "report"
                 download_format = "markdown"
+            elif normalized_material_type in {"presenter_slides", "detailed_slides"}:
+                from notebooklm.types import SlideDeckFormat, SlideDeckLength
+
+                extra_instructions = _normalize_content_block_text(
+                    (artifact_plan or {}).get("instructions"),
+                    limit=1200,
+                ) or (
+                    f"Generate a slide deck for '{unit_title}' that follows the teaching order and keeps the classroom flow clear."
+                )
+                format_key = str(artifact_options.get("format") or "").strip().lower()
+                length_key = str(artifact_options.get("length") or "").strip().lower()
+                slide_format = (
+                    SlideDeckFormat.PRESENTER_SLIDES
+                    if format_key == "presenter"
+                    else SlideDeckFormat.DETAILED_DECK
+                )
+                slide_length = SlideDeckLength.SHORT if length_key == "short" else SlideDeckLength.DEFAULT
+                generation = await opened.artifacts.generate_slide_deck(
+                    notebook_id,
+                    source_ids=source_ids or None,
+                    language="fr",
+                    instructions=extra_instructions,
+                    slide_format=slide_format,
+                    slide_length=slide_length,
+                )
+                download_handler = "slide_deck"
+                download_format = "pptx"
             elif normalized_material_type in {"formative_quiz", "mastery_quiz_hard"}:
                 from notebooklm.types import QuizDifficulty, QuizQuantity
 
@@ -2239,13 +2327,38 @@ async def _notebooklm_generate_unit_material_async(
                         "download_format": download_format,
                     },
                     content_markdown=None,
+                    file_path=None,
+                    file_name=None,
+                    file_content_type=None,
                     raw_provider_response=raw_provider_response,
                     error_message=error_message,
                 )
 
             with tempfile.NamedTemporaryFile("w+b", suffix=".md", delete=False) as handle:
                 temp_output_path = handle.name
-            if download_handler == "report":
+            if download_handler == "slide_deck":
+                Path(temp_output_path).unlink(missing_ok=True)
+                temp_output_path = tempfile.NamedTemporaryFile("w+b", suffix=".pptx", delete=False).name
+                await opened.artifacts.download_slide_deck(
+                    notebook_id,
+                    temp_output_path,
+                    artifact_id=artifact_id,
+                    output_format=download_format or "pptx",
+                )
+                file_path, file_name = _persist_unit_material_file(
+                    unit_id=unit_id,
+                    unit_title=unit_title,
+                    material_type=normalized_material_type,
+                    material_title=artifact_title,
+                    source_path=temp_output_path,
+                    extension=".pptx" if (download_format or "pptx") == "pptx" else ".pdf",
+                )
+                file_content_type = (
+                    "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+                    if (download_format or "pptx") == "pptx"
+                    else "application/pdf"
+                )
+            elif download_handler == "report":
                 await opened.artifacts.download_report(notebook_id, temp_output_path, artifact_id=artifact_id)
             elif download_handler == "quiz":
                 await opened.artifacts.download_quiz(notebook_id, temp_output_path, artifact_id=artifact_id, output_format=download_format or "markdown")
@@ -2253,7 +2366,8 @@ async def _notebooklm_generate_unit_material_async(
                 await opened.artifacts.download_flashcards(notebook_id, temp_output_path, artifact_id=artifact_id, output_format=download_format or "markdown")
             else:
                 raise RuntimeError(f"unsupported_download_handler:{download_handler}")
-            markdown_text = Path(temp_output_path).read_text(encoding="utf-8", errors="ignore").strip()
+            if download_handler != "slide_deck":
+                markdown_text = Path(temp_output_path).read_text(encoding="utf-8", errors="ignore").strip()
     except Exception as exc:
         _record_notebooklm_health(
             source="unit_material",
@@ -2271,6 +2385,9 @@ async def _notebooklm_generate_unit_material_async(
                 "artifact_plan": artifact_plan,
             },
             content_markdown=None,
+            file_path=None,
+            file_name=None,
+            file_content_type=None,
             raw_provider_response=raw_provider_response or {"request_failed": str(exc)},
             error_message=f"notebooklm_unit_material_request_failed:{exc.__class__.__name__}",
         )
@@ -2302,6 +2419,9 @@ async def _notebooklm_generate_unit_material_async(
             "download_format": download_format,
         },
         content_markdown=markdown_text,
+        file_path=file_path,
+        file_name=file_name,
+        file_content_type=file_content_type,
         raw_provider_response=raw_provider_response,
         error_message=None,
     )

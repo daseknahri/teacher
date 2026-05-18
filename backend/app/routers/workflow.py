@@ -1926,6 +1926,8 @@ def _serialize_unit_material(row: WorkflowUnitMaterial) -> WorkflowUnitMaterialO
         notebook_artifact_id=str(row.notebook_artifact_id or "").strip() or None,
         source_payload=row.source_payload_json if isinstance(row.source_payload_json, dict) else None,
         content_markdown=str(row.content_markdown or "").strip() or None,
+        file_name=str(row.file_name or "").strip() or None,
+        file_content_type=str(row.file_content_type or "").strip() or None,
         raw_provider_response=row.raw_provider_response if isinstance(row.raw_provider_response, dict) else None,
         error_message=row.error_message,
         created_by_user_id=int(row.created_by_user_id) if row.created_by_user_id is not None else None,
@@ -5427,6 +5429,11 @@ def download_workflow_unit_material(
     material = db.get(WorkflowUnitMaterial, int(material_id))
     if material is None or int(material.unit_id) != int(unit_id):
         raise HTTPException(status_code=404, detail="Workflow unit material not found.")
+    file_path = Path(str(material.file_path or "").strip()) if str(material.file_path or "").strip() else None
+    if file_path and file_path.exists() and file_path.is_file():
+        filename = str(material.file_name or "").strip() or file_path.name
+        media_type = str(material.file_content_type or "").strip() or None
+        return FileResponse(path=str(file_path), filename=filename, media_type=media_type)
     content = str(material.content_markdown or "").strip()
     if not content:
         raise HTTPException(status_code=409, detail="This material does not have downloadable content yet.")
@@ -5469,6 +5476,7 @@ def generate_workflow_unit_material(
 
     try:
         result = generate_unit_material_package(
+            unit_id=int(unit_id),
             unit_title=unit.title,
             material_type=payload.material_type,
             source_text=source_text,
@@ -5495,6 +5503,7 @@ def generate_workflow_unit_material(
             created_by_user_id=int(current_user.id),
         )
         db.add(existing)
+    previous_file_path = str(existing.file_path or "").strip()
 
     existing.provider = str(result.get("provider") or "fallback")
     existing.model = str(result.get("model") or "").strip() or None
@@ -5503,11 +5512,21 @@ def generate_workflow_unit_material(
     existing.notebook_artifact_id = str(result.get("notebook_artifact_id") or "").strip() or None
     existing.source_payload_json = result.get("source_payload") if isinstance(result.get("source_payload"), dict) else None
     existing.content_markdown = str(result.get("content_markdown") or "").strip() or None
+    existing.file_path = str(result.get("file_path") or "").strip() or None
+    existing.file_name = str(result.get("file_name") or "").strip() or None
+    existing.file_content_type = str(result.get("file_content_type") or "").strip() or None
     existing.raw_provider_response = result.get("raw_provider_response") if isinstance(result.get("raw_provider_response"), dict) else None
     existing.error_message = str(result.get("error_message") or "").strip() or None
     existing.updated_at = _utc_now_naive()
     db.commit()
     db.refresh(existing)
+    if previous_file_path and previous_file_path != str(existing.file_path or "").strip():
+        try:
+            previous_path = Path(previous_file_path)
+            if previous_path.exists() and previous_path.is_file():
+                previous_path.unlink()
+        except Exception:
+            pass
 
     log_audit(
         db,
