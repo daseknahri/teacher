@@ -743,6 +743,38 @@ class WorkflowUnitAssistantOut(BaseModel):
     error_message: str | None = None
 
 
+class WorkflowUnitAssistantArtifactSaveIn(BaseModel):
+    artifact_kind: str = Field(pattern="^(teacher_notes|guided_practice|quick_quiz_draft)$")
+    provider: str = "notebooklm"
+    model: str | None = None
+    section_title: str | None = None
+    section_path: list[str] | None = None
+    action: str | None = None
+    title: str | None = None
+    answer_rows: list[str] = Field(default_factory=list)
+    suggested_followups: list[str] = Field(default_factory=list)
+    source_payload: dict | None = None
+    raw_provider_response: dict | None = None
+
+
+class WorkflowUnitAssistantArtifactOut(BaseModel):
+    id: int
+    unit_id: int
+    artifact_kind: str
+    provider: str
+    model: str | None = None
+    section_title: str | None = None
+    section_path: list[str] = Field(default_factory=list)
+    action: str | None = None
+    title: str | None = None
+    content_markdown: str | None = None
+    source_payload: dict | None = None
+    raw_provider_response: dict | None = None
+    created_by_user_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class WorkflowUnitMaterialGenerateIn(BaseModel):
     material_type: str = Field(
         default="study_guide",

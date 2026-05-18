@@ -1911,6 +1911,77 @@ def test_workflow_unit_assistant_returns_guided_notebook_response(client, monkey
     assert isinstance(captured["unit_map"], dict)
 
 
+def test_workflow_unit_assistant_artifact_save_and_download(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Assistant Artifact Class", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Les nombres rationnels",
+            "source_text": (
+                "Les nombres rationnels : Somme et difference\n"
+                "Activites\n"
+                "Contenu de la lecon\n"
+                "Evaluation\n"
+            ),
+        },
+    )
+    assert unit_resp.status_code == 201
+    unit_id = unit_resp.json()["id"]
+
+    save_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/assistant/artifacts",
+        headers=headers,
+        json={
+            "artifact_kind": "guided_practice",
+            "provider": "notebooklm",
+            "model": "notebooklm-py",
+            "section_title": "1) Les denominateurs sont les memes",
+            "section_path": ["I- Addition", "1) Les denominateurs sont les memes"],
+            "action": "generate_harder_practice",
+            "title": "Practice extension",
+            "answer_rows": [
+                "Propose two harder fraction additions with unlike denominators.",
+                "Ask students to justify the common denominator they choose.",
+            ],
+            "suggested_followups": [
+                "Generate a quick correction for these harder tasks.",
+            ],
+            "source_payload": {"teacher_request": "Give me harder practice for this section."},
+            "raw_provider_response": {"answer": "{\"title\":\"Practice extension\"}"},
+        },
+    )
+    assert save_resp.status_code == 200
+    artifact = save_resp.json()
+    artifact_id = artifact["id"]
+    assert artifact["artifact_kind"] == "guided_practice"
+    assert artifact["section_title"] == "1) Les denominateurs sont les memes"
+    assert "## Guidance" in artifact["content_markdown"]
+
+    list_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/assistant/artifacts",
+        headers=headers,
+    )
+    assert list_resp.status_code == 200
+    rows = list_resp.json()
+    assert len(rows) == 1
+    assert rows[0]["artifact_kind"] == "guided_practice"
+
+    download_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/assistant/artifacts/{artifact_id}/download",
+        headers=headers,
+    )
+    assert download_resp.status_code == 200
+    assert "text/markdown" in str(download_resp.headers.get("content-type") or "").lower()
+    assert "guided-practice" in str(download_resp.headers.get("content-disposition") or "").lower()
+    assert "Propose two harder fraction additions" in download_resp.text
+
+
 def test_workflow_unit_material_generation_persists_study_guide(client, monkeypatch):
     from app.routers import workflow as workflow_router
 

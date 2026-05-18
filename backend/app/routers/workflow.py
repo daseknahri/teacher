@@ -37,6 +37,7 @@ from ..models import (
     WorkflowChecklistItem,
     WorkflowChecklistItemKind,
     WorkflowSessionChecklistAction,
+    WorkflowUnitAssistantArtifact,
     WorkflowUnitMaterial,
     WorkflowSessionWriteup,
     WorkflowUnit,
@@ -91,6 +92,8 @@ from ..schemas import (
     WorkflowSessionStartIn,
     WorkflowToggleItemIn,
     WorkflowUnitAssistantIn,
+    WorkflowUnitAssistantArtifactOut,
+    WorkflowUnitAssistantArtifactSaveIn,
     WorkflowUnitAssistantOut,
     WorkflowUnitMaterialGenerateIn,
     WorkflowUnitMaterialOut,
@@ -1942,6 +1945,85 @@ def _build_unit_material_download_filename(unit: WorkflowUnit, material: Workflo
     stem = f"{raw_unit_title}-{raw_material_title}".lower()
     stem = re.sub(r"[^a-z0-9]+", "-", stem)
     stem = stem.strip("-") or f"unit-{int(unit.id)}-material"
+    return f"{stem}.md"
+
+
+def _serialize_unit_assistant_artifact(row: WorkflowUnitAssistantArtifact) -> WorkflowUnitAssistantArtifactOut:
+    return WorkflowUnitAssistantArtifactOut(
+        id=int(row.id),
+        unit_id=int(row.unit_id),
+        artifact_kind=str(row.artifact_kind or "teacher_notes"),
+        provider=str(row.provider or "notebooklm"),
+        model=row.model,
+        section_title=str(row.section_title or "").strip() or None,
+        section_path=[str(value) for value in (row.section_path_json or []) if str(value or "").strip()],
+        action=str(row.action or "").strip() or None,
+        title=str(row.title or "").strip() or None,
+        content_markdown=str(row.content_markdown or "").strip() or None,
+        source_payload=row.source_payload_json if isinstance(row.source_payload_json, dict) else None,
+        raw_provider_response=row.raw_provider_response if isinstance(row.raw_provider_response, dict) else None,
+        created_by_user_id=int(row.created_by_user_id) if row.created_by_user_id is not None else None,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _assistant_artifact_kind_label(value: str | None) -> str:
+    normalized = str(value or "").strip().lower()
+    mapping = {
+        "teacher_notes": "Teacher notes",
+        "guided_practice": "Guided practice",
+        "quick_quiz_draft": "Quick quiz draft",
+    }
+    return mapping.get(normalized, "Saved guidance")
+
+
+def _build_unit_assistant_artifact_markdown(
+    *,
+    unit: WorkflowUnit,
+    payload: WorkflowUnitAssistantArtifactSaveIn,
+) -> str:
+    title = str(payload.title or "").strip() or _assistant_artifact_kind_label(payload.artifact_kind)
+    section_title = str(payload.section_title or "").strip()
+    section_path = [str(value).strip() for value in (payload.section_path or []) if str(value).strip()]
+    action = str(payload.action or "").strip()
+    provider = str(payload.provider or "").strip()
+    answer_rows = [str(value).strip() for value in (payload.answer_rows or []) if str(value).strip()]
+    followups = [str(value).strip() for value in (payload.suggested_followups or []) if str(value).strip()]
+    lines = [
+        f"# {title}",
+        "",
+        f"- Unit: {str(unit.title or '').strip() or f'Unit {int(unit.id)}'}",
+        f"- Kind: {_assistant_artifact_kind_label(payload.artifact_kind)}",
+    ]
+    if section_title:
+        lines.append(f"- Section: {section_title}")
+    if section_path:
+        lines.append(f"- Path: {' -> '.join(section_path)}")
+    if action:
+        lines.append(f"- Action: {action}")
+    if provider:
+        lines.append(f"- Provider: {provider}")
+    lines.extend(["", "## Guidance", ""])
+    if answer_rows:
+        lines.extend(f"- {row}" for row in answer_rows)
+    else:
+        lines.append("- No structured guidance returned.")
+    if followups:
+        lines.extend(["", "## Suggested follow-ups", ""])
+        lines.extend(f"- {row}" for row in followups)
+    return "\n".join(lines).strip()
+
+
+def _build_unit_assistant_artifact_download_filename(
+    unit: WorkflowUnit,
+    artifact: WorkflowUnitAssistantArtifact,
+) -> str:
+    raw_unit_title = str(unit.title or "").strip() or f"unit-{int(unit.id)}"
+    raw_section_title = str(artifact.section_title or artifact.title or artifact.artifact_kind or "guidance").strip()
+    stem = f"{raw_unit_title}-{raw_section_title}-{artifact.artifact_kind}".lower()
+    stem = re.sub(r"[^a-z0-9]+", "-", stem)
+    stem = stem.strip("-") or f"unit-{int(unit.id)}-guidance"
     return f"{stem}.md"
 
 
@@ -5393,6 +5475,97 @@ def ask_workflow_unit_assistant(
         },
     )
     return WorkflowUnitAssistantOut(**result)
+
+
+@router.get("/classes/{class_id}/units/{unit_id}/assistant/artifacts", response_model=list[WorkflowUnitAssistantArtifactOut])
+def list_workflow_unit_assistant_artifacts(
+    class_id: int,
+    unit_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[WorkflowUnitAssistantArtifactOut]:
+    _ = ensure_class_access(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    rows = db.scalars(
+        select(WorkflowUnitAssistantArtifact)
+        .where(WorkflowUnitAssistantArtifact.unit_id == int(unit_id))
+        .order_by(WorkflowUnitAssistantArtifact.updated_at.desc(), WorkflowUnitAssistantArtifact.id.desc())
+    ).all()
+    return [_serialize_unit_assistant_artifact(row) for row in rows]
+
+
+@router.post("/classes/{class_id}/units/{unit_id}/assistant/artifacts", response_model=WorkflowUnitAssistantArtifactOut)
+def save_workflow_unit_assistant_artifact(
+    class_id: int,
+    unit_id: int,
+    payload: WorkflowUnitAssistantArtifactSaveIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkflowUnitAssistantArtifactOut:
+    _ = ensure_class_writable(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    artifact = WorkflowUnitAssistantArtifact(
+        unit_id=int(unit_id),
+        artifact_kind=str(payload.artifact_kind or "teacher_notes").strip().lower(),
+        provider=str(payload.provider or "notebooklm").strip() or "notebooklm",
+        model=str(payload.model or "").strip() or None,
+        section_title=str(payload.section_title or "").strip() or None,
+        section_path_json=[str(value).strip() for value in (payload.section_path or []) if str(value).strip()] or None,
+        action=str(payload.action or "").strip() or None,
+        title=str(payload.title or "").strip() or None,
+        content_markdown=_build_unit_assistant_artifact_markdown(unit=unit, payload=payload),
+        source_payload_json=payload.source_payload if isinstance(payload.source_payload, dict) else None,
+        raw_provider_response=payload.raw_provider_response if isinstance(payload.raw_provider_response, dict) else None,
+        created_by_user_id=int(current_user.id),
+    )
+    db.add(artifact)
+    db.commit()
+    db.refresh(artifact)
+    log_audit(
+        db,
+        user=current_user,
+        action="workflow.unit.save_assistant_artifact",
+        entity_type="workflow_unit",
+        entity_id=unit.id,
+        class_id=class_id,
+        details={
+            "artifact_kind": artifact.artifact_kind,
+            "section_title": artifact.section_title,
+            "action": artifact.action,
+        },
+    )
+    return _serialize_unit_assistant_artifact(artifact)
+
+
+@router.get("/classes/{class_id}/units/{unit_id}/assistant/artifacts/{artifact_id}/download")
+def download_workflow_unit_assistant_artifact(
+    class_id: int,
+    unit_id: int,
+    artifact_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    _ = ensure_class_access(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    artifact = db.get(WorkflowUnitAssistantArtifact, int(artifact_id))
+    if artifact is None or int(artifact.unit_id) != int(unit_id):
+        raise HTTPException(status_code=404, detail="Workflow assistant artifact not found.")
+    content = str(artifact.content_markdown or "").strip()
+    if not content:
+        raise HTTPException(status_code=409, detail="This saved guidance does not have downloadable content yet.")
+    filename = _build_unit_assistant_artifact_download_filename(unit, artifact)
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(
+        BytesIO(content.encode("utf-8")),
+        media_type="text/markdown; charset=utf-8",
+        headers=headers,
+    )
 
 
 @router.get("/classes/{class_id}/units/{unit_id}/materials", response_model=list[WorkflowUnitMaterialOut])

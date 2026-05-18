@@ -814,6 +814,13 @@ function _downloadTextContent(text, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
+function _assistantArtifactKindLabel(value) {
+  const key = String(value || '').trim().toLowerCase();
+  if (key === 'guided_practice') return 'Guided practice';
+  if (key === 'quick_quiz_draft') return 'Quick quiz draft';
+  return 'Teacher notes';
+}
+
 function _openUnitAssistantModal({ classId, unit, blueprint }) {
   const sections = _buildUnitAssistantSections(blueprint);
   const initialSection = sections[1] || sections[0];
@@ -827,6 +834,7 @@ function _openUnitAssistantModal({ classId, unit, blueprint }) {
     loading: false,
     result: null,
     error: '',
+    savedArtifacts: [],
   };
 
   const getSection = () => sections.find(row => row.key === state.sectionKey) || sections[0];
@@ -874,6 +882,9 @@ function _openUnitAssistantModal({ classId, unit, blueprint }) {
         <div id="unit-assistant-result" class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
           <p class="text-[12px] text-slate-500">No guidance generated yet. Pick a section, choose an action, and ask NotebookLM for help.</p>
         </div>
+        <div id="unit-assistant-saved" class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+          <p class="text-[12px] text-slate-500">Loading saved guidance…</p>
+        </div>
       </div>
       <div class="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
         <button id="unit-assistant-close" class="btn btn-ghost">Close</button>
@@ -887,6 +898,7 @@ function _openUnitAssistantModal({ classId, unit, blueprint }) {
   const requestInput = overlay.querySelector('#unit-assistant-request');
   const suggestionsWrap = overlay.querySelector('#unit-assistant-suggestions');
   const resultWrap = overlay.querySelector('#unit-assistant-result');
+  const savedWrap = overlay.querySelector('#unit-assistant-saved');
   const errorNode = overlay.querySelector('#unit-assistant-error');
   const sectionPathNode = overlay.querySelector('#unit-assistant-section-path');
   const submitButton = overlay.querySelector('#unit-assistant-submit');
@@ -917,6 +929,9 @@ function _openUnitAssistantModal({ classId, unit, blueprint }) {
       <div class="flex items-center justify-end gap-2 mt-3">
         <button class="btn btn-secondary btn-sm" id="unit-assistant-copy">Copy</button>
         <button class="btn btn-secondary btn-sm" id="unit-assistant-download">Download</button>
+        <button class="btn btn-primary btn-sm" id="unit-assistant-save-notes">Save Notes</button>
+        <button class="btn btn-secondary btn-sm" id="unit-assistant-save-practice">Save Practice</button>
+        <button class="btn btn-secondary btn-sm" id="unit-assistant-save-quiz">Save Quiz Draft</button>
       </div>
       ${answerRows.length ? `
         <ul class="list-disc pl-5 mt-3 text-[13px] text-slate-700 space-y-2">
@@ -954,6 +969,86 @@ function _openUnitAssistantModal({ classId, unit, blueprint }) {
       const unitName = String(unit?.title || 'unit').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unit';
       const sectionName = String(result?.section_title || 'guidance').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'guidance';
       _downloadTextContent(_buildUnitAssistantMarkdown(result, unit?.title), `${unitName}-${sectionName}-guidance.md`);
+    });
+    const saveArtifact = async artifactKind => {
+      try {
+        const payload = {
+          artifact_kind: artifactKind,
+          provider: String(result?.provider || 'notebooklm').trim() || 'notebooklm',
+          model: String(result?.model || '').trim() || null,
+          section_title: result?.section_title || null,
+          section_path: Array.isArray(result?.section_path) && result.section_path.length ? result.section_path : null,
+          action: result?.action || null,
+          title: result?.title || null,
+          answer_rows: Array.isArray(result?.answer_rows) ? result.answer_rows : [],
+          suggested_followups: Array.isArray(result?.suggested_followups) ? result.suggested_followups : [],
+          source_payload: result?.source_payload && typeof result.source_payload === 'object' ? result.source_payload : null,
+          raw_provider_response: result?.raw_provider_response && typeof result.raw_provider_response === 'object' ? result.raw_provider_response : null,
+        };
+        await api(`/workflow/classes/${classId}/units/${unit.id}/assistant/artifacts`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+        showToast(`${_assistantArtifactKindLabel(artifactKind)} saved.`, 'ok');
+        await loadSavedArtifacts();
+      } catch (err) {
+        setError(String(err?.message || 'Failed to save the guidance.'));
+      }
+    };
+    resultWrap.querySelector('#unit-assistant-save-notes')?.addEventListener('click', () => saveArtifact('teacher_notes'));
+    resultWrap.querySelector('#unit-assistant-save-practice')?.addEventListener('click', () => saveArtifact('guided_practice'));
+    resultWrap.querySelector('#unit-assistant-save-quiz')?.addEventListener('click', () => saveArtifact('quick_quiz_draft'));
+  };
+
+  const renderSavedArtifacts = () => {
+    if (!savedWrap) return;
+    const section = getSection();
+    const sectionKey = String(section?.section_title || '').trim().toLowerCase();
+    const filtered = state.savedArtifacts.filter(item => {
+      const itemSection = String(item?.section_title || '').trim().toLowerCase();
+      if (sectionKey) return itemSection === sectionKey;
+      return true;
+    });
+    if (!filtered.length) {
+      savedWrap.innerHTML = '<p class="text-[12px] text-slate-500">No saved guidance yet for this section. Save a good NotebookLM result here to start building your teaching library.</p>';
+      return;
+    }
+    savedWrap.innerHTML = `
+      <div class="flex items-center justify-between gap-3 mb-3">
+        <div>
+          <h3 class="text-[15px] font-semibold text-slate-800">Saved guidance</h3>
+          <p class="text-[12px] text-slate-500">Reusable section help you decided to keep.</p>
+        </div>
+      </div>
+      <div class="space-y-3">
+        ${filtered.map(item => `
+          <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+            <div class="flex items-center justify-between gap-3 flex-wrap">
+              <div class="flex items-center gap-2 flex-wrap">
+                <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(item?.title || 'Saved guidance'))}</p>
+                <span class="badge badge-blue">${_escapeHtml(_assistantArtifactKindLabel(item?.artifact_kind))}</span>
+                ${item?.action ? `<span class="badge badge-gray">${_escapeHtml(_assistantActionLabel(item.action))}</span>` : ''}
+              </div>
+              <button class="btn btn-secondary btn-sm btn-unit-assistant-artifact-download" data-artifact-id="${_escapeHtml(String(item?.id || ''))}">
+                Download
+              </button>
+            </div>
+            ${item?.content_markdown ? `<p class="text-[12px] text-slate-700 leading-6 mt-3">${_escapeHtml(String(item.content_markdown).split('\n').slice(0, 4).join(' '))}</p>` : ''}
+            <p class="text-[11px] text-slate-500 mt-3"><span class="font-semibold">Updated:</span> ${_escapeHtml(fmtDateTime(item?.updated_at))}</p>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    savedWrap.querySelectorAll('.btn-unit-assistant-artifact-download').forEach(button => {
+      button.addEventListener('click', async () => {
+        const artifactId = Number(button.dataset.artifactId || 0);
+        if (!artifactId) return;
+        try {
+          await downloadWithAuth(`/workflow/classes/${classId}/units/${unit.id}/assistant/artifacts/${artifactId}/download`, 'guidance.md');
+        } catch (err) {
+          setError(String(err?.message || 'Failed to download the saved guidance.'));
+        }
+      });
     });
   };
 
@@ -1011,15 +1106,29 @@ function _openUnitAssistantModal({ classId, unit, blueprint }) {
 
   const cleanup = () => overlay.remove();
 
+  const loadSavedArtifacts = async () => {
+    try {
+      const rows = await api(`/workflow/classes/${classId}/units/${unit.id}/assistant/artifacts`);
+      state.savedArtifacts = Array.isArray(rows) ? rows : [];
+    } catch (err) {
+      state.savedArtifacts = [];
+      setError(String(err?.message || 'Failed to load saved guidance.'));
+    } finally {
+      renderSavedArtifacts();
+    }
+  };
+
   renderSections();
   renderActions();
   renderSuggestions();
   renderResult();
+  renderSavedArtifacts();
 
   sectionSelect?.addEventListener('change', () => {
     state.sectionKey = String(sectionSelect.value || '__whole_unit__');
     renderActions();
     renderSuggestions();
+    renderSavedArtifacts();
   });
   actionSelect?.addEventListener('change', () => {
     state.action = String(actionSelect.value || 'explain_section');
@@ -1042,7 +1151,7 @@ function _openUnitAssistantModal({ classId, unit, blueprint }) {
       };
       const result = await api(`/workflow/classes/${classId}/units/${unit.id}/assistant`, {
         method: 'POST',
-        body: payload,
+        body: JSON.stringify(payload),
       });
       state.result = result || null;
       renderResult();
@@ -1064,6 +1173,7 @@ function _openUnitAssistantModal({ classId, unit, blueprint }) {
   overlay.querySelector('#unit-assistant-close-top')?.addEventListener('click', cleanup);
   overlay.querySelector('#unit-assistant-close')?.addEventListener('click', cleanup);
   document.body.appendChild(overlay);
+  loadSavedArtifacts();
 }
 
 async function _openUnitMaterialStudioModal({ classId, unit, blueprint }) {

@@ -314,6 +314,11 @@ class WorkflowUnit(Base):
         cascade="all, delete-orphan",
         order_by="WorkflowUnitMaterial.updated_at.desc()",
     )
+    assistant_artifacts: Mapped[list["WorkflowUnitAssistantArtifact"]] = relationship(
+        back_populates="unit",
+        cascade="all, delete-orphan",
+        order_by="WorkflowUnitAssistantArtifact.updated_at.desc()",
+    )
 
 
 class WorkflowChecklistItem(Base):
@@ -409,6 +414,28 @@ class WorkflowUnitMaterial(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     unit: Mapped["WorkflowUnit"] = relationship(back_populates="materials")
+
+
+class WorkflowUnitAssistantArtifact(Base):
+    __tablename__ = "workflow_unit_assistant_artifacts"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    unit_id: Mapped[int] = mapped_column(ForeignKey("workflow_units.id", ondelete="CASCADE"), index=True)
+    artifact_kind: Mapped[str] = mapped_column(String(64), index=True)
+    provider: Mapped[str] = mapped_column(String(64), default="notebooklm")
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    section_title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    section_path_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    action: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    content_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    raw_provider_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    unit: Mapped["WorkflowUnit"] = relationship(back_populates="assistant_artifacts")
 
 
 class WorkflowSessionWriteup(Base):
