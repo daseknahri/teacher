@@ -21,6 +21,7 @@ const _timetableRulesByClass = new Map();
 const _timetableExceptionsByClass = new Map();
 
 const _sessionDetailCache = new Map();
+const _calendarUnitBlueprintCache = new Map();
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const TIME_SLOTS = [
@@ -234,6 +235,140 @@ function _flattenChecklistNodes(nodes, depth = 0, output = []) {
     _flattenChecklistNodes(row.children || [], Number(depth || 0) + 1, output);
   });
   return output;
+}
+
+function _getCalendarUnitBlueprintState(unitId) {
+  const uid = Number(unitId);
+  if (!Number.isFinite(uid) || uid <= 0) {
+    return { loading: false, loaded: false, error: null, item: null };
+  }
+  return _calendarUnitBlueprintCache.get(uid) || { loading: false, loaded: false, error: null, item: null };
+}
+
+function _setCalendarUnitBlueprintState(unitId, state) {
+  const uid = Number(unitId);
+  if (!Number.isFinite(uid) || uid <= 0) {
+    return { loading: false, loaded: false, error: null, item: null };
+  }
+  const next = {
+    loading: Boolean(state?.loading),
+    loaded: Boolean(state?.loaded),
+    error: state?.error ? String(state.error) : null,
+    item: state?.item && typeof state.item === 'object' ? { ...state.item } : null,
+  };
+  _calendarUnitBlueprintCache.set(uid, next);
+  return next;
+}
+
+async function _loadCalendarUnitBlueprint(classId, unitId, { force = false } = {}) {
+  const uid = Number(unitId);
+  if (!Number.isFinite(uid) || uid <= 0) {
+    return { loading: false, loaded: false, error: null, item: null };
+  }
+  const existing = _getCalendarUnitBlueprintState(uid);
+  if (existing.loading) return existing;
+  if (!force && existing.loaded) return existing;
+
+  _setCalendarUnitBlueprintState(uid, {
+    loading: true,
+    loaded: false,
+    error: null,
+    item: existing.item,
+  });
+
+  try {
+    const row = await api(`/workflow/classes/${classId}/units/${uid}/blueprint`);
+    return _setCalendarUnitBlueprintState(uid, {
+      loading: false,
+      loaded: true,
+      error: null,
+      item: row || null,
+    });
+  } catch (err) {
+    return _setCalendarUnitBlueprintState(uid, {
+      loading: false,
+      loaded: true,
+      error: String(err?.message || 'Failed to load unit AI details.'),
+      item: existing.item,
+    });
+  }
+}
+
+function _collectSessionBlueprintNodes(nodes, sessionNumber) {
+  const target = Number(sessionNumber || 0);
+  if (!Number.isFinite(target) || target <= 0 || !Array.isArray(nodes)) return [];
+  const walk = rows => rows.reduce((acc, rawNode) => {
+    if (!rawNode || typeof rawNode !== 'object') return acc;
+    const childMatches = walk(Array.isArray(rawNode.children) ? rawNode.children : []);
+    const ownSession = Number(rawNode.session_number || 0);
+    if (ownSession !== target && !childMatches.length) return acc;
+    acc.push({
+      title: String(rawNode.title || '').trim(),
+      kind: String(rawNode.kind || '').trim(),
+      session_number: ownSession > 0 ? ownSession : null,
+      children: childMatches,
+    });
+    return acc;
+  }, []);
+  return walk(nodes);
+}
+
+function _renderCalendarBlueprintTree(nodes, depth = 0) {
+  if (!Array.isArray(nodes) || !nodes.length) {
+    return depth === 0
+      ? '<p class="text-[12px] text-slate-500">No planned checklist flow saved for this unit session.</p>'
+      : '';
+  }
+  const listClass = depth === 0
+    ? 'space-y-1.5'
+    : 'space-y-1.5 ml-4 mt-2 border-l border-slate-200 pl-3';
+  return `
+    <ul class="${listClass}">
+      ${nodes.map(node => `
+        <li>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-[13px] text-slate-700">${_escapeHtml(node?.title || '')}</span>
+            ${node?.kind ? `<span class="badge badge-gray">${_escapeHtml(String(node.kind))}</span>` : ''}
+            ${node?.session_number ? `<span class="badge badge-blue">S${Number(node.session_number)}</span>` : ''}
+          </div>
+          ${_renderCalendarBlueprintTree(node?.children || [], depth + 1)}
+        </li>
+      `).join('')}
+    </ul>`;
+}
+
+function _flattenCalendarBlueprintTitles(nodes, output = []) {
+  const rows = Array.isArray(nodes) ? nodes : [];
+  rows.forEach(node => {
+    if (!node || typeof node !== 'object') return;
+    const title = String(node.title || '').trim();
+    if (title) output.push(title);
+    _flattenCalendarBlueprintTitles(node.children || [], output);
+  });
+  return output;
+}
+
+function _renderCalendarSectionPlans(sectionPlans, plannedTitles) {
+  const plans = Array.isArray(sectionPlans) ? sectionPlans.filter(Boolean) : [];
+  const titleKeys = new Set((Array.isArray(plannedTitles) ? plannedTitles : []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+  const matched = plans.filter(plan => {
+    const sectionTitle = String(plan?.section_title || '').trim().toLowerCase();
+    if (sectionTitle && titleKeys.has(sectionTitle)) return true;
+    const delivery = Array.isArray(plan?.delivery_sequence) ? plan.delivery_sequence : [];
+    return delivery.some(value => titleKeys.has(String(value || '').trim().toLowerCase()));
+  }).slice(0, 4);
+  if (!matched.length) {
+    return '<p class="text-[12px] text-slate-500 mt-2">No matching section plan found for this unit session yet.</p>';
+  }
+  return matched.map(plan => `
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+      <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(plan?.section_title || 'Section'))}</p>
+      ${Array.isArray(plan?.delivery_sequence) && plan.delivery_sequence.length ? `
+        <ol class="mt-2 list-decimal pl-4 text-[12px] text-slate-600 leading-relaxed">
+          ${plan.delivery_sequence.map(value => `<li>${_escapeHtml(String(value || ''))}</li>`).join('')}
+        </ol>` : ''}
+    </div>
+  `).join('');
 }
 
 function _coerceCalendarEvent(row) {
@@ -1137,6 +1272,9 @@ async function _selectSession(sessionId, el, classId) {
   try {
     const detail = await api(`/sessions/${sid}`);
     if (detail && detail.unit_id != null) {
+      const blueprintState = await _loadCalendarUnitBlueprint(classId, detail.unit_id);
+      detail.unit_blueprint = blueprintState?.item && typeof blueprintState.item === 'object' ? blueprintState.item : null;
+      detail.unit_blueprint_error = blueprintState?.error ? String(blueprintState.error) : null;
       try {
         detail.workflow_writeup = await api(`/workflow/classes/${classId}/sessions/${sid}/writeup`);
         detail.workflow_writeup_error = null;
@@ -1145,6 +1283,8 @@ async function _selectSession(sessionId, el, classId) {
         detail.workflow_writeup_error = String(writeupErr?.message || 'Failed to load workflow write-up.');
       }
     } else if (detail && typeof detail === 'object') {
+      detail.unit_blueprint = null;
+      detail.unit_blueprint_error = null;
       detail.workflow_writeup = null;
       detail.workflow_writeup_error = null;
     }
@@ -2135,10 +2275,23 @@ function _renderCalendar(el, classId) {
   const selectedEvent = _findSelectedEvent(weekEvents);
   const selectedSessionNumber = selectedEvent ? unitSessionNumbers.get(Number(selectedEvent.session_id)) || null : null;
   const selectedDetail = selectedEvent ? _sessionDetailCache.get(Number(selectedEvent.session_id)) : null;
+  const selectedBlueprint = selectedDetail?.unit_blueprint && typeof selectedDetail.unit_blueprint === 'object'
+    ? selectedDetail.unit_blueprint
+    : null;
+  const selectedBlueprintError = selectedDetail?.unit_blueprint_error ? String(selectedDetail.unit_blueprint_error) : '';
   const selectedWriteup = selectedDetail?.workflow_writeup && typeof selectedDetail.workflow_writeup === 'object'
     ? selectedDetail.workflow_writeup
     : null;
   const selectedWriteupError = selectedDetail?.workflow_writeup_error ? String(selectedDetail.workflow_writeup_error) : '';
+  const selectedBlueprintTree = selectedBlueprint?.blueprint_json && typeof selectedBlueprint.blueprint_json === 'object' && Array.isArray(selectedBlueprint.blueprint_json.items)
+    ? selectedBlueprint.blueprint_json.items
+    : [];
+  const plannedSessionTree = selectedSessionNumber ? _collectSessionBlueprintNodes(selectedBlueprintTree, selectedSessionNumber) : [];
+  const plannedSessionTitles = _flattenCalendarBlueprintTitles(plannedSessionTree, []);
+  const selectedUnitMap = selectedBlueprint?.unit_map_json && typeof selectedBlueprint.unit_map_json === 'object'
+    ? selectedBlueprint.unit_map_json
+    : {};
+  const selectedSectionPlans = Array.isArray(selectedUnitMap?.section_plans) ? selectedUnitMap.section_plans : [];
   const studentsById = new Map((getStudents() || []).map(student => [Number(student.id), student]));
   const absentRows = selectedEvent ? _absentRowsFromDetail(selectedDetail, selectedEvent, studentsById) : [];
   const headlineBlocks = selectedEvent ? _headlineBlocksFromDetail(selectedDetail, selectedEvent) : [];
@@ -2420,6 +2573,27 @@ function _renderCalendar(el, classId) {
             ${String(selectedDetail?.session?.note || selectedEvent.note || '').trim()
         ? `<p class="mt-2 text-[13px] text-slate-700 whitespace-pre-wrap">${_escapeHtml(String(selectedDetail?.session?.note || selectedEvent.note || '').trim())}</p>`
         : '<p class="text-[12px] text-slate-500 mt-2">No note for this session.</p>'}
+          </div>
+
+          <div class="p-3 rounded-xl border border-slate-200">
+            <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Planned Teaching Flow</h4>
+            ${_selectedSessionLoading
+              ? '<p class="text-[12px] text-slate-500 mt-2">Loading planned unit flow...</p>'
+              : selectedEvent.unit_id == null
+                ? '<p class="text-[12px] text-slate-500 mt-2">This session is not linked to a workflow unit.</p>'
+                : selectedBlueprintError
+                  ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedBlueprintError)}</p>`
+                  : !selectedSessionNumber
+                    ? '<p class="text-[12px] text-slate-500 mt-2">This workflow session has no saved unit-session number yet.</p>'
+                    : `
+                      <div class="mt-2 flex flex-col gap-3">
+                        <p class="text-[12px] text-slate-500">Planned checklist path for unit session ${Number(selectedSessionNumber)}.</p>
+                        ${_renderCalendarBlueprintTree(plannedSessionTree)}
+                        <div>
+                          <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Matched Section Plans</p>
+                          ${_renderCalendarSectionPlans(selectedSectionPlans, plannedSessionTitles)}
+                        </div>
+                      </div>`}
           </div>
 
           <div class="p-3 rounded-xl border border-slate-200">
