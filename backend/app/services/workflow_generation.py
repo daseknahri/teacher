@@ -143,11 +143,20 @@ NOTEBOOKLM_NO_CONTEXT_PATTERNS: tuple[str, ...] = (
 TEACHER_META_SECTION_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^\s*objectifs?\b", re.IGNORECASE),
     re.compile(r"^\s*objectifs?\s+d[' ]apprentissage\b", re.IGNORECASE),
+    re.compile(r"^\s*comp[ée]tences?\b", re.IGNORECASE),
+    re.compile(r"^\s*capacit[ée]s?\b", re.IGNORECASE),
     re.compile(r"^\s*pr[ée]requis\b", re.IGNORECASE),
     re.compile(r"^\s*outils?\s+didactiques\b", re.IGNORECASE),
+    re.compile(r"^\s*outils?\s+p[ée]dagogiques\b", re.IGNORECASE),
     re.compile(r"^\s*moyens?\s+didactiques\b", re.IGNORECASE),
+    re.compile(r"^\s*ressources?\b", re.IGNORECASE),
+    re.compile(r"^\s*supports?\b", re.IGNORECASE),
+    re.compile(r"^\s*mat[ée]riel\b", re.IGNORECASE),
+    re.compile(r"^\s*modalit[ée]s?\b", re.IGNORECASE),
     re.compile(r"^\s*gestion\s+du\s+temps\b", re.IGNORECASE),
     re.compile(r"^\s*dur[ée]e?\b", re.IGNORECASE),
+    re.compile(r"^\s*d[ée]marche\s+p[ée]dagogique\b", re.IGNORECASE),
+    re.compile(r"^\s*d[ée]roulement\b", re.IGNORECASE),
 )
 NOTEBOOKLM_TEMP_NOTEBOOK_TITLES: tuple[str, ...] = (
     "Teacher Progress Smoke Test",
@@ -1426,9 +1435,11 @@ def _build_notebooklm_checklist_prompt(
         "- Garde le titre du chapitre comme racine.",
         "- Garde seulement les rubriques que l'enseignant traite avec les eleves: activites, contenu de la lecon, sections, sous-sections, definitions, proprietes, regles, exemples, exercices, evaluation.",
         "- Conserve le texte et le systeme de numerotation visibles dans le document (I, II, 1, 1.1, A, etc.).",
+        "- Quand l'ordre pedagogique est implicite ou ambigu, organise la progression comme un enseignant: activites d'amorce, puis notions/lecon, puis definitions/proprietes/regles, puis exemples, puis exercices ou evaluation.",
+        "- Dans chaque grande section, essaie de garder une structure exploitable en classe: activite -> contenu/notions -> exemples -> exercices.",
         "- Ne saute aucun titre visible, meme s'il y a plusieurs activites ou plusieurs exercices.",
         "- Si une rubrique contient Activite 1, Activite 2, ... ou Exercice 1, Exercice 2, ..., garde-les tous comme enfants de cette rubrique.",
-        "- N'inclus pas dans la checklist les rubriques meta enseignant comme Objectifs d'apprentissage, Prerequis, Outils didactiques, Gestion du temps ou rubriques similaires.",
+        "- N'inclus pas dans la checklist les rubriques meta enseignant comme Objectifs d'apprentissage, Competences, Capacites, Prerequis, Outils didactiques, Ressources, Gestion du temps, Demarche pedagogique ou rubriques similaires.",
         "- Ne garde pas les paragraphes de contenu, les calculs detailles, les reponses, ni les sous-exemples A / B / C / D.",
         "- Si un titre est coupe sur deux lignes, reconstitue-le.",
         "- Ignore seulement les metadonnees de couverture (nom du professeur, etablissement, niveau, pagination isolee).",
@@ -1458,7 +1469,8 @@ def _build_notebooklm_checklist_review_prompt() -> str:
             "Regles:",
             "- Garde le titre du chapitre comme racine.",
             "- Verifie surtout toutes les rubriques Activite 1, Activite 2, ..., Exercice 1, Exercice 2, ..., Definition, Propriete, Regle, Exemple, Evaluation.",
-            "- Exclue les rubriques meta enseignant comme Objectifs d'apprentissage, Prerequis, Outils didactiques, Gestion du temps ou rubriques equivalentes.",
+            "- Si l'ordre est ambigu, prefere un deroulement de classe coherent: activites d'amorce, puis notions/lecon, puis definitions/proprietes/regles, puis exemples, puis exercices ou evaluation.",
+            "- Exclue les rubriques meta enseignant comme Objectifs d'apprentissage, Competences, Capacites, Prerequis, Outils didactiques, Ressources, Gestion du temps, Demarche pedagogique ou rubriques equivalentes.",
             "- Ne saute aucun titre visible, meme s'il est repetitif ou similaire a un autre.",
             "- Ne garde pas les paragraphes de contenu, les calculs detailles, les reponses, ni les sous-exemples A / B / C / D.",
             "- Si une rubrique est coupee sur plusieurs pages, reconstruis la structure pedagogique complete.",
@@ -1494,7 +1506,8 @@ def _build_notebooklm_unit_map_prompt(
             "- ordered_outline doit garder uniquement le deroulement pedagogique vecu par les eleves, dans l'ordre du document.",
             "- Garde le titre du chapitre comme racine si visible.",
             "- Inclure activites, contenu de la lecon, sections, sous-sections, definitions, proprietes, exemples, exercices et evaluation quand ils sont visibles.",
-            "- N'inclus pas dans ordered_outline les rubriques meta enseignant comme Objectifs d'apprentissage, Prerequis, Outils didactiques ou Gestion du temps; range-les plutot dans teaching_goals, prerequisites ou teacher_resources.",
+            "- Si l'ordre pedagogique est flou, recompose-le comme un enseignant: activites d'amorce, puis notions/lecon, puis definitions/proprietes/regles, puis exemples, puis exercices ou evaluation.",
+            "- N'inclus pas dans ordered_outline les rubriques meta enseignant comme Objectifs d'apprentissage, Competences, Capacites, Prerequis, Outils didactiques, Ressources, Gestion du temps ou Demarche pedagogique; range-les plutot dans teaching_goals, prerequisites ou teacher_resources.",
             "- teaching_goals doit resumer les objectifs d'apprentissage visibles ou clairement implicites.",
             "- prerequisites doit lister les prerequis visibles ou tres evidents.",
             "- teacher_resources doit lister les outils didactiques ou supports visibles.",
@@ -1597,6 +1610,7 @@ def _normalize_unit_map_payload(
             activity_blocks=normalized["activity_blocks"],
             assessment_blocks=normalized["assessment_blocks"],
         )
+    normalized["section_plans"] = _build_unit_section_plans(normalized_outline)
     return normalized
 
 
@@ -1748,6 +1762,74 @@ def _build_default_pedagogy_notes(
     if _extract_unit_map_section_titles(items, keywords=("propriete", "definition", "regle")):
         notes.append("Les definitions, proprietes et regles doivent etre traitees avant les applications longues.")
     return notes[:4]
+
+
+def _build_unit_section_plans(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    plans: list[dict[str, Any]] = []
+
+    def make_plan(node: dict[str, Any]) -> dict[str, Any] | None:
+        title = _normalize_outline_title(node.get("title"))
+        kind = str(node.get("kind") or "").strip().lower()
+        children = [child for child in (node.get("children") if isinstance(node.get("children"), list) else []) if isinstance(child, dict)]
+        if not title or not children:
+            return None
+        if kind == WorkflowChecklistItemKind.CHAPTER.value:
+            return None
+        if _is_teacher_meta_outline_title(title) or _is_activity_outline_title(title, kind) or _is_assessment_outline_title(title, kind):
+            return None
+
+        activity_titles: list[str] = []
+        content_titles: list[str] = []
+        example_titles: list[str] = []
+        exercise_titles: list[str] = []
+        delivery_sequence: list[str] = []
+
+        for child in children:
+            child_title = _normalize_outline_title(child.get("title"))
+            child_kind = str(child.get("kind") or "").strip().lower()
+            if not child_title:
+                continue
+            delivery_sequence.append(child_title)
+            if _is_activity_outline_title(child_title, child_kind):
+                activity_titles.append(child_title)
+            elif child_kind == WorkflowChecklistItemKind.EXAMPLE.value:
+                example_titles.append(child_title)
+            elif _is_assessment_outline_title(child_title, child_kind):
+                exercise_titles.append(child_title)
+            else:
+                content_titles.append(child_title)
+
+        if not delivery_sequence:
+            return None
+        return {
+            "section_title": title,
+            "activity_titles": activity_titles,
+            "content_titles": content_titles,
+            "example_titles": example_titles,
+            "exercise_titles": exercise_titles,
+            "delivery_sequence": delivery_sequence,
+        }
+
+    def walk(nodes: list[dict[str, Any]]) -> None:
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            plan = make_plan(node)
+            if plan is not None:
+                plans.append(plan)
+            children = node.get("children") if isinstance(node.get("children"), list) else []
+            walk(children)
+
+    walk(items)
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for plan in plans:
+        key = _semantic_title_key(plan.get("section_title"))
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(plan)
+    return deduped[:24]
 
 
 def _select_best_notebooklm_outline_candidate(
@@ -1931,7 +2013,7 @@ def _normalize_notebooklm_outline_items(
             output.append(normalized_node)
         return _dedupe_sibling_nodes(output)
 
-    normalized = walk(items)
+    normalized = _resequence_outline_for_teaching_flow(walk(items))
     if unit_type != WorkflowUnitType.CHAPTER or not normalized:
         return normalized
     return _ensure_notebooklm_chapter_root(normalized, unit_title=unit_title)
@@ -1942,6 +2024,72 @@ def _is_teacher_meta_outline_title(title: str) -> bool:
     if not normalized:
         return False
     return any(pattern.match(normalized) for pattern in TEACHER_META_SECTION_PATTERNS)
+
+
+def _is_activity_outline_title(title: str, kind: str) -> bool:
+    folded = _fold_text_key(title)
+    return folded.startswith(("activite", "activites"))
+
+
+def _is_content_outline_title(title: str) -> bool:
+    folded = _fold_text_key(title)
+    return folded.startswith(("contenu de la lecon", "contenu", "cours", "lecon", "notion", "notions"))
+
+
+def _is_assessment_outline_title(title: str, kind: str) -> bool:
+    folded = _fold_text_key(title)
+    if kind == WorkflowChecklistItemKind.EXERCISE.value:
+        return True
+    return folded.startswith(("evaluation", "exercice", "exercices", "application", "applications"))
+
+
+def _is_explicit_topic_outline_title(title: str, kind: str) -> bool:
+    if kind not in {WorkflowChecklistItemKind.SECTION.value, WorkflowChecklistItemKind.SUBSECTION.value}:
+        return False
+    raw = str(title or "").strip()
+    return bool(
+        NUMBERED_HEADING_PATTERN.match(raw)
+        or ROMAN_HEADING_PATTERN.match(raw)
+        or ALPHA_HEADING_PATTERN.match(raw)
+    )
+
+
+def _outline_teaching_flow_rank(node: dict[str, Any]) -> int:
+    title = _normalize_outline_title(node.get("title"))
+    kind = str(node.get("kind") or "").strip().lower()
+    if not title:
+        return 999
+    if _is_teacher_meta_outline_title(title):
+        return 900
+    if _is_activity_outline_title(title, kind):
+        return 10
+    if _is_content_outline_title(title):
+        return 20
+    if _is_explicit_topic_outline_title(title, kind):
+        return 30
+    if kind in {WorkflowChecklistItemKind.SECTION.value, WorkflowChecklistItemKind.SUBSECTION.value}:
+        return 35
+    if kind in {WorkflowChecklistItemKind.DEFINITION.value, WorkflowChecklistItemKind.PROPERTY.value}:
+        return 40
+    if kind == WorkflowChecklistItemKind.EXAMPLE.value:
+        return 50
+    if _is_assessment_outline_title(title, kind):
+        return 60
+    return 70
+
+
+def _resequence_outline_for_teaching_flow(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    resequenced: list[dict[str, Any]] = []
+    for node in items:
+        if not isinstance(node, dict):
+            continue
+        cloned = dict(node)
+        children = cloned.get("children") if isinstance(cloned.get("children"), list) else []
+        cloned["children"] = _resequence_outline_for_teaching_flow(children)
+        resequenced.append(cloned)
+    indexed = list(enumerate(resequenced))
+    indexed.sort(key=lambda pair: (_outline_teaching_flow_rank(pair[1]), pair[0]))
+    return [node for _, node in indexed]
 
 
 def _ensure_notebooklm_chapter_root(items: list[dict[str, Any]], *, unit_title: str) -> list[dict[str, Any]]:

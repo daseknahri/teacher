@@ -328,6 +328,7 @@ function _openUnitBlueprintModal(unit, blueprint) {
   const sourceIds = Array.isArray(providerContext?.source_ids) ? providerContext.source_ids : [];
   const selectedStructureSource = String(rawProviderPayload?.selected_structure_source || unitMap?.selected_outline_source || '').trim();
   const unitMapOutline = Array.isArray(unitMap?.ordered_outline) ? unitMap.ordered_outline : [];
+  const sectionPlans = Array.isArray(unitMap?.section_plans) ? unitMap.section_plans.filter(Boolean) : [];
   const renderMapList = (title, rows) => {
     const values = Array.isArray(rows) ? rows.filter(Boolean) : [];
     if (!values.length) return '';
@@ -339,6 +340,29 @@ function _openUnitBlueprintModal(unit, blueprint) {
         </ul>
       </div>
     `;
+  };
+  const renderSectionPlans = plans => {
+    const values = Array.isArray(plans) ? plans.filter(Boolean) : [];
+    if (!values.length) {
+      return '<p class="text-[12px] text-slate-500">No reusable section plans were derived from this unit yet.</p>';
+    }
+    return values.map(plan => `
+      <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+        <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(plan?.section_title || 'Section'))}</p>
+        ${Array.isArray(plan?.delivery_sequence) && plan.delivery_sequence.length ? `
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mt-2 mb-1">Delivery sequence</p>
+          <ol class="list-decimal pl-5 text-[12px] text-slate-700 space-y-1">
+            ${plan.delivery_sequence.map(value => `<li>${_escapeHtml(String(value || ''))}</li>`).join('')}
+          </ol>
+        ` : ''}
+        <div class="grid gap-3 md:grid-cols-2 xl:grid-cols-4 mt-3">
+          ${renderMapList('Activities', plan?.activity_titles)}
+          ${renderMapList('Content blocks', plan?.content_titles)}
+          ${renderMapList('Examples', plan?.example_titles)}
+          ${renderMapList('Exercises', plan?.exercise_titles)}
+        </div>
+      </div>
+    `).join('');
   };
 
   const overlay = document.createElement('div');
@@ -402,6 +426,13 @@ function _openUnitBlueprintModal(unit, blueprint) {
           <div class="mt-4">
             <h4 class="text-[13px] font-semibold text-slate-800 mb-2">Ordered unit outline</h4>
             ${unitMapOutline.length ? _renderBlueprintTree(unitMapOutline) : '<p class="text-[12px] text-slate-500">No ordered outline was saved in the unit map.</p>'}
+          </div>
+          <div class="mt-4">
+            <h4 class="text-[13px] font-semibold text-slate-800 mb-2">Derived section plans</h4>
+            <p class="text-[12px] text-slate-500 mb-3">These section plans are derived from the saved unit map so we can reuse the same NotebookLM understanding later for write-ups, teaching material, and guided teacher help.</p>
+            <div class="space-y-3">
+              ${renderSectionPlans(sectionPlans)}
+            </div>
           </div>
         </div>
 

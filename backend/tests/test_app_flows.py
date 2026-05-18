@@ -2482,6 +2482,49 @@ def test_notebooklm_outline_normalizer_drops_teacher_meta_sections():
     assert "Gestion du temps" not in titles
 
 
+def test_notebooklm_outline_normalizer_reorders_student_flow_and_drops_broader_teacher_meta():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    items = workflow_generation._normalize_notebooklm_outline_items(
+        [
+            {
+                "title": "Les nombres rationnels : Somme et difference",
+                "kind": "chapter",
+                "children": [
+                    {"title": "Evaluation", "kind": "section", "children": []},
+                    {"title": "Competences visees", "kind": "section", "children": []},
+                    {
+                        "title": "Contenu de la lecon",
+                        "kind": "section",
+                        "children": [
+                            {
+                                "title": "1) Les denominateurs sont les memes",
+                                "kind": "section",
+                                "children": [
+                                    {"title": "Exercices", "kind": "exercise", "children": []},
+                                    {"title": "Exemples", "kind": "example", "children": []},
+                                    {"title": "Regle", "kind": "property", "children": []},
+                                ],
+                            }
+                        ],
+                    },
+                    {"title": "Activites", "kind": "other", "children": []},
+                    {"title": "Demarche pedagogique", "kind": "section", "children": []},
+                ],
+            }
+        ],
+        unit_type=WorkflowUnitType.CHAPTER,
+        unit_title="Les nombres rationnels : Somme et difference",
+    )
+
+    root_children = items[0]["children"]
+    child_titles = [str(row.get("title", "")) for row in root_children]
+    assert child_titles == ["Activites", "Contenu de la lecon", "Evaluation"]
+    nested_titles = [str(row.get("title", "")) for row in root_children[1]["children"][0]["children"]]
+    assert nested_titles == ["Regle", "Exemples", "Exercices"]
+
+
 def test_generate_unit_checklist_package_aligns_checklist_with_stronger_unit_map_outline(monkeypatch):
     from app.models import WorkflowUnitType
     from app.services import workflow_generation
@@ -2551,6 +2594,66 @@ def test_generate_unit_checklist_package_aligns_checklist_with_stronger_unit_map
     assert "Comprendre la progression de l'unite" in package["unit_map"]["teaching_goals"]
     assert package["unit_map"]["selected_outline_source"] == "unit_map"
     assert package["unit_map"]["ordered_outline"][0]["children"][0]["title"] == "Activites"
+
+
+def test_unit_map_section_plans_capture_delivery_sequence(monkeypatch):
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    outline_items = [
+        {
+            "title": "Les nombres rationnels : Somme et difference",
+            "kind": "chapter",
+            "children": [
+                {
+                    "title": "Contenu de la lecon",
+                    "kind": "section",
+                    "children": [
+                        {
+                            "title": "1) Les denominateurs sont les memes",
+                            "kind": "section",
+                            "children": [
+                                {"title": "Exercices", "kind": "exercise", "children": []},
+                                {"title": "Exemples", "kind": "example", "children": []},
+                                {"title": "Regle", "kind": "property", "children": []},
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    ]
+
+    monkeypatch.setattr(workflow_generation.app_config, "OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        workflow_generation,
+        "_notebooklm_generate_checklist",
+        lambda **kwargs: (
+            outline_items,
+            {"provider": "notebooklm"},
+            {"response_mode": "outline", "responses": []},
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_generation,
+        "_openai_generate_checklist",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("shadow_should_not_run")),
+    )
+
+    package = workflow_generation.generate_unit_checklist_package(
+        unit_type=WorkflowUnitType.CHAPTER,
+        title="Les nombres rationnels : Somme et difference",
+        source_text="Contenu de la lecon\n1) Les denominateurs sont les memes\nRegle\nExemples\nExercices",
+        provider="notebooklm",
+    )
+
+    section_plans = package["unit_map"]["section_plans"]
+    matching = next(plan for plan in section_plans if plan["section_title"] == "1) Les denominateurs sont les memes")
+    assert matching["delivery_sequence"] == ["Regle", "Exemples", "Exercices"]
+    assert matching["content_titles"] == ["Regle"]
+    assert matching["example_titles"] == ["Exemples"]
+    assert matching["exercise_titles"] == ["Exercices"]
 
 
 def test_workflow_unit_start_returns_clear_error_when_notebooklm_refresh_is_required(client, monkeypatch):
