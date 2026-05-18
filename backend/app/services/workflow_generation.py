@@ -1505,7 +1505,9 @@ def _normalize_unit_assistant_action(value: Any) -> str:
 
 def _normalize_unit_material_type(value: Any) -> str:
     material_type = re.sub(r"[^a-z_]+", "_", str(value or "").strip().lower()).strip("_")
-    return material_type or "study_guide"
+    if material_type in {"study_guide", "formative_quiz", "mastery_quiz_hard", "revision_flashcards"}:
+        return material_type
+    return "study_guide"
 
 
 def _normalize_unit_assistant_rows(values: Any, *, limit: int = 8) -> list[str]:
@@ -1781,6 +1783,49 @@ def _normalize_unit_material_payload(
     }
 
 
+def _unit_material_default_title(material_type: str) -> str:
+    normalized = _normalize_unit_material_type(material_type)
+    mapping = {
+        "study_guide": "Study guide",
+        "formative_quiz": "Formative quiz",
+        "mastery_quiz_hard": "Mastery quiz",
+        "revision_flashcards": "Revision flashcards",
+    }
+    return mapping.get(normalized, "Unit material")
+
+
+def _find_material_studio_artifact(unit_map: dict[str, Any] | None, material_type: str) -> dict[str, Any] | None:
+    if not isinstance(unit_map, dict):
+        return None
+    studio = unit_map.get("material_studio")
+    if not isinstance(studio, dict):
+        return None
+    rows = studio.get("unit_artifacts")
+    if not isinstance(rows, list):
+        return None
+    target = _normalize_unit_material_type(material_type)
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if _normalize_unit_material_type(row.get("id")) == target:
+            return row
+    return None
+
+
+def _normalize_quiz_quantity_option(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"fewer", "standard", "more"}:
+        return normalized
+    return "standard"
+
+
+def _normalize_quiz_difficulty_option(value: Any) -> str:
+    normalized = str(value or "").strip().lower()
+    if normalized in {"easy", "medium", "hard"}:
+        return normalized
+    return "medium"
+
+
 def _notebooklm_generate_unit_assistant(
     *,
     unit_title: str,
@@ -2019,11 +2064,11 @@ async def _notebooklm_generate_unit_material_async(
     requested_provider: str,
 ) -> dict[str, Any]:
     normalized_material_type = _normalize_unit_material_type(material_type)
-    if normalized_material_type != "study_guide":
+    if normalized_material_type not in {"study_guide", "formative_quiz", "mastery_quiz_hard", "revision_flashcards"}:
         return _normalize_unit_material_payload(
             requested_provider=requested_provider,
             material_type=normalized_material_type,
-            title="Study guide",
+            title=_unit_material_default_title(normalized_material_type),
             notebook_artifact_id=None,
             source_payload={"unit_title": _normalize_outline_title(unit_title) or None},
             content_markdown=None,
@@ -2045,6 +2090,16 @@ async def _notebooklm_generate_unit_material_async(
     markdown_text = ""
     raw_provider_response: dict[str, Any] = {}
     temp_output_path = ""
+    artifact_plan = _find_material_studio_artifact(unit_map, normalized_material_type)
+    artifact_title = _normalize_content_block_text(
+        (artifact_plan or {}).get("title"),
+        limit=180,
+    ) or _unit_material_default_title(normalized_material_type)
+    notebooklm_method = str((artifact_plan or {}).get("notebooklm_method") or "").strip().lower()
+    artifact_options = (artifact_plan or {}).get("options") if isinstance((artifact_plan or {}).get("options"), dict) else {}
+    extra_instructions = ""
+    download_handler = ""
+    download_format = ""
 
     try:
         async with client as opened:
@@ -2067,17 +2122,81 @@ async def _notebooklm_generate_unit_material_async(
                 source_ids=source_ids,
                 notebook_title=notebook_title,
             )
-            extra_instructions = _build_notebooklm_study_guide_instructions(
-                unit_title=unit_title,
-                unit_map=unit_map,
-                content_blocks=content_blocks,
-            )
-            generation = await opened.artifacts.generate_study_guide(
-                notebook_id,
-                source_ids=source_ids or None,
-                language="fr",
-                extra_instructions=extra_instructions,
-            )
+            if normalized_material_type == "study_guide":
+                extra_instructions = _build_notebooklm_study_guide_instructions(
+                    unit_title=unit_title,
+                    unit_map=unit_map,
+                    content_blocks=content_blocks,
+                )
+                generation = await opened.artifacts.generate_study_guide(
+                    notebook_id,
+                    source_ids=source_ids or None,
+                    language="fr",
+                    extra_instructions=extra_instructions,
+                )
+                download_handler = "report"
+                download_format = "markdown"
+            elif normalized_material_type in {"formative_quiz", "mastery_quiz_hard"}:
+                from notebooklm.types import QuizDifficulty, QuizQuantity
+
+                extra_instructions = _normalize_content_block_text(
+                    (artifact_plan or {}).get("instructions"),
+                    limit=1200,
+                ) or (
+                    f"Generate a classroom-ready quiz for '{unit_title}' that follows the teaching order and stays within the taught content."
+                )
+                quantity_key = _normalize_quiz_quantity_option(artifact_options.get("quantity"))
+                difficulty_key = _normalize_quiz_difficulty_option(artifact_options.get("difficulty"))
+                quantity_enum = {
+                    "fewer": QuizQuantity.FEWER,
+                    "standard": QuizQuantity.STANDARD,
+                    "more": QuizQuantity.STANDARD,
+                }.get(quantity_key, QuizQuantity.STANDARD)
+                difficulty_enum = {
+                    "easy": QuizDifficulty.EASY,
+                    "medium": QuizDifficulty.MEDIUM,
+                    "hard": QuizDifficulty.HARD,
+                }.get(difficulty_key, QuizDifficulty.MEDIUM)
+                generation = await opened.artifacts.generate_quiz(
+                    notebook_id,
+                    source_ids=source_ids or None,
+                    instructions=extra_instructions,
+                    quantity=quantity_enum,
+                    difficulty=difficulty_enum,
+                )
+                download_handler = "quiz"
+                download_format = "markdown"
+            else:
+                from notebooklm.types import QuizDifficulty, QuizQuantity
+
+                extra_instructions = _normalize_content_block_text(
+                    (artifact_plan or {}).get("instructions"),
+                    limit=1200,
+                ) or (
+                    f"Generate revision flashcards for '{unit_title}' that follow the teaching order and focus on key ideas, rules, and examples."
+                )
+                quantity_key = _normalize_quiz_quantity_option(artifact_options.get("quantity"))
+                difficulty_key = _normalize_quiz_difficulty_option(artifact_options.get("difficulty"))
+                quantity_enum = {
+                    "fewer": QuizQuantity.FEWER,
+                    "standard": QuizQuantity.STANDARD,
+                    "more": QuizQuantity.STANDARD,
+                }.get(quantity_key, QuizQuantity.STANDARD)
+                difficulty_enum = {
+                    "easy": QuizDifficulty.EASY,
+                    "medium": QuizDifficulty.MEDIUM,
+                    "hard": QuizDifficulty.HARD,
+                }.get(difficulty_key, QuizDifficulty.MEDIUM)
+                generation = await opened.artifacts.generate_flashcards(
+                    notebook_id,
+                    source_ids=source_ids or None,
+                    instructions=extra_instructions,
+                    quantity=quantity_enum,
+                    difficulty=difficulty_enum,
+                )
+                download_handler = "flashcards"
+                download_format = "markdown"
+
             artifact_id = str(getattr(generation, "task_id", "") or "").strip()
             completed = await opened.artifacts.wait_for_completion(
                 notebook_id,
@@ -2110,11 +2229,14 @@ async def _notebooklm_generate_unit_material_async(
                 return _normalize_unit_material_payload(
                     requested_provider=requested_provider,
                     material_type=normalized_material_type,
-                    title="Study guide",
+                    title=artifact_title,
                     notebook_artifact_id=artifact_id,
                     source_payload={
                         "provider_context": provider_context,
+                        "artifact_plan": artifact_plan,
+                        "notebooklm_method": notebooklm_method or download_handler,
                         "extra_instructions": extra_instructions,
+                        "download_format": download_format,
                     },
                     content_markdown=None,
                     raw_provider_response=raw_provider_response,
@@ -2123,7 +2245,14 @@ async def _notebooklm_generate_unit_material_async(
 
             with tempfile.NamedTemporaryFile("w+b", suffix=".md", delete=False) as handle:
                 temp_output_path = handle.name
-            await opened.artifacts.download_report(notebook_id, temp_output_path, artifact_id=artifact_id)
+            if download_handler == "report":
+                await opened.artifacts.download_report(notebook_id, temp_output_path, artifact_id=artifact_id)
+            elif download_handler == "quiz":
+                await opened.artifacts.download_quiz(notebook_id, temp_output_path, artifact_id=artifact_id, output_format=download_format or "markdown")
+            elif download_handler == "flashcards":
+                await opened.artifacts.download_flashcards(notebook_id, temp_output_path, artifact_id=artifact_id, output_format=download_format or "markdown")
+            else:
+                raise RuntimeError(f"unsupported_download_handler:{download_handler}")
             markdown_text = Path(temp_output_path).read_text(encoding="utf-8", errors="ignore").strip()
     except Exception as exc:
         _record_notebooklm_health(
@@ -2135,10 +2264,11 @@ async def _notebooklm_generate_unit_material_async(
         return _normalize_unit_material_payload(
             requested_provider=requested_provider,
             material_type=normalized_material_type,
-            title="Study guide",
+            title=artifact_title,
             notebook_artifact_id=artifact_id,
             source_payload={
                 "provider_context": provider_context if isinstance(provider_context, dict) else None,
+                "artifact_plan": artifact_plan,
             },
             content_markdown=None,
             raw_provider_response=raw_provider_response or {"request_failed": str(exc)},
@@ -2162,15 +2292,14 @@ async def _notebooklm_generate_unit_material_async(
     return _normalize_unit_material_payload(
         requested_provider=requested_provider,
         material_type=normalized_material_type,
-        title="Study guide",
+        title=artifact_title,
         notebook_artifact_id=artifact_id,
         source_payload={
             "provider_context": provider_context,
-            "extra_instructions": _build_notebooklm_study_guide_instructions(
-                unit_title=unit_title,
-                unit_map=unit_map,
-                content_blocks=content_blocks,
-            ),
+            "artifact_plan": artifact_plan,
+            "notebooklm_method": notebooklm_method or download_handler,
+            "extra_instructions": extra_instructions,
+            "download_format": download_format,
         },
         content_markdown=markdown_text,
         raw_provider_response=raw_provider_response,

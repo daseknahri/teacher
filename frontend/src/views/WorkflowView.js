@@ -722,6 +722,47 @@ function _renderMaterialMarkdown(markdown) {
   return html.join('') || `<pre class="whitespace-pre-wrap text-[13px] text-slate-700 leading-6">${_escapeHtml(text)}</pre>`;
 }
 
+const SUPPORTED_UNIT_MATERIAL_TYPES = new Set([
+  'study_guide',
+  'formative_quiz',
+  'mastery_quiz_hard',
+  'revision_flashcards',
+]);
+
+function _buildUnitMaterialOptions(blueprint) {
+  const unitMap = blueprint?.unit_map_json && typeof blueprint.unit_map_json === 'object' ? blueprint.unit_map_json : {};
+  const studio = unitMap?.material_studio && typeof unitMap.material_studio === 'object' ? unitMap.material_studio : {};
+  const rows = Array.isArray(studio?.unit_artifacts) ? studio.unit_artifacts.filter(Boolean) : [];
+  const options = [];
+  const seen = new Set();
+  rows.forEach((row, index) => {
+    const id = String(row?.id || '').trim().toLowerCase();
+    if (!id || !SUPPORTED_UNIT_MATERIAL_TYPES.has(id) || seen.has(id)) return;
+    seen.add(id);
+    options.push({
+      id,
+      title: String(row?.title || id).trim() || id,
+      purpose: String(row?.purpose || '').trim(),
+      when_to_use: String(row?.when_to_use || '').trim(),
+      artifact_type: String(row?.artifact_type || '').trim(),
+      notebooklm_method: String(row?.notebooklm_method || '').trim(),
+      options: row?.options && typeof row.options === 'object' ? row.options : {},
+    });
+  });
+  if (!options.length) {
+    options.push({
+      id: 'study_guide',
+      title: 'Study guide',
+      purpose: 'Student revision support with key concepts, guided review, and practice prompts.',
+      when_to_use: 'After the checklist is reviewed or before revision week.',
+      artifact_type: 'report',
+      notebooklm_method: 'generate_study_guide',
+      options: {},
+    });
+  }
+  return options;
+}
+
 function _openUnitAssistantModal({ classId, unit, blueprint }) {
   const sections = _buildUnitAssistantSections(blueprint);
   const initialSection = sections[1] || sections[0];
@@ -957,7 +998,9 @@ function _openUnitAssistantModal({ classId, unit, blueprint }) {
   document.body.appendChild(overlay);
 }
 
-async function _openUnitStudyGuideModal({ classId, unit }) {
+async function _openUnitMaterialStudioModal({ classId, unit, blueprint }) {
+  const materialOptions = _buildUnitMaterialOptions(blueprint);
+  const initialMaterial = materialOptions[0] || { id: 'study_guide', title: 'Study guide' };
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
@@ -965,38 +1008,52 @@ async function _openUnitStudyGuideModal({ classId, unit }) {
       <div class="px-6 py-5 border-b border-slate-100">
         <div class="flex items-start justify-between gap-4">
           <div>
-            <h2 class="text-[17px] font-bold text-slate-800">Study Guide</h2>
+            <h2 class="text-[17px] font-bold text-slate-800">Material Studio</h2>
             <p class="text-[12px] text-slate-500 mt-1">
-              Generate a reusable NotebookLM study guide from this unit’s saved notebook context.
+              Generate teacher-ready material from this unit’s saved NotebookLM context.
             </p>
           </div>
-          <button id="unit-study-guide-close-top" class="btn btn-ghost btn-sm">Close</button>
+          <button id="unit-material-close-top" class="btn btn-ghost btn-sm">Close</button>
         </div>
       </div>
       <div class="px-6 py-4 max-h-[78vh] overflow-y-auto flex flex-col gap-4">
         <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
           <p class="text-[12px] text-slate-600"><span class="font-semibold">Unit:</span> ${_escapeHtml(String(unit?.title || 'Unit'))}</p>
-          <p class="text-[11px] text-slate-500 mt-1">This uses the same NotebookLM unit brain already saved for checklist extraction and guided teacher help.</p>
-          <p id="unit-study-guide-error" class="text-[12px] text-red-600 hidden mt-3"></p>
+          <p class="text-[11px] text-slate-500 mt-1">This uses the same NotebookLM unit brain already saved for checklist extraction, section plans, and guided teacher help.</p>
+          <div class="mt-4 flex flex-col gap-1">
+            <label class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Material</label>
+            <select id="unit-material-type"></select>
+            <p id="unit-material-purpose" class="text-[11px] text-slate-500 mt-1"></p>
+            <p id="unit-material-when" class="text-[11px] text-slate-500"></p>
+          </div>
+          <p id="unit-material-error" class="text-[12px] text-red-600 hidden mt-3"></p>
         </div>
-        <div id="unit-study-guide-result" class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-          <p class="text-[12px] text-slate-500">Loading saved study guide state...</p>
+        <div id="unit-material-result" class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+          <p class="text-[12px] text-slate-500">Loading saved material state...</p>
         </div>
       </div>
       <div class="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
-        <button id="unit-study-guide-close" class="btn btn-ghost">Close</button>
-        <button id="unit-study-guide-generate" class="btn btn-primary">Generate Study Guide</button>
+        <button id="unit-material-close" class="btn btn-ghost">Close</button>
+        <button id="unit-material-generate" class="btn btn-primary">Generate Material</button>
       </div>
     </div>
   `;
-  const errorNode = overlay.querySelector('#unit-study-guide-error');
-  const resultNode = overlay.querySelector('#unit-study-guide-result');
-  const submitButton = overlay.querySelector('#unit-study-guide-generate');
+  const errorNode = overlay.querySelector('#unit-material-error');
+  const resultNode = overlay.querySelector('#unit-material-result');
+  const submitButton = overlay.querySelector('#unit-material-generate');
+  const materialSelect = overlay.querySelector('#unit-material-type');
+  const purposeNode = overlay.querySelector('#unit-material-purpose');
+  const whenNode = overlay.querySelector('#unit-material-when');
   const state = {
     loading: false,
-    item: null,
+    materialType: String(initialMaterial.id || 'study_guide'),
+    itemsByType: {},
     error: '',
   };
+
+  function getSelectedMaterial() {
+    return materialOptions.find(row => row.id === state.materialType) || materialOptions[0] || initialMaterial;
+  }
 
   function cleanup() {
     overlay.remove();
@@ -1014,17 +1071,26 @@ async function _openUnitStudyGuideModal({ classId, unit }) {
   }
 
   function render() {
-    const item = state.item;
+    const selectedMaterial = getSelectedMaterial();
+    const item = state.itemsByType[state.materialType] || null;
+    materialSelect.innerHTML = materialOptions.map(row => `
+      <option value="${_escapeHtml(String(row.id))}" ${row.id === state.materialType ? 'selected' : ''}>
+        ${_escapeHtml(String(row.title || row.id))}
+      </option>
+    `).join('');
+    purposeNode.textContent = selectedMaterial?.purpose || '';
+    whenNode.textContent = selectedMaterial?.when_to_use ? `When to use: ${selectedMaterial.when_to_use}` : '';
+
     if (state.loading && !item) {
-      resultNode.innerHTML = '<p class="text-[12px] text-slate-500">Loading study guide...</p>';
+      resultNode.innerHTML = '<p class="text-[12px] text-slate-500">Loading material...</p>';
       return;
     }
     if (!item) {
-      resultNode.innerHTML = '<p class="text-[12px] text-slate-500">No study guide has been generated for this unit yet.</p>';
-      submitButton.textContent = 'Generate Study Guide';
+      resultNode.innerHTML = '<p class="text-[12px] text-slate-500">No saved material has been generated for this unit and selection yet.</p>';
+      submitButton.textContent = `Generate ${selectedMaterial?.title || 'Material'}`;
       return;
     }
-    submitButton.textContent = 'Re-generate Study Guide';
+    submitButton.textContent = `Re-generate ${selectedMaterial?.title || 'Material'}`;
     resultNode.innerHTML = `
       <div class="flex items-center gap-2 flex-wrap mb-4">
         <span class="badge badge-blue">${_escapeHtml(String(item.material_type || 'study_guide'))}</span>
@@ -1047,17 +1113,22 @@ async function _openUnitStudyGuideModal({ classId, unit }) {
     try {
       const rows = await api(`/workflow/classes/${classId}/units/${unit.id}/materials`);
       const list = Array.isArray(rows) ? rows : [];
-      state.item = list.find(row => String(row?.material_type || '').trim().toLowerCase() === 'study_guide') || null;
+      state.itemsByType = {};
+      list.forEach(row => {
+        const key = String(row?.material_type || '').trim().toLowerCase();
+        if (key) state.itemsByType[key] = row;
+      });
     } catch (err) {
       setError(String(err?.message || 'Failed to load unit materials.'));
-      state.item = null;
+      state.itemsByType = {};
     } finally {
       state.loading = false;
       render();
     }
   }
 
-  async function generateGuide() {
+  async function generateMaterial() {
+    const selectedMaterial = getSelectedMaterial();
     state.loading = true;
     submitButton.disabled = true;
     setError('');
@@ -1065,12 +1136,14 @@ async function _openUnitStudyGuideModal({ classId, unit }) {
     try {
       const item = await api(`/workflow/classes/${classId}/units/${unit.id}/materials/generate`, {
         method: 'POST',
-        body: JSON.stringify({ material_type: 'study_guide' }),
+        body: JSON.stringify({ material_type: state.materialType }),
       });
-      state.item = item && typeof item === 'object' ? item : null;
-      showToast('Study guide generated.', 'ok');
+      if (item && typeof item === 'object') {
+        state.itemsByType[state.materialType] = item;
+      }
+      showToast(`${selectedMaterial?.title || 'Material'} generated.`, 'ok');
     } catch (err) {
-      setError(String(err?.message || 'Failed to generate the study guide.'));
+      setError(String(err?.message || 'Failed to generate the material.'));
     } finally {
       state.loading = false;
       submitButton.disabled = false;
@@ -1081,9 +1154,13 @@ async function _openUnitStudyGuideModal({ classId, unit }) {
   overlay.addEventListener('click', event => {
     if (event.target === overlay) cleanup();
   });
-  overlay.querySelector('#unit-study-guide-close-top')?.addEventListener('click', cleanup);
-  overlay.querySelector('#unit-study-guide-close')?.addEventListener('click', cleanup);
-  submitButton.addEventListener('click', generateGuide);
+  overlay.querySelector('#unit-material-close-top')?.addEventListener('click', cleanup);
+  overlay.querySelector('#unit-material-close')?.addEventListener('click', cleanup);
+  materialSelect?.addEventListener('change', event => {
+    state.materialType = String(event?.target?.value || initialMaterial.id || 'study_guide').trim().toLowerCase();
+    render();
+  });
+  submitButton.addEventListener('click', generateMaterial);
   document.body.appendChild(overlay);
   await loadExisting();
 }
@@ -1708,7 +1785,7 @@ function _render(el, classId) {
                   <button id="btn-toggle-extraction-review" class="btn ${extractionReviewPending ? 'btn-primary' : 'btn-secondary'} btn-sm">${extractionReviewPending ? 'Approve Extraction' : 'Mark Needs Review'}</button>
                   <button id="btn-rerun-ai-extraction" class="btn btn-secondary btn-sm">Re-run AI</button>
                   <button id="btn-ask-unit-assistant" class="btn btn-secondary btn-sm">Ask This Unit</button>
-                  <button id="btn-generate-study-guide" class="btn btn-secondary btn-sm">Study Guide</button>
+                  <button id="btn-open-material-studio" class="btn btn-secondary btn-sm">Material Studio</button>
                   <button id="btn-view-ai-details" class="btn btn-secondary btn-sm">AI Details</button>
                   <button id="btn-plan-active-unit" class="btn btn-secondary btn-sm">Plan Sessions</button>
                   <button id="btn-add-item-root" class="btn btn-secondary btn-sm">Add Item</button>
@@ -3766,18 +3843,29 @@ function _bindWorkflowEvents(el, classId) {
     });
   });
 
-  el.querySelector('#btn-generate-study-guide')?.addEventListener('click', async function () {
+  el.querySelector('#btn-open-material-studio')?.addEventListener('click', async function () {
     const button = this;
-    await _withActionLock(`workflow:unit-study-guide:${classId}`, async () => {
+    await _withActionLock(`workflow:unit-material-studio:${classId}`, async () => {
       const unit = getActiveUnit();
       if (!unit?.id) return;
       _setBusy(button, true);
       try {
+        const state = await _loadUnitBlueprint(classId, unit.id, { force: false });
+        if (state?.error) {
+          showToast(state.error, 'error');
+          _setBusy(button, false);
+          return;
+        }
+        if (!state?.item) {
+          showToast('No saved unit intelligence is available for this unit yet.', 'warning');
+          _setBusy(button, false);
+          return;
+        }
         _setBusy(button, false);
-        await _openUnitStudyGuideModal({ classId, unit });
+        await _openUnitMaterialStudioModal({ classId, unit, blueprint: state.item });
       } catch (err) {
         _setBusy(button, false);
-        showToast(String(err?.message || 'Failed to open study guide generation.'), 'error');
+        showToast(String(err?.message || 'Failed to open Material Studio.'), 'error');
       }
     });
   });

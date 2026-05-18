@@ -1985,6 +1985,79 @@ def test_workflow_unit_material_generation_persists_study_guide(client, monkeypa
     assert isinstance(captured["unit_map"], dict)
 
 
+def test_workflow_unit_material_generation_persists_formative_quiz(client, monkeypatch):
+    from app.routers import workflow as workflow_router
+
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Quiz Material Class", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Les nombres rationnels",
+            "source_text": (
+                "Les nombres rationnels : Somme et difference\n"
+                "Activites\n"
+                "Contenu de la lecon\n"
+                "Evaluation\n"
+            ),
+        },
+    )
+    assert unit_resp.status_code == 201
+    unit_id = unit_resp.json()["id"]
+
+    captured: dict[str, object] = {}
+
+    def _fake_generate_unit_material_package(**kwargs):
+        captured.update(kwargs)
+        return {
+            "provider": "notebooklm",
+            "requested_provider": "notebooklm",
+            "model": "notebooklm-py",
+            "status": "ready",
+            "material_type": "formative_quiz",
+            "title": "Formative quiz",
+            "notebook_artifact_id": "artifact-quiz-1",
+            "source_payload": {
+                "provider_context": {"provider": "notebooklm", "notebook_id": "nb-unit-1", "source_ids": ["src-1"]},
+                "notebooklm_method": "generate_quiz",
+            },
+            "content_markdown": "# Quiz formatif\n\n- Question 1",
+            "raw_provider_response": {"completion": {"status": "completed"}},
+            "error_message": None,
+        }
+
+    monkeypatch.setattr(workflow_router, "generate_unit_material_package", _fake_generate_unit_material_package)
+
+    generate_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/materials/generate",
+        headers=headers,
+        json={"material_type": "formative_quiz"},
+    )
+    assert generate_resp.status_code == 200
+    payload = generate_resp.json()
+    assert payload["material_type"] == "formative_quiz"
+    assert payload["notebook_artifact_id"] == "artifact-quiz-1"
+    assert payload["content_markdown"].startswith("# Quiz formatif")
+
+    materials_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/materials",
+        headers=headers,
+    )
+    assert materials_resp.status_code == 200
+    rows = materials_resp.json()
+    assert len(rows) == 1
+    assert rows[0]["material_type"] == "formative_quiz"
+    assert rows[0]["source_payload"]["notebooklm_method"] == "generate_quiz"
+
+    assert captured["material_type"] == "formative_quiz"
+    assert "content_blocks" in captured
+
+
 def test_workflow_unit_reextract_is_blocked_after_teaching_starts(client):
     from app.database import SessionLocal
     from app.models import ClassSession

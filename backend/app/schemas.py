@@ -744,7 +744,10 @@ class WorkflowUnitAssistantOut(BaseModel):
 
 
 class WorkflowUnitMaterialGenerateIn(BaseModel):
-    material_type: str = Field(default="study_guide", pattern="^(study_guide)$")
+    material_type: str = Field(
+        default="study_guide",
+        pattern="^(study_guide|formative_quiz|mastery_quiz_hard|revision_flashcards)$",
+    )
 
 
 class WorkflowUnitMaterialOut(BaseModel):
