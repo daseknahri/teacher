@@ -2823,6 +2823,10 @@ def test_generate_unit_checklist_package_keeps_notebooklm_content_blocks(monkeyp
     playbook_entry = next(entry for entry in teacher_playbook if entry["section_title"] == "1) Les denominateurs sont les memes")
     assert "generate_harder_practice" in playbook_entry["available_actions"]
     assert any("plus difficiles" in row for row in playbook_entry["suggested_requests"])
+    material_studio = package["unit_map"]["material_studio"]
+    assert any(row["id"] == "study_guide" for row in material_studio["unit_artifacts"])
+    assert any(row["artifact_type"] == "slide_deck" for row in material_studio["unit_artifacts"])
+    assert any(row["section_title"] == "1) Les denominateurs sont les memes" for row in material_studio["teacher_artifacts"])
     rendered_titles = {node["title"] for node in workflow_generation._flatten_checklist_nodes(package["items"])}
     assert "Objectifs d'apprentissage" not in rendered_titles
     assert "Activite 1 : Calculer" in rendered_titles

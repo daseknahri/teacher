@@ -2682,6 +2682,11 @@ def _apply_content_blocks_to_unit_map(
     fallback_plans = updated.get("section_plans") if isinstance(updated.get("section_plans"), list) else None
     updated["section_plans"] = _build_unit_section_plans_from_content_blocks(content_blocks, fallback_plans=fallback_plans)
     updated["teacher_playbook"] = _build_teacher_playbook_from_section_plans(updated["section_plans"])
+    updated["material_studio"] = _build_material_studio_from_unit_map(
+        updated,
+        content_blocks=content_blocks,
+        teacher_playbook=updated["teacher_playbook"],
+    )
     if not updated.get("activity_blocks"):
         updated["activity_blocks"] = [plan.get("section_title") for plan in updated["section_plans"] if plan.get("activity_titles")]
     if not updated.get("assessment_blocks"):
@@ -2865,6 +2870,183 @@ def _build_teacher_playbook_from_section_plans(
             }
         )
     return playbook[:24]
+
+
+def _build_material_studio_from_unit_map(
+    unit_map: dict[str, Any] | None,
+    *,
+    content_blocks: list[dict[str, Any]] | None,
+    teacher_playbook: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    if not isinstance(unit_map, dict):
+        return {"unit_artifacts": [], "teacher_artifacts": []}
+
+    unit_title = _normalize_outline_title(unit_map.get("unit_title")) or "This unit"
+    section_plans = unit_map.get("section_plans") if isinstance(unit_map.get("section_plans"), list) else []
+    blocks = [row for row in (content_blocks or []) if isinstance(row, dict)]
+    playbook_rows = [row for row in (teacher_playbook or []) if isinstance(row, dict)]
+
+    has_examples = any(bool(plan.get("example_titles")) for plan in section_plans if isinstance(plan, dict))
+    has_exercises = any(bool(plan.get("exercise_titles")) for plan in section_plans if isinstance(plan, dict))
+    has_activities = any(bool(plan.get("activity_titles")) for plan in section_plans if isinstance(plan, dict))
+    has_content = any(bool(plan.get("content_titles")) for plan in section_plans if isinstance(plan, dict))
+    has_formal_concepts = any(
+        _normalize_content_block_kind(block.get("kind")) in {"definition", "property", "lesson", "content"}
+        for block in blocks
+    )
+
+    unit_artifacts: list[dict[str, Any]] = [
+        {
+            "id": "study_guide",
+            "title": "Study guide",
+            "artifact_type": "report",
+            "notebooklm_method": "generate_study_guide",
+            "purpose": "Student revision support with key concepts, guided review, and practice prompts.",
+            "when_to_use": "After the unit checklist is reviewed or before revision week.",
+            "instructions": (
+                f"Create a study guide for '{unit_title}' that keeps the classroom order, "
+                "focuses on student-visible content, includes short guided review questions, "
+                "and ends with useful practice prompts."
+            ),
+        },
+        {
+            "id": "presenter_slides",
+            "title": "Presenter slide deck",
+            "artifact_type": "slide_deck",
+            "notebooklm_method": "generate_slide_deck",
+            "purpose": "Clean teacher-facing slide deck for live presentation.",
+            "when_to_use": "Before teaching the unit or before a recap lesson.",
+            "instructions": (
+                f"Generate presenter slides for '{unit_title}' with a clear learning progression: "
+                "opening activity, key rule or concept, guided examples, practice, and recap. "
+                "Prefer concise talk-track slides rather than dense text."
+            ),
+            "options": {"format": "presenter", "length": "default"},
+        },
+        {
+            "id": "detailed_slides",
+            "title": "Detailed slide deck",
+            "artifact_type": "slide_deck",
+            "notebooklm_method": "generate_slide_deck",
+            "purpose": "Fuller self-contained deck that can be shared or read on its own.",
+            "when_to_use": "For substitute teaching, student review, or sharing material with colleagues.",
+            "instructions": (
+                f"Generate a detailed deck for '{unit_title}' with complete step-by-step explanations, "
+                "well-ordered worked examples, and clear transitions between sections."
+            ),
+            "options": {"format": "detailed", "length": "default"},
+        },
+    ]
+
+    if has_content or has_examples or has_exercises:
+        unit_artifacts.extend(
+            [
+                {
+                    "id": "formative_quiz",
+                    "title": "Formative quiz",
+                    "artifact_type": "quiz",
+                    "notebooklm_method": "generate_quiz",
+                    "purpose": "Quick classroom check for understanding.",
+                    "when_to_use": "At the end of a lesson or between two sections.",
+                    "instructions": (
+                        f"Generate a medium-difficulty formative quiz for '{unit_title}' with short, classroom-friendly questions "
+                        "that follow the unit sequence and test understanding before long exercises."
+                    ),
+                    "options": {"difficulty": "medium", "quantity": "standard"},
+                },
+                {
+                    "id": "mastery_quiz_hard",
+                    "title": "Mastery quiz",
+                    "artifact_type": "quiz",
+                    "notebooklm_method": "generate_quiz",
+                    "purpose": "Harder practice to stretch strong students.",
+                    "when_to_use": "After core instruction or for enrichment work.",
+                    "instructions": (
+                        f"Generate a harder quiz for '{unit_title}' that increases reasoning demand, "
+                        "keeps the same mathematical ideas, and avoids jumping outside the taught content."
+                    ),
+                    "options": {"difficulty": "hard", "quantity": "more"},
+                },
+                {
+                    "id": "revision_flashcards",
+                    "title": "Revision flashcards",
+                    "artifact_type": "flashcards",
+                    "notebooklm_method": "generate_flashcards",
+                    "purpose": "Fast review of terms, properties, and core procedures.",
+                    "when_to_use": "Before exams or as quick retrieval practice.",
+                    "instructions": (
+                        f"Generate flashcards for '{unit_title}' that cover the key vocabulary, rules, and worked patterns "
+                        "students must remember."
+                    ),
+                    "options": {"difficulty": "medium", "quantity": "standard"},
+                },
+            ]
+        )
+
+    if has_formal_concepts and has_examples:
+        unit_artifacts.append(
+            {
+                "id": "concept_infographic",
+                "title": "Concept infographic",
+                "artifact_type": "infographic",
+                "notebooklm_method": "generate_infographic",
+                "purpose": "Visual summary of the main concept flow for display or student revision.",
+                "when_to_use": "For wall display, student handout, or revision board.",
+                "instructions": (
+                    f"Create an instructional infographic for '{unit_title}' that highlights the core concepts, "
+                    "important rules, and one or two representative examples in the teaching order."
+                ),
+                "options": {"orientation": "portrait", "detail": "standard", "style": "instructional"},
+            }
+        )
+
+    if has_activities or has_content:
+        unit_artifacts.append(
+            {
+                "id": "teacher_prep_audio",
+                "title": "Teacher prep audio",
+                "artifact_type": "audio",
+                "notebooklm_method": "generate_audio",
+                "purpose": "Fast teacher-facing preparation summary before class.",
+                "when_to_use": "The evening before class or before a recap session.",
+                "instructions": (
+                    f"Create a brief teacher preparation audio for '{unit_title}' that summarizes the progression, "
+                    "common sticking points, and what to emphasize during the lesson."
+                ),
+                "options": {"format": "brief", "length": "short"},
+            }
+        )
+
+    teacher_artifacts: list[dict[str, Any]] = []
+    for row in playbook_rows[:12]:
+        section_title = _normalize_outline_title(row.get("section_title"))
+        section_path = [
+            _normalize_outline_title(value)
+            for value in (row.get("section_path") if isinstance(row.get("section_path"), list) else [])
+            if _normalize_outline_title(value)
+        ]
+        if not section_title:
+            continue
+        actions = [str(value).strip() for value in (row.get("available_actions") or []) if str(value).strip()]
+        suggestions = [str(value).strip() for value in (row.get("suggested_requests") or []) if str(value).strip()]
+        teacher_artifacts.append(
+            {
+                "section_title": section_title,
+                "section_path": section_path,
+                "best_actions": actions[:5],
+                "suggested_requests": suggestions[:4],
+                "recommended_next_step": (
+                    "Start with a simpler explanation or guided example before asking for harder practice."
+                    if "generate_harder_practice" in actions and "simplify_explanation" in actions
+                    else "Use the strongest available guided action for this section."
+                ),
+            }
+        )
+
+    return {
+        "unit_artifacts": unit_artifacts,
+        "teacher_artifacts": teacher_artifacts,
+    }
 
 
 def _select_best_notebooklm_outline_candidate(

@@ -343,6 +343,7 @@ function _openUnitBlueprintModal(unit, blueprint) {
   const unitMapOutline = Array.isArray(unitMap?.ordered_outline) ? unitMap.ordered_outline : [];
   const sectionPlans = Array.isArray(unitMap?.section_plans) ? unitMap.section_plans.filter(Boolean) : [];
   const teacherPlaybook = Array.isArray(unitMap?.teacher_playbook) ? unitMap.teacher_playbook.filter(Boolean) : [];
+  const materialStudio = unitMap?.material_studio && typeof unitMap.material_studio === 'object' ? unitMap.material_studio : {};
   const renderMapList = (title, rows) => {
     const values = Array.isArray(rows) ? rows.filter(Boolean) : [];
     if (!values.length) return '';
@@ -435,6 +436,53 @@ function _openUnitBlueprintModal(unit, blueprint) {
       </div>
     `).join('');
   };
+  const renderMaterialStudio = studio => {
+    const unitArtifacts = Array.isArray(studio?.unit_artifacts) ? studio.unit_artifacts.filter(Boolean) : [];
+    const teacherArtifacts = Array.isArray(studio?.teacher_artifacts) ? studio.teacher_artifacts.filter(Boolean) : [];
+    if (!unitArtifacts.length && !teacherArtifacts.length) {
+      return '<p class="text-[12px] text-slate-500">No NotebookLM material studio plan was derived for this unit yet.</p>';
+    }
+    return `
+      ${unitArtifacts.length ? `
+        <div>
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Unit-level artifacts</p>
+          <div class="space-y-3">
+            ${unitArtifacts.map(row => `
+              <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(row?.title || 'Artifact'))}</p>
+                  ${row?.artifact_type ? `<span class="badge badge-blue">${_escapeHtml(String(row.artifact_type))}</span>` : ''}
+                  ${row?.notebooklm_method ? `<span class="badge badge-gray">${_escapeHtml(String(row.notebooklm_method))}</span>` : ''}
+                </div>
+                ${row?.purpose ? `<p class="text-[12px] text-slate-700 mt-2">${_escapeHtml(String(row.purpose || ''))}</p>` : ''}
+                ${row?.when_to_use ? `<p class="text-[11px] text-slate-500 mt-2"><span class="font-semibold">When to use:</span> ${_escapeHtml(String(row.when_to_use || ''))}</p>` : ''}
+                ${row?.instructions ? `<p class="text-[11px] text-slate-500 mt-2"><span class="font-semibold">Generation instructions:</span> ${_escapeHtml(String(row.instructions || ''))}</p>` : ''}
+                ${row?.options && typeof row.options === 'object' && Object.keys(row.options).length ? `
+                  <p class="text-[11px] text-slate-500 mt-2"><span class="font-semibold">Options:</span> ${_escapeHtml(Object.entries(row.options).map(([key, value]) => `${key}=${value}`).join(', '))}</p>
+                ` : ''}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+      ${teacherArtifacts.length ? `
+        <div class="mt-4">
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 mb-2">Section-level teaching paths</p>
+          <div class="space-y-3">
+            ${teacherArtifacts.map(row => `
+              <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(row?.section_title || 'Section'))}</p>
+                ${Array.isArray(row?.section_path) && row.section_path.length ? `<p class="text-[11px] text-slate-500 mt-1"><span class="font-semibold">Path:</span> ${_escapeHtml(row.section_path.join(' -> '))}</p>` : ''}
+                ${renderMapList('Best actions', row?.best_actions)}
+                ${renderMapList('Suggested requests', row?.suggested_requests)}
+                ${row?.recommended_next_step ? `<p class="text-[11px] text-slate-500 mt-2"><span class="font-semibold">Recommended next step:</span> ${_escapeHtml(String(row.recommended_next_step || ''))}</p>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+    `;
+  };
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -517,6 +565,13 @@ function _openUnitBlueprintModal(unit, blueprint) {
             <p class="text-[12px] text-slate-500 mb-3">This is the first reusable action layer for the unit. It shows what we can later ask NotebookLM to do for each section: easier practice, harder practice, explanation help, quick quiz, slides, and more.</p>
             <div class="space-y-3">
               ${renderTeacherPlaybook(teacherPlaybook)}
+            </div>
+          </div>
+          <div class="mt-4">
+            <h4 class="text-[13px] font-semibold text-slate-800 mb-2">Material studio plan</h4>
+            <p class="text-[12px] text-slate-500 mb-3">This is the forward plan for NotebookLM-native content generation from the same unit context: study guides, quizzes, flashcards, slide decks, infographics, and teacher prep outputs.</p>
+            <div class="space-y-3">
+              ${renderMaterialStudio(materialStudio)}
             </div>
           </div>
         </div>
