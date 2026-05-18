@@ -4,7 +4,7 @@
  */
 import { api, downloadWithAuth } from '../api/client.js';
 import { getSelectedId, getStudents } from '../state/class.js';
-import { getActiveUnit, getCalendar, setCalendar } from '../state/workflow.js';
+import { getCalendar, setCalendar } from '../state/workflow.js';
 import { showToast } from '../utils/toast.js';
 import { mountRetryCard } from '../utils/retryView.js';
 import { fmtDate, fmtTime } from '../utils/format.js';
@@ -2681,8 +2681,7 @@ function _renderCalendar(el, classId) {
     ? selectedDetail.workflow_writeup
     : null;
   const selectedWriteupError = selectedDetail?.workflow_writeup_error ? String(selectedDetail.workflow_writeup_error) : '';
-  const activeWorkflowUnitId = Number(getActiveUnit()?.id || 0) || null;
-  const canShortcutToWorkflowTools = selectedEvent?.unit_id != null && activeWorkflowUnitId != null && Number(selectedEvent.unit_id) === Number(activeWorkflowUnitId);
+  const canShortcutToWorkflowTools = selectedEvent?.unit_id != null;
   const selectedBlueprintTree = selectedBlueprint?.blueprint_json && typeof selectedBlueprint.blueprint_json === 'object' && Array.isArray(selectedBlueprint.blueprint_json.items)
     ? selectedBlueprint.blueprint_json.items
     : [];

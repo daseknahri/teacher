@@ -91,6 +91,38 @@ function _consumeWorkflowViewIntent(expectedUnitId) {
   }
 }
 
+function _peekWorkflowViewIntent() {
+  try {
+    const raw = sessionStorage.getItem(WORKFLOW_VIEW_INTENT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const ageMs = Date.now() - Number(parsed?.created_at || 0);
+    if (!parsed || typeof parsed !== 'object' || ageMs > 5 * 60 * 1000) {
+      sessionStorage.removeItem(WORKFLOW_VIEW_INTENT_KEY);
+      return null;
+    }
+    const intentUnitId = Number(parsed.unit_id || 0);
+    if (!Number.isFinite(intentUnitId) || intentUnitId <= 0) return null;
+    return {
+      action: String(parsed.action || '').trim().toLowerCase(),
+      unit_id: intentUnitId,
+      source: String(parsed.source || '').trim().toLowerCase(),
+      session_id: Number(parsed.session_id || 0) || null,
+      session_label: String(parsed.session_label || '').trim(),
+      session_date: String(parsed.session_date || '').trim(),
+      section_title: String(parsed.section_title || '').trim(),
+      section_path: Array.isArray(parsed.section_path)
+        ? parsed.section_path.map(value => String(value || '').trim()).filter(Boolean)
+        : [],
+      teacher_request: String(parsed.teacher_request || '').trim(),
+      assistant_action: String(parsed.assistant_action || '').trim().toLowerCase(),
+    };
+  } catch {
+    try { sessionStorage.removeItem(WORKFLOW_VIEW_INTENT_KEY); } catch {}
+    return null;
+  }
+}
+
 function _setCalendarViewIntent(intent) {
   try {
     sessionStorage.setItem(CALENDAR_VIEW_INTENT_KEY, JSON.stringify({
@@ -1992,6 +2024,7 @@ export async function renderWorkflowView() {
   _showChrome();
   const el = document.getElementById('app-content');
   const classId = getSelectedId();
+  const pendingWorkflowIntent = _peekWorkflowViewIntent();
 
   if (!classId) {
     el.innerHTML = `<div class="view-container">
@@ -2006,7 +2039,27 @@ export async function renderWorkflowView() {
   el.innerHTML = `<div class="view-container"><div class="skeleton h-96 rounded-2xl animate-pulse"></div></div>`;
 
   try {
-    const ws = await api(`/workflow/classes/${classId}`);
+    let ws = await api(`/workflow/classes/${classId}`);
+    if (pendingWorkflowIntent?.unit_id) {
+      const activeUnitId = Number(ws?.active_unit?.id || 0) || null;
+      const targetUnitId = Number(pendingWorkflowIntent.unit_id || 0) || null;
+      if (targetUnitId && activeUnitId !== targetUnitId) {
+        if (!activeUnitId) {
+          const targetClosed = Array.isArray(ws?.closed_units)
+            ? ws.closed_units.find(row => Number(row?.id || 0) === targetUnitId)
+            : null;
+          if (targetClosed) {
+            await api(`/workflow/classes/${classId}/units/${targetUnitId}/reopen`, { method: 'POST' });
+            ws = await api(`/workflow/classes/${classId}`);
+          } else {
+            try { sessionStorage.removeItem(WORKFLOW_VIEW_INTENT_KEY); } catch {}
+          }
+        } else {
+          try { sessionStorage.removeItem(WORKFLOW_VIEW_INTENT_KEY); } catch {}
+          showToast('Close the current active unit before opening Calendar tools for another workflow unit.', 'info');
+        }
+      }
+    }
     setWorkspace(ws);
     _render(el, classId);
   } catch (err) {
