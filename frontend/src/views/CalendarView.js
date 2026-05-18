@@ -4,7 +4,7 @@
  */
 import { api, downloadWithAuth } from '../api/client.js';
 import { getSelectedId, getStudents } from '../state/class.js';
-import { getCalendar, setCalendar } from '../state/workflow.js';
+import { getActiveUnit, getCalendar, setCalendar } from '../state/workflow.js';
 import { showToast } from '../utils/toast.js';
 import { mountRetryCard } from '../utils/retryView.js';
 import { fmtDate, fmtTime } from '../utils/format.js';
@@ -19,6 +19,7 @@ let _mutationInFlight = false;
 let _holidayByDate = new Map();
 const _timetableRulesByClass = new Map();
 const _timetableExceptionsByClass = new Map();
+const WORKFLOW_VIEW_INTENT_KEY = 'workflow_view_intent';
 
 const _sessionDetailCache = new Map();
 const _calendarUnitBlueprintCache = new Map();
@@ -143,6 +144,17 @@ function _escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function _setWorkflowViewIntent(intent) {
+  try {
+    sessionStorage.setItem(WORKFLOW_VIEW_INTENT_KEY, JSON.stringify({
+      ...intent,
+      created_at: Date.now(),
+    }));
+  } catch {
+    // Non-fatal. Navigation still works without the shortcut intent.
+  }
 }
 
 function _normalizeCalendarWriteupSourcePayload(payload) {
@@ -2548,6 +2560,8 @@ function _renderCalendar(el, classId) {
     ? selectedDetail.workflow_writeup
     : null;
   const selectedWriteupError = selectedDetail?.workflow_writeup_error ? String(selectedDetail.workflow_writeup_error) : '';
+  const activeWorkflowUnitId = Number(getActiveUnit()?.id || 0) || null;
+  const canShortcutToWorkflowTools = selectedEvent?.unit_id != null && activeWorkflowUnitId != null && Number(selectedEvent.unit_id) === Number(activeWorkflowUnitId);
   const selectedBlueprintTree = selectedBlueprint?.blueprint_json && typeof selectedBlueprint.blueprint_json === 'object' && Array.isArray(selectedBlueprint.blueprint_json.items)
     ? selectedBlueprint.blueprint_json.items
     : [];
@@ -2894,7 +2908,16 @@ function _renderCalendar(el, classId) {
           </div>
 
           <div class="p-3 rounded-xl border border-slate-200">
-            <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Teacher Prep Suggestions</h4>
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Teacher Prep Suggestions</h4>
+              ${canShortcutToWorkflowTools
+                ? `<div class="flex items-center gap-2 flex-wrap">
+                    <button id="btn-open-selected-unit-assistant" class="btn btn-ghost btn-sm">Ask This Unit</button>
+                    <button id="btn-open-selected-material-studio" class="btn btn-ghost btn-sm">Material Studio</button>
+                    <button id="btn-open-selected-ai-details" class="btn btn-ghost btn-sm">AI Details</button>
+                  </div>`
+                : ''}
+            </div>
             ${_selectedSessionLoading
               ? '<p class="text-[12px] text-slate-500 mt-2">Loading prep suggestions...</p>'
               : selectedEvent.unit_id == null
@@ -3259,6 +3282,24 @@ function _renderCalendar(el, classId) {
   });
 
   el.querySelector('#btn-open-selected-workflow')?.addEventListener('click', () => {
+    navigate('workflow');
+  });
+
+  el.querySelector('#btn-open-selected-unit-assistant')?.addEventListener('click', () => {
+    if (!selectedEvent || selectedEvent.unit_id == null) return;
+    _setWorkflowViewIntent({ action: 'assistant', unit_id: Number(selectedEvent.unit_id) });
+    navigate('workflow');
+  });
+
+  el.querySelector('#btn-open-selected-material-studio')?.addEventListener('click', () => {
+    if (!selectedEvent || selectedEvent.unit_id == null) return;
+    _setWorkflowViewIntent({ action: 'material_studio', unit_id: Number(selectedEvent.unit_id) });
+    navigate('workflow');
+  });
+
+  el.querySelector('#btn-open-selected-ai-details')?.addEventListener('click', () => {
+    if (!selectedEvent || selectedEvent.unit_id == null) return;
+    _setWorkflowViewIntent({ action: 'ai_details', unit_id: Number(selectedEvent.unit_id) });
     navigate('workflow');
   });
 

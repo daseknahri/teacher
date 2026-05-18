@@ -29,6 +29,7 @@ let _activeTab = 0;
 let _recentWindow = 'month';
 let _selectedUnitType = 'chapter';
 let _checklistCollapseUnitId = null;
+const WORKFLOW_VIEW_INTENT_KEY = 'workflow_view_intent';
 const _collapsedChecklistIds = new Set();
 const _inFlightActions = new Set();
 const _sessionProgressCache = new Map();
@@ -52,6 +53,31 @@ const UNIT_TYPES = [
   { key: 'exam', icon: 'TE', label: 'Exam' },
   { key: 'exam_correction', icon: 'CR', label: 'Correction' },
 ];
+
+function _consumeWorkflowViewIntent(expectedUnitId) {
+  try {
+    const raw = sessionStorage.getItem(WORKFLOW_VIEW_INTENT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const ageMs = Date.now() - Number(parsed?.created_at || 0);
+    if (!parsed || typeof parsed !== 'object' || ageMs > 5 * 60 * 1000) {
+      sessionStorage.removeItem(WORKFLOW_VIEW_INTENT_KEY);
+      return null;
+    }
+    const intentUnitId = Number(parsed.unit_id || 0);
+    if (!Number.isFinite(intentUnitId) || intentUnitId <= 0 || Number(intentUnitId) !== Number(expectedUnitId || 0)) {
+      return null;
+    }
+    sessionStorage.removeItem(WORKFLOW_VIEW_INTENT_KEY);
+    return {
+      action: String(parsed.action || '').trim().toLowerCase(),
+      unit_id: intentUnitId,
+    };
+  } catch {
+    try { sessionStorage.removeItem(WORKFLOW_VIEW_INTENT_KEY); } catch {}
+    return null;
+  }
+}
 const UNIT_ASSISTANT_ACTION_LABELS = {
   explain_section: 'Explain Section',
   generate_teacher_notes: 'Teacher Notes',
@@ -4505,6 +4531,34 @@ function _bindWorkflowEvents(el, classId) {
       }
     });
   });
+
+  const pendingViewIntent = _consumeWorkflowViewIntent(getActiveUnit()?.id);
+  if (pendingViewIntent?.action) {
+    queueMicrotask(async () => {
+      const unit = getActiveUnit();
+      if (!unit?.id) return;
+      try {
+        const state = await _loadUnitBlueprint(classId, unit.id, { force: false });
+        if (state?.error || !state?.item) {
+          showToast(state?.error || 'No saved unit intelligence is available for this unit yet.', 'warning');
+          return;
+        }
+        if (pendingViewIntent.action === 'assistant') {
+          _openUnitAssistantModal({ classId, unit, blueprint: state.item });
+          return;
+        }
+        if (pendingViewIntent.action === 'material_studio') {
+          await _openUnitMaterialStudioModal({ classId, unit, blueprint: state.item });
+          return;
+        }
+        if (pendingViewIntent.action === 'ai_details') {
+          _openUnitBlueprintModal(unit, state.item, classId);
+        }
+      } catch (err) {
+        showToast(String(err?.message || 'Failed to open the requested unit tool.'), 'error');
+      }
+    });
+  }
 
   el.querySelector('#btn-rerun-ai-extraction')?.addEventListener('click', async function () {
     const button = this;
