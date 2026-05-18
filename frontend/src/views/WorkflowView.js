@@ -924,6 +924,29 @@ function _buildSessionWriteupMarkdown(writeup, { unitTitle = '', sessionLabel = 
   return lines.join('\n').trim();
 }
 
+function _renderSessionWriteupNextStep(writeup, { hasSession = true } = {}) {
+  if (!hasSession) return '';
+  if (!writeup) {
+    return `
+      <div class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2">
+        <p class="text-[12px] font-semibold text-slate-600">Recommended next step</p>
+        <p class="text-[12px] text-slate-500 mt-1">Generate the write-up once you have checked what was actually covered in class.</p>
+      </div>`;
+  }
+  if (writeup.approved === false) {
+    return `
+      <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+        <p class="text-[12px] font-semibold text-amber-800">Recommended next step</p>
+        <p class="text-[12px] text-amber-700 mt-1">Review this draft, edit it if needed, then mark it approved when it matches the real lesson.</p>
+      </div>`;
+  }
+  return `
+    <div class="rounded-xl border border-green-200 bg-green-50 px-3 py-2">
+      <p class="text-[12px] font-semibold text-green-800">Recommended next step</p>
+      <p class="text-[12px] text-green-700 mt-1">This write-up is approved. Copy it, download it, or mark it draft again if you need to revise it.</p>
+    </div>`;
+}
+
 function _assistantArtifactKindLabel(value) {
   const key = String(value || '').trim().toLowerCase();
   if (key === 'guided_practice') return 'Guided practice';
@@ -2703,6 +2726,7 @@ function _render(el, classId) {
                   <button id="btn-import-session-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>
                 </div>
               </div>
+              ${_renderSessionWriteupNextStep(sessionWriteupState.item, { hasSession: Boolean(session) })}
               ${sessionWriteupState.loading
         ? '<p class="text-[12px] text-slate-500">Loading session write-up...</p>'
         : sessionWriteupState.error
