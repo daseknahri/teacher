@@ -867,6 +867,32 @@ function _downloadTextContent(text, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
+function _buildSessionWriteupMarkdown(writeup, { unitTitle = '', sessionLabel = '' } = {}) {
+  const item = writeup && typeof writeup === 'object' ? writeup : {};
+  const title = String(item.title || 'Session Write-Up').trim() || 'Session Write-Up';
+  const learningFocus = Array.isArray(item.learning_focus) ? item.learning_focus.map(row => String(row || '').trim()).filter(Boolean) : [];
+  const teachingContent = Array.isArray(item.teaching_content) ? item.teaching_content.map(row => String(row || '').trim()).filter(Boolean) : [];
+  const practiceItems = Array.isArray(item.practice_items) ? item.practice_items.map(row => String(row || '').trim()).filter(Boolean) : [];
+  const lines = [`# ${title}`, ''];
+  if (unitTitle) lines.push(`- Unit: ${unitTitle}`);
+  if (sessionLabel) lines.push(`- Session: ${sessionLabel}`);
+  lines.push(`- Status: ${item.approved === false ? 'Draft' : 'Approved'}`);
+  if (learningFocus.length) {
+    lines.push('', '## Learning Focus', '');
+    learningFocus.forEach(row => lines.push(`- ${row}`));
+  }
+  if (teachingContent.length) {
+    lines.push('', '## Teaching Content', '');
+    teachingContent.forEach(row => lines.push(row, ''));
+    if (lines[lines.length - 1] === '') lines.pop();
+  }
+  if (practiceItems.length) {
+    lines.push('', '## Practice', '');
+    practiceItems.forEach(row => lines.push(`- ${row}`));
+  }
+  return lines.join('\n').trim();
+}
+
 function _assistantArtifactKindLabel(value) {
   const key = String(value || '').trim().toLowerCase();
   if (key === 'guided_practice') return 'Guided practice';
@@ -2640,7 +2666,11 @@ function _render(el, classId) {
               <div class="rounded-xl border border-slate-200 bg-white p-3 flex flex-col gap-3">
                 <div class="flex items-center justify-between gap-2 flex-wrap">
                   <p class="text-[13px] font-semibold text-slate-700">${_escapeHtml(sessionWriteupState.item.title || 'Session write-up')}</p>
-                  <span class="badge ${sessionWriteupState.item.approved === false ? 'badge-amber' : 'badge-green'}">${sessionWriteupState.item.approved === false ? 'Draft' : 'Approved'}</span>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="badge ${sessionWriteupState.item.approved === false ? 'badge-amber' : 'badge-green'}">${sessionWriteupState.item.approved === false ? 'Draft' : 'Approved'}</span>
+                    <button id="btn-copy-session-writeup" class="btn btn-ghost btn-sm">Copy</button>
+                    <button id="btn-download-session-writeup" class="btn btn-ghost btn-sm">Download</button>
+                  </div>
                 </div>
                 ${Array.isArray(sessionWriteupState.item.learning_focus) && sessionWriteupState.item.learning_focus.length ? `
                   <div>
@@ -4197,6 +4227,42 @@ function _bindWorkflowEvents(el, classId) {
         showToast(String(err?.message || 'Failed to import the saved guidance.'), 'error');
       }
     });
+  });
+
+  el.querySelector('#btn-copy-session-writeup')?.addEventListener('click', async () => {
+    const session = getActiveSession();
+    const unit = getActiveUnit();
+    if (!session) return;
+    const item = _getSessionWriteupState(session.id).item;
+    if (!item) return;
+    try {
+      await navigator.clipboard.writeText(
+        _buildSessionWriteupMarkdown(item, {
+          unitTitle: String(unit?.title || '').trim(),
+          sessionLabel: session?.unit_session_number ? `Unit Session ${session.unit_session_number}` : fmtDate(session.session_date || session.date),
+        })
+      );
+      showToast('Session write-up copied.', 'ok');
+    } catch {
+      showToast('Failed to copy the session write-up.', 'error');
+    }
+  });
+
+  el.querySelector('#btn-download-session-writeup')?.addEventListener('click', () => {
+    const session = getActiveSession();
+    const unit = getActiveUnit();
+    if (!session) return;
+    const item = _getSessionWriteupState(session.id).item;
+    if (!item) return;
+    const unitSlug = String(unit?.title || 'unit').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unit';
+    const sessionSlug = session?.unit_session_number ? `session-${session.unit_session_number}` : 'session-writeup';
+    _downloadTextContent(
+      _buildSessionWriteupMarkdown(item, {
+        unitTitle: String(unit?.title || '').trim(),
+        sessionLabel: session?.unit_session_number ? `Unit Session ${session.unit_session_number}` : fmtDate(session.session_date || session.date),
+      }),
+      `${unitSlug}-${sessionSlug}.md`
+    );
   });
 
   const autoLoadSession = getActiveSession();

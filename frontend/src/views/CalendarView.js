@@ -440,6 +440,44 @@ function _multilineToList(value) {
     .filter(Boolean);
 }
 
+function _downloadTextContent(text, filename) {
+  const blob = new Blob([String(text || '')], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename || 'download.md';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+function _buildSessionWriteupMarkdown(writeup, { unitTitle = '', sessionLabel = '' } = {}) {
+  const item = writeup && typeof writeup === 'object' ? writeup : {};
+  const title = String(item.title || 'Session Write-Up').trim() || 'Session Write-Up';
+  const learningFocus = Array.isArray(item.learning_focus) ? item.learning_focus.map(row => String(row || '').trim()).filter(Boolean) : [];
+  const teachingContent = Array.isArray(item.teaching_content) ? item.teaching_content.map(row => String(row || '').trim()).filter(Boolean) : [];
+  const practiceItems = Array.isArray(item.practice_items) ? item.practice_items.map(row => String(row || '').trim()).filter(Boolean) : [];
+  const lines = [`# ${title}`, ''];
+  if (unitTitle) lines.push(`- Unit: ${unitTitle}`);
+  if (sessionLabel) lines.push(`- Session: ${sessionLabel}`);
+  lines.push(`- Status: ${item.approved === false ? 'Draft' : 'Approved'}`);
+  if (learningFocus.length) {
+    lines.push('', '## Learning Focus', '');
+    learningFocus.forEach(row => lines.push(`- ${row}`));
+  }
+  if (teachingContent.length) {
+    lines.push('', '## Teaching Content', '');
+    teachingContent.forEach(row => lines.push(row, ''));
+    if (lines[lines.length - 1] === '') lines.pop();
+  }
+  if (practiceItems.length) {
+    lines.push('', '## Practice', '');
+    practiceItems.forEach(row => lines.push(`- ${row}`));
+  }
+  return lines.join('\n').trim();
+}
+
 function _assistantArtifactKindLabel(kind) {
   const normalized = String(kind || '').trim().toLowerCase();
   const labels = {
@@ -2873,6 +2911,12 @@ function _renderCalendar(el, classId) {
                 ${selectedWriteup
                   ? `<span class="badge ${selectedWriteup.approved === false ? 'badge-amber' : 'badge-green'}">${selectedWriteup.approved === false ? 'Draft' : 'Approved'}</span>`
                   : ''}
+                ${selectedWriteup
+                  ? `<button id="btn-copy-selected-writeup" class="btn btn-ghost btn-sm">Copy</button>`
+                  : ''}
+                ${selectedWriteup
+                  ? `<button id="btn-download-selected-writeup" class="btn btn-ghost btn-sm">Download</button>`
+                  : ''}
                 ${selectedEvent.unit_id != null && !selectedIsFuture
                   ? `<button id="btn-generate-selected-writeup" class="btn btn-ghost btn-sm">${selectedWriteup ? 'Re-generate' : 'Generate'}</button>`
                   : ''}
@@ -3465,6 +3509,34 @@ function _renderCalendar(el, classId) {
     } finally {
       _mutationInFlight = false;
     }
+  });
+
+  el.querySelector('#btn-copy-selected-writeup')?.addEventListener('click', async () => {
+    if (!selectedEvent || !selectedWriteup) return;
+    try {
+      await navigator.clipboard.writeText(
+        _buildSessionWriteupMarkdown(selectedWriteup, {
+          unitTitle: String(selectedEvent.unit_title || '').trim(),
+          sessionLabel: selectedSessionNumber ? `Unit Session ${selectedSessionNumber}` : fmtDate(selectedEvent.session_date || selectedEvent.date),
+        })
+      );
+      showToast('Write-up copied.', 'ok');
+    } catch {
+      showToast('Failed to copy the write-up.', 'error');
+    }
+  });
+
+  el.querySelector('#btn-download-selected-writeup')?.addEventListener('click', () => {
+    if (!selectedEvent || !selectedWriteup) return;
+    const unitSlug = String(selectedEvent.unit_title || 'unit').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'unit';
+    const sessionSlug = selectedSessionNumber ? `session-${selectedSessionNumber}` : 'session-writeup';
+    _downloadTextContent(
+      _buildSessionWriteupMarkdown(selectedWriteup, {
+        unitTitle: String(selectedEvent.unit_title || '').trim(),
+        sessionLabel: selectedSessionNumber ? `Unit Session ${selectedSessionNumber}` : fmtDate(selectedEvent.session_date || selectedEvent.date),
+      }),
+      `${unitSlug}-${sessionSlug}.md`
+    );
   });
 
   el.querySelector('#btn-import-selected-guidance')?.addEventListener('click', async () => {
