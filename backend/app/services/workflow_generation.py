@@ -1515,6 +1515,8 @@ def _normalize_unit_material_type(value: Any) -> str:
         "revision_flashcards",
         "presenter_slides",
         "detailed_slides",
+        "concept_infographic",
+        "teacher_prep_audio",
     }:
         return material_type
     return "study_guide"
@@ -1808,6 +1810,8 @@ def _unit_material_default_title(material_type: str) -> str:
         "revision_flashcards": "Revision flashcards",
         "presenter_slides": "Presenter slide deck",
         "detailed_slides": "Detailed slide deck",
+        "concept_infographic": "Concept infographic",
+        "teacher_prep_audio": "Teacher prep audio",
     }
     return mapping.get(normalized, "Unit material")
 
@@ -2119,6 +2123,8 @@ async def _notebooklm_generate_unit_material_async(
         "revision_flashcards",
         "presenter_slides",
         "detailed_slides",
+        "concept_infographic",
+        "teacher_prep_audio",
     }:
         return _normalize_unit_material_payload(
             requested_provider=requested_provider,
@@ -2224,6 +2230,85 @@ async def _notebooklm_generate_unit_material_async(
                 )
                 download_handler = "slide_deck"
                 download_format = "pptx"
+            elif normalized_material_type == "concept_infographic":
+                from notebooklm.types import InfographicDetail, InfographicOrientation, InfographicStyle
+
+                extra_instructions = _normalize_content_block_text(
+                    (artifact_plan or {}).get("instructions"),
+                    limit=1200,
+                ) or (
+                    f"Generate an instructional infographic for '{unit_title}' that follows the teaching order and highlights the key ideas, rules, and examples."
+                )
+                orientation_key = str(artifact_options.get("orientation") or "").strip().lower()
+                detail_key = str(artifact_options.get("detail") or "").strip().lower()
+                style_key = str(artifact_options.get("style") or "").strip().lower()
+                orientation = {
+                    "landscape": InfographicOrientation.LANDSCAPE,
+                    "square": InfographicOrientation.SQUARE,
+                    "portrait": InfographicOrientation.PORTRAIT,
+                }.get(orientation_key, InfographicOrientation.PORTRAIT)
+                detail_level = {
+                    "concise": InfographicDetail.CONCISE,
+                    "detailed": InfographicDetail.DETAILED,
+                    "standard": InfographicDetail.STANDARD,
+                }.get(detail_key, InfographicDetail.STANDARD)
+                style = {
+                    "auto": InfographicStyle.AUTO_SELECT,
+                    "auto_select": InfographicStyle.AUTO_SELECT,
+                    "sketch_note": InfographicStyle.SKETCH_NOTE,
+                    "professional": InfographicStyle.PROFESSIONAL,
+                    "bento_grid": InfographicStyle.BENTO_GRID,
+                    "editorial": InfographicStyle.EDITORIAL,
+                    "instructional": InfographicStyle.INSTRUCTIONAL,
+                    "bricks": InfographicStyle.BRICKS,
+                    "clay": InfographicStyle.CLAY,
+                    "anime": InfographicStyle.ANIME,
+                    "kawaii": InfographicStyle.KAWAII,
+                    "scientific": InfographicStyle.SCIENTIFIC,
+                }.get(style_key, InfographicStyle.INSTRUCTIONAL)
+                generation = await opened.artifacts.generate_infographic(
+                    notebook_id,
+                    source_ids=source_ids or None,
+                    language="fr",
+                    instructions=extra_instructions,
+                    orientation=orientation,
+                    detail_level=detail_level,
+                    style=style,
+                )
+                download_handler = "infographic"
+                download_format = "png"
+            elif normalized_material_type == "teacher_prep_audio":
+                from notebooklm.types import AudioFormat, AudioLength
+
+                extra_instructions = _normalize_content_block_text(
+                    (artifact_plan or {}).get("instructions"),
+                    limit=1200,
+                ) or (
+                    f"Generate a short teacher preparation audio for '{unit_title}' that summarizes the progression, emphasis points, and likely student difficulties."
+                )
+                format_key = str(artifact_options.get("format") or "").strip().lower()
+                length_key = str(artifact_options.get("length") or "").strip().lower()
+                audio_format = {
+                    "brief": AudioFormat.BRIEF,
+                    "deep_dive": AudioFormat.DEEP_DIVE,
+                    "critique": AudioFormat.CRITIQUE,
+                    "debate": AudioFormat.DEBATE,
+                }.get(format_key, AudioFormat.BRIEF)
+                audio_length = {
+                    "short": AudioLength.SHORT,
+                    "long": AudioLength.LONG,
+                    "default": AudioLength.DEFAULT,
+                }.get(length_key, AudioLength.SHORT)
+                generation = await opened.artifacts.generate_audio(
+                    notebook_id,
+                    source_ids=source_ids or None,
+                    language="fr",
+                    instructions=extra_instructions,
+                    audio_format=audio_format,
+                    audio_length=audio_length,
+                )
+                download_handler = "audio"
+                download_format = "mp4"
             elif normalized_material_type in {"formative_quiz", "mastery_quiz_hard"}:
                 from notebooklm.types import QuizDifficulty, QuizQuantity
 
@@ -2358,6 +2443,40 @@ async def _notebooklm_generate_unit_material_async(
                     if (download_format or "pptx") == "pptx"
                     else "application/pdf"
                 )
+            elif download_handler == "infographic":
+                Path(temp_output_path).unlink(missing_ok=True)
+                temp_output_path = tempfile.NamedTemporaryFile("w+b", suffix=".png", delete=False).name
+                await opened.artifacts.download_infographic(
+                    notebook_id,
+                    temp_output_path,
+                    artifact_id=artifact_id,
+                )
+                file_path, file_name = _persist_unit_material_file(
+                    unit_id=unit_id,
+                    unit_title=unit_title,
+                    material_type=normalized_material_type,
+                    material_title=artifact_title,
+                    source_path=temp_output_path,
+                    extension=".png",
+                )
+                file_content_type = "image/png"
+            elif download_handler == "audio":
+                Path(temp_output_path).unlink(missing_ok=True)
+                temp_output_path = tempfile.NamedTemporaryFile("w+b", suffix=".mp4", delete=False).name
+                await opened.artifacts.download_audio(
+                    notebook_id,
+                    temp_output_path,
+                    artifact_id=artifact_id,
+                )
+                file_path, file_name = _persist_unit_material_file(
+                    unit_id=unit_id,
+                    unit_title=unit_title,
+                    material_type=normalized_material_type,
+                    material_title=artifact_title,
+                    source_path=temp_output_path,
+                    extension=".mp4",
+                )
+                file_content_type = "audio/mp4"
             elif download_handler == "report":
                 await opened.artifacts.download_report(notebook_id, temp_output_path, artifact_id=artifact_id)
             elif download_handler == "quiz":

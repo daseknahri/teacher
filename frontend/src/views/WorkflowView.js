@@ -727,6 +727,10 @@ const SUPPORTED_UNIT_MATERIAL_TYPES = new Set([
   'formative_quiz',
   'mastery_quiz_hard',
   'revision_flashcards',
+  'presenter_slides',
+  'detailed_slides',
+  'concept_infographic',
+  'teacher_prep_audio',
 ]);
 
 function _buildUnitMaterialOptions(blueprint) {
