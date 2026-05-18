@@ -4,7 +4,7 @@
  */
 import { api, downloadWithAuth } from '../api/client.js';
 import { getSelectedId, getStudents } from '../state/class.js';
-import { getCalendar, setCalendar } from '../state/workflow.js';
+import { getActiveSession, getCalendar, setCalendar } from '../state/workflow.js';
 import { showToast } from '../utils/toast.js';
 import { mountRetryCard } from '../utils/retryView.js';
 import { fmtDate, fmtTime } from '../utils/format.js';
@@ -205,6 +205,25 @@ function _buildCalendarWorkflowIntent(selectedEvent, action = '', extra = {}) {
       : [],
     teacher_request: String(extra?.teacher_request || '').trim(),
     assistant_action: String(extra?.assistant_action || '').trim().toLowerCase(),
+  };
+}
+
+function _buildWorkflowSessionIntent(session, action = '') {
+  if (!session || session.unit_id == null) return null;
+  const sessionLabel = session.unit_session_number
+    ? `Unit Session ${Number(session.unit_session_number)}`
+    : (String(session.unit_title || 'Active session').trim() || 'Active session');
+  return {
+    action: String(action || '').trim().toLowerCase(),
+    unit_id: Number(session.unit_id),
+    source: 'calendar',
+    session_id: Number(session.id || session.session_id || 0) || null,
+    session_label: sessionLabel,
+    session_date: String(session.session_date || session.date || '').trim(),
+    section_title: '',
+    section_path: [],
+    teacher_request: '',
+    assistant_action: '',
   };
 }
 
@@ -2681,6 +2700,11 @@ function _renderCalendar(el, classId) {
     ? selectedDetail.workflow_writeup
     : null;
   const selectedWriteupError = selectedDetail?.workflow_writeup_error ? String(selectedDetail.workflow_writeup_error) : '';
+  const activeWorkflowSession = getActiveSession();
+  const activeWorkflowSessionId = Number(activeWorkflowSession?.id || activeWorkflowSession?.session_id || 0) || null;
+  const selectedSessionId = Number(selectedEvent?.session_id || 0) || null;
+  const selectedMatchesActiveWorkflow = Boolean(activeWorkflowSessionId && selectedSessionId && activeWorkflowSessionId === selectedSessionId);
+  const hasOtherActiveWorkflowSession = Boolean(activeWorkflowSessionId && selectedSessionId && activeWorkflowSessionId !== selectedSessionId);
   const canShortcutToWorkflowTools = selectedEvent?.unit_id != null;
   const selectedBlueprintTree = selectedBlueprint?.blueprint_json && typeof selectedBlueprint.blueprint_json === 'object' && Array.isArray(selectedBlueprint.blueprint_json.items)
     ? selectedBlueprint.blueprint_json.items
@@ -2939,7 +2963,11 @@ function _renderCalendar(el, classId) {
           <div class="flex items-center gap-2">
             <button id="btn-confirm-selected-session" class="btn btn-success btn-sm" ${selectedCanConfirm ? '' : 'disabled'} title="${_escapeHtml(selectedConfirmTitle)}">${_escapeHtml(selectedConfirmLabel)}</button>
             <button id="btn-edit-selected-session" class="btn btn-ghost btn-sm" ${selectedCanEdit ? '' : 'disabled'} title="${_escapeHtml(selectedEditTitle)}">Edit</button>
-            ${selectedEvent.unit_id != null ? '<button id="btn-open-selected-workflow" class="btn btn-ghost btn-sm">Open Workflow</button>' : ''}
+            ${selectedMatchesActiveWorkflow
+              ? '<button id="btn-open-selected-workflow" class="btn btn-ghost btn-sm">Resume Live Session</button>'
+              : selectedEvent.unit_id != null
+                ? '<button id="btn-open-selected-workflow" class="btn btn-ghost btn-sm">Open Workflow</button>'
+                : ''}
             <button id="btn-close-selected-session" class="btn btn-ghost btn-sm text-slate-400">Close</button>
           </div>
         </div>
@@ -2950,8 +2978,20 @@ function _renderCalendar(el, classId) {
               <span class="badge ${selectedSessionStateClass}">${_escapeHtml(selectedSessionStateLabel)}</span>
               <span class="badge badge-green">${selectedEvent.checked_items_count ?? 0} items done</span>
               <span class="badge badge-red">${selectedEvent.absent_count ?? 0} absent</span>
+              ${selectedMatchesActiveWorkflow ? '<span class="badge badge-amber">Live in Workflow</span>' : ''}
             </div>
             ${selectedNextStepText ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedNextStepText)}</p>` : ''}
+            ${hasOtherActiveWorkflowSession ? `
+              <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                <p class="text-[12px] font-semibold text-amber-800">Another workflow session is currently active</p>
+                <p class="text-[12px] text-amber-700 mt-1">
+                  ${_escapeHtml(String(activeWorkflowSession?.unit_title || 'Active unit session'))}
+                  ${activeWorkflowSession?.unit_session_number ? ` • Unit Session ${Number(activeWorkflowSession.unit_session_number)}` : ''}
+                </p>
+                <div class="mt-3 flex gap-2 flex-wrap">
+                  <button id="btn-open-active-workflow-session" class="btn btn-secondary btn-sm">Resume Active Session</button>
+                </div>
+              </div>` : ''}
           </div>
 
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -3404,6 +3444,12 @@ function _renderCalendar(el, classId) {
 
   el.querySelector('#btn-open-selected-workflow')?.addEventListener('click', () => {
     const intent = _buildCalendarWorkflowIntent(selectedEvent, '');
+    if (intent) _setWorkflowViewIntent(intent);
+    navigate('workflow');
+  });
+
+  el.querySelector('#btn-open-active-workflow-session')?.addEventListener('click', () => {
+    const intent = _buildWorkflowSessionIntent(activeWorkflowSession, '');
     if (intent) _setWorkflowViewIntent(intent);
     navigate('workflow');
   });
