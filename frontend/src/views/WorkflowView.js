@@ -30,6 +30,7 @@ let _recentWindow = 'month';
 let _selectedUnitType = 'chapter';
 let _checklistCollapseUnitId = null;
 const WORKFLOW_VIEW_INTENT_KEY = 'workflow_view_intent';
+let _workflowEntryContext = null;
 const _collapsedChecklistIds = new Set();
 const _inFlightActions = new Set();
 const _sessionProgressCache = new Map();
@@ -72,6 +73,10 @@ function _consumeWorkflowViewIntent(expectedUnitId) {
     return {
       action: String(parsed.action || '').trim().toLowerCase(),
       unit_id: intentUnitId,
+      source: String(parsed.source || '').trim().toLowerCase(),
+      session_id: Number(parsed.session_id || 0) || null,
+      session_label: String(parsed.session_label || '').trim(),
+      session_date: String(parsed.session_date || '').trim(),
     };
   } catch {
     try { sessionStorage.removeItem(WORKFLOW_VIEW_INTENT_KEY); } catch {}
@@ -2297,6 +2302,21 @@ function _render(el, classId) {
 
   el.innerHTML = `
     <div class="view-container">
+
+      ${_workflowEntryContext?.source === 'calendar' ? `
+      <div class="mb-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 flex items-start justify-between gap-3">
+        <div>
+          <p class="text-[13px] font-semibold text-blue-800">Opened from Calendar</p>
+          <p class="text-[12px] text-blue-700 mt-1">
+            ${_escapeHtml(_workflowEntryContext.session_label || 'Selected session')}
+            ${_workflowEntryContext.session_date ? ` • ${_escapeHtml(fmtDate(_workflowEntryContext.session_date))}` : ''}
+          </p>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <button id="btn-return-to-calendar" class="btn btn-ghost btn-sm">Back to Calendar</button>
+          <button id="btn-dismiss-workflow-entry" class="btn btn-ghost btn-sm">Dismiss</button>
+        </div>
+      </div>` : ''}
 
       <!-- Live session banner -->
       ${session ? `
@@ -4534,6 +4554,7 @@ function _bindWorkflowEvents(el, classId) {
 
   const pendingViewIntent = _consumeWorkflowViewIntent(getActiveUnit()?.id);
   if (pendingViewIntent?.action) {
+    _workflowEntryContext = pendingViewIntent?.source === 'calendar' ? pendingViewIntent : null;
     queueMicrotask(async () => {
       const unit = getActiveUnit();
       if (!unit?.id) return;
@@ -4559,6 +4580,15 @@ function _bindWorkflowEvents(el, classId) {
       }
     });
   }
+
+  el.querySelector('#btn-return-to-calendar')?.addEventListener('click', () => {
+    navigate('calendar');
+  });
+
+  el.querySelector('#btn-dismiss-workflow-entry')?.addEventListener('click', () => {
+    _workflowEntryContext = null;
+    _render(el, classId);
+  });
 
   el.querySelector('#btn-rerun-ai-extraction')?.addEventListener('click', async function () {
     const button = this;

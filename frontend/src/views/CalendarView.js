@@ -157,6 +157,21 @@ function _setWorkflowViewIntent(intent) {
   }
 }
 
+function _buildCalendarWorkflowIntent(selectedEvent, action = '') {
+  if (!selectedEvent || selectedEvent.unit_id == null) return null;
+  const sessionLabel = selectedEvent.unit_session_number
+    ? `Unit Session ${Number(selectedEvent.unit_session_number)}`
+    : (String(selectedEvent.unit_title || 'Selected session').trim() || 'Selected session');
+  return {
+    action: String(action || '').trim().toLowerCase(),
+    unit_id: Number(selectedEvent.unit_id),
+    source: 'calendar',
+    session_id: Number(selectedEvent.session_id || 0) || null,
+    session_label: sessionLabel,
+    session_date: String(selectedEvent.session_date || selectedEvent.date || '').trim(),
+  };
+}
+
 function _normalizeCalendarWriteupSourcePayload(payload) {
   if (!payload || typeof payload !== 'object') return null;
   return {
@@ -3282,24 +3297,29 @@ function _renderCalendar(el, classId) {
   });
 
   el.querySelector('#btn-open-selected-workflow')?.addEventListener('click', () => {
+    const intent = _buildCalendarWorkflowIntent(selectedEvent, '');
+    if (intent) _setWorkflowViewIntent(intent);
     navigate('workflow');
   });
 
   el.querySelector('#btn-open-selected-unit-assistant')?.addEventListener('click', () => {
-    if (!selectedEvent || selectedEvent.unit_id == null) return;
-    _setWorkflowViewIntent({ action: 'assistant', unit_id: Number(selectedEvent.unit_id) });
+    const intent = _buildCalendarWorkflowIntent(selectedEvent, 'assistant');
+    if (!intent) return;
+    _setWorkflowViewIntent(intent);
     navigate('workflow');
   });
 
   el.querySelector('#btn-open-selected-material-studio')?.addEventListener('click', () => {
-    if (!selectedEvent || selectedEvent.unit_id == null) return;
-    _setWorkflowViewIntent({ action: 'material_studio', unit_id: Number(selectedEvent.unit_id) });
+    const intent = _buildCalendarWorkflowIntent(selectedEvent, 'material_studio');
+    if (!intent) return;
+    _setWorkflowViewIntent(intent);
     navigate('workflow');
   });
 
   el.querySelector('#btn-open-selected-ai-details')?.addEventListener('click', () => {
-    if (!selectedEvent || selectedEvent.unit_id == null) return;
-    _setWorkflowViewIntent({ action: 'ai_details', unit_id: Number(selectedEvent.unit_id) });
+    const intent = _buildCalendarWorkflowIntent(selectedEvent, 'ai_details');
+    if (!intent) return;
+    _setWorkflowViewIntent(intent);
     navigate('workflow');
   });
 
