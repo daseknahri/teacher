@@ -670,6 +670,58 @@ function _assistantActionLabel(value) {
   return UNIT_ASSISTANT_ACTION_LABELS[key] || key.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase()) || 'Action';
 }
 
+function _renderMaterialMarkdown(markdown) {
+  const text = String(markdown || '').trim();
+  if (!text) {
+    return '<p class="text-[12px] text-slate-500">No generated content yet.</p>';
+  }
+  const lines = text.split(/\r?\n/);
+  const html = [];
+  let inList = false;
+  const closeList = () => {
+    if (inList) {
+      html.push('</ul>');
+      inList = false;
+    }
+  };
+  lines.forEach(rawLine => {
+    const line = String(rawLine || '');
+    const trimmed = line.trim();
+    if (!trimmed) {
+      closeList();
+      return;
+    }
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+    if (headingMatch) {
+      closeList();
+      const level = Math.min(6, headingMatch[1].length);
+      const sizes = {
+        1: 'text-[20px] font-bold',
+        2: 'text-[17px] font-bold',
+        3: 'text-[15px] font-semibold',
+        4: 'text-[14px] font-semibold',
+        5: 'text-[13px] font-semibold',
+        6: 'text-[12px] font-semibold',
+      };
+      html.push(`<h${level} class="${sizes[level]} text-slate-800 mt-3 first:mt-0">${_escapeHtml(headingMatch[2])}</h${level}>`);
+      return;
+    }
+    const bulletMatch = trimmed.match(/^[-*]\s+(.+)$/);
+    if (bulletMatch) {
+      if (!inList) {
+        html.push('<ul class="list-disc pl-5 space-y-1.5 text-[13px] text-slate-700">');
+        inList = true;
+      }
+      html.push(`<li>${_escapeHtml(bulletMatch[1])}</li>`);
+      return;
+    }
+    closeList();
+    html.push(`<p class="text-[13px] text-slate-700 leading-6">${_escapeHtml(trimmed)}</p>`);
+  });
+  closeList();
+  return html.join('') || `<pre class="whitespace-pre-wrap text-[13px] text-slate-700 leading-6">${_escapeHtml(text)}</pre>`;
+}
+
 function _openUnitAssistantModal({ classId, unit, blueprint }) {
   const sections = _buildUnitAssistantSections(blueprint);
   const initialSection = sections[1] || sections[0];
@@ -903,6 +955,137 @@ function _openUnitAssistantModal({ classId, unit, blueprint }) {
   overlay.querySelector('#unit-assistant-close-top')?.addEventListener('click', cleanup);
   overlay.querySelector('#unit-assistant-close')?.addEventListener('click', cleanup);
   document.body.appendChild(overlay);
+}
+
+async function _openUnitStudyGuideModal({ classId, unit }) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal max-w-4xl w-[96vw]">
+      <div class="px-6 py-5 border-b border-slate-100">
+        <div class="flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-[17px] font-bold text-slate-800">Study Guide</h2>
+            <p class="text-[12px] text-slate-500 mt-1">
+              Generate a reusable NotebookLM study guide from this unit’s saved notebook context.
+            </p>
+          </div>
+          <button id="unit-study-guide-close-top" class="btn btn-ghost btn-sm">Close</button>
+        </div>
+      </div>
+      <div class="px-6 py-4 max-h-[78vh] overflow-y-auto flex flex-col gap-4">
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+          <p class="text-[12px] text-slate-600"><span class="font-semibold">Unit:</span> ${_escapeHtml(String(unit?.title || 'Unit'))}</p>
+          <p class="text-[11px] text-slate-500 mt-1">This uses the same NotebookLM unit brain already saved for checklist extraction and guided teacher help.</p>
+          <p id="unit-study-guide-error" class="text-[12px] text-red-600 hidden mt-3"></p>
+        </div>
+        <div id="unit-study-guide-result" class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+          <p class="text-[12px] text-slate-500">Loading saved study guide state...</p>
+        </div>
+      </div>
+      <div class="px-6 py-4 border-t border-slate-100 flex justify-end gap-3">
+        <button id="unit-study-guide-close" class="btn btn-ghost">Close</button>
+        <button id="unit-study-guide-generate" class="btn btn-primary">Generate Study Guide</button>
+      </div>
+    </div>
+  `;
+  const errorNode = overlay.querySelector('#unit-study-guide-error');
+  const resultNode = overlay.querySelector('#unit-study-guide-result');
+  const submitButton = overlay.querySelector('#unit-study-guide-generate');
+  const state = {
+    loading: false,
+    item: null,
+    error: '',
+  };
+
+  function cleanup() {
+    overlay.remove();
+  }
+
+  function setError(message) {
+    state.error = String(message || '').trim();
+    if (state.error) {
+      errorNode.textContent = state.error;
+      errorNode.classList.remove('hidden');
+    } else {
+      errorNode.textContent = '';
+      errorNode.classList.add('hidden');
+    }
+  }
+
+  function render() {
+    const item = state.item;
+    if (state.loading && !item) {
+      resultNode.innerHTML = '<p class="text-[12px] text-slate-500">Loading study guide...</p>';
+      return;
+    }
+    if (!item) {
+      resultNode.innerHTML = '<p class="text-[12px] text-slate-500">No study guide has been generated for this unit yet.</p>';
+      submitButton.textContent = 'Generate Study Guide';
+      return;
+    }
+    submitButton.textContent = 'Re-generate Study Guide';
+    resultNode.innerHTML = `
+      <div class="flex items-center gap-2 flex-wrap mb-4">
+        <span class="badge badge-blue">${_escapeHtml(String(item.material_type || 'study_guide'))}</span>
+        <span class="badge ${String(item.status || 'ready') === 'ready' ? 'badge-green' : 'badge-amber'}">${_escapeHtml(String(item.status || 'ready'))}</span>
+        ${item.provider ? `<span class="badge badge-gray">${_escapeHtml(String(item.provider))}</span>` : ''}
+        ${item.model ? `<span class="badge badge-gray">${_escapeHtml(String(item.model))}</span>` : ''}
+      </div>
+      ${item.error_message ? `<p class="text-[12px] text-amber-700 mb-3"><span class="font-semibold">Provider note:</span> ${_escapeHtml(String(item.error_message || ''))}</p>` : ''}
+      <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+        ${_renderMaterialMarkdown(item.content_markdown)}
+      </div>
+      <p class="text-[11px] text-slate-500 mt-3"><span class="font-semibold">Updated:</span> ${_escapeHtml(fmtDateTime(item.updated_at))}</p>
+    `;
+  }
+
+  async function loadExisting() {
+    state.loading = true;
+    render();
+    setError('');
+    try {
+      const rows = await api(`/workflow/classes/${classId}/units/${unit.id}/materials`);
+      const list = Array.isArray(rows) ? rows : [];
+      state.item = list.find(row => String(row?.material_type || '').trim().toLowerCase() === 'study_guide') || null;
+    } catch (err) {
+      setError(String(err?.message || 'Failed to load unit materials.'));
+      state.item = null;
+    } finally {
+      state.loading = false;
+      render();
+    }
+  }
+
+  async function generateGuide() {
+    state.loading = true;
+    submitButton.disabled = true;
+    setError('');
+    render();
+    try {
+      const item = await api(`/workflow/classes/${classId}/units/${unit.id}/materials/generate`, {
+        method: 'POST',
+        body: JSON.stringify({ material_type: 'study_guide' }),
+      });
+      state.item = item && typeof item === 'object' ? item : null;
+      showToast('Study guide generated.', 'ok');
+    } catch (err) {
+      setError(String(err?.message || 'Failed to generate the study guide.'));
+    } finally {
+      state.loading = false;
+      submitButton.disabled = false;
+      render();
+    }
+  }
+
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) cleanup();
+  });
+  overlay.querySelector('#unit-study-guide-close-top')?.addEventListener('click', cleanup);
+  overlay.querySelector('#unit-study-guide-close')?.addEventListener('click', cleanup);
+  submitButton.addEventListener('click', generateGuide);
+  document.body.appendChild(overlay);
+  await loadExisting();
 }
 
 function _sortSessionProgressItems(rows) {
@@ -1525,6 +1708,7 @@ function _render(el, classId) {
                   <button id="btn-toggle-extraction-review" class="btn ${extractionReviewPending ? 'btn-primary' : 'btn-secondary'} btn-sm">${extractionReviewPending ? 'Approve Extraction' : 'Mark Needs Review'}</button>
                   <button id="btn-rerun-ai-extraction" class="btn btn-secondary btn-sm">Re-run AI</button>
                   <button id="btn-ask-unit-assistant" class="btn btn-secondary btn-sm">Ask This Unit</button>
+                  <button id="btn-generate-study-guide" class="btn btn-secondary btn-sm">Study Guide</button>
                   <button id="btn-view-ai-details" class="btn btn-secondary btn-sm">AI Details</button>
                   <button id="btn-plan-active-unit" class="btn btn-secondary btn-sm">Plan Sessions</button>
                   <button id="btn-add-item-root" class="btn btn-secondary btn-sm">Add Item</button>
@@ -3578,6 +3762,22 @@ function _bindWorkflowEvents(el, classId) {
       } catch (err) {
         _setBusy(button, false);
         showToast(String(err?.message || 'Failed to open unit guidance.'), 'error');
+      }
+    });
+  });
+
+  el.querySelector('#btn-generate-study-guide')?.addEventListener('click', async function () {
+    const button = this;
+    await _withActionLock(`workflow:unit-study-guide:${classId}`, async () => {
+      const unit = getActiveUnit();
+      if (!unit?.id) return;
+      _setBusy(button, true);
+      try {
+        _setBusy(button, false);
+        await _openUnitStudyGuideModal({ classId, unit });
+      } catch (err) {
+        _setBusy(button, false);
+        showToast(String(err?.message || 'Failed to open study guide generation.'), 'error');
       }
     });
   });

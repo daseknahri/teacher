@@ -743,6 +743,28 @@ class WorkflowUnitAssistantOut(BaseModel):
     error_message: str | None = None
 
 
+class WorkflowUnitMaterialGenerateIn(BaseModel):
+    material_type: str = Field(default="study_guide", pattern="^(study_guide)$")
+
+
+class WorkflowUnitMaterialOut(BaseModel):
+    id: int
+    unit_id: int
+    material_type: str
+    provider: str
+    model: str | None = None
+    status: str
+    title: str | None = None
+    notebook_artifact_id: str | None = None
+    source_payload: dict | None = None
+    content_markdown: str | None = None
+    raw_provider_response: dict | None = None
+    error_message: str | None = None
+    created_by_user_id: int | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
 class WorkflowSessionConfirmOut(BaseModel):
     session: WorkflowSessionOut
     checked_items_count: int = 0

@@ -309,6 +309,11 @@ class WorkflowUnit(Base):
         cascade="all, delete-orphan",
         uselist=False,
     )
+    materials: Mapped[list["WorkflowUnitMaterial"]] = relationship(
+        back_populates="unit",
+        cascade="all, delete-orphan",
+        order_by="WorkflowUnitMaterial.updated_at.desc()",
+    )
 
 
 class WorkflowChecklistItem(Base):
@@ -378,6 +383,29 @@ class WorkflowUnitBlueprint(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     unit: Mapped["WorkflowUnit"] = relationship(back_populates="blueprint")
+
+
+class WorkflowUnitMaterial(Base):
+    __tablename__ = "workflow_unit_materials"
+    __table_args__ = (UniqueConstraint("unit_id", "material_type", name="uq_workflow_unit_material_type"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    unit_id: Mapped[int] = mapped_column(ForeignKey("workflow_units.id", ondelete="CASCADE"), index=True)
+    material_type: Mapped[str] = mapped_column(String(64), index=True)
+    provider: Mapped[str] = mapped_column(String(64), default="notebooklm")
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="ready", index=True)
+    title: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    notebook_artifact_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    source_payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    content_markdown: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_provider_response: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    unit: Mapped["WorkflowUnit"] = relationship(back_populates="materials")
 
 
 class WorkflowSessionWriteup(Base):

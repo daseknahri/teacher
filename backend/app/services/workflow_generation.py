@@ -7,6 +7,7 @@ from importlib.util import find_spec
 from pathlib import Path
 import re
 from statistics import median
+import tempfile
 from typing import Any
 import unicodedata
 
@@ -23,6 +24,7 @@ class NotebookLMGenerationUnavailableError(RuntimeError):
 SUPPORTED_UNIT_PLANNER_PROVIDERS = {"openai", "fallback", "notebooklm"}
 SUPPORTED_SESSION_WRITER_PROVIDERS = {"openai", "fallback", "notebooklm"}
 SUPPORTED_UNIT_ASSISTANT_PROVIDERS = {"notebooklm"}
+SUPPORTED_UNIT_MATERIAL_PROVIDERS = {"notebooklm"}
 NUMBERED_HEADING_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)*)(?:\s*[-.):]\s*|\s+)(.+)$")
 CHAPTER_START_PATTERN = re.compile(r"^\s*(chapter|chapitre|title|titre|lesson|lecon)\b", re.IGNORECASE)
 NUMBERED_ROW_START_PATTERN = re.compile(r"(?<!\S)\d+(?:\.\d+)+(?:[)\].:-])?(?:\s+|$)")
@@ -852,6 +854,35 @@ def generate_unit_assistant_package(
     )
 
 
+def generate_unit_material_package(
+    *,
+    unit_title: str,
+    material_type: str | None,
+    source_text: str,
+    document_path: str | None,
+    provider_context: dict[str, Any] | None,
+    unit_map: dict[str, Any] | None,
+    content_blocks: list[dict[str, Any]] | None,
+    provider: str | None = None,
+) -> dict[str, Any]:
+    requested_provider = _normalize_provider_name(
+        provider or "notebooklm",
+        supported=SUPPORTED_UNIT_MATERIAL_PROVIDERS,
+        default="notebooklm",
+    )
+    ensure_notebooklm_generation_ready(action_label="unit material generation")
+    return _notebooklm_generate_unit_material(
+        unit_title=unit_title,
+        material_type=material_type,
+        source_text=source_text,
+        document_path=document_path,
+        provider_context=provider_context,
+        unit_map=unit_map,
+        content_blocks=content_blocks,
+        requested_provider=requested_provider,
+    )
+
+
 def delete_provider_unit_context(*, provider_context: dict[str, Any] | None) -> bool:
     if not isinstance(provider_context, dict):
         return False
@@ -1472,6 +1503,11 @@ def _normalize_unit_assistant_action(value: Any) -> str:
     return action or "explain_section"
 
 
+def _normalize_unit_material_type(value: Any) -> str:
+    material_type = re.sub(r"[^a-z_]+", "_", str(value or "").strip().lower()).strip("_")
+    return material_type or "study_guide"
+
+
 def _normalize_unit_assistant_rows(values: Any, *, limit: int = 8) -> list[str]:
     if isinstance(values, str):
         values = [values]
@@ -1634,6 +1670,113 @@ def _normalize_unit_assistant_payload(
             "action": action,
         },
         "raw_provider_response": raw_provider_response,
+        "error_message": error_message,
+    }
+
+
+def _build_notebooklm_study_guide_instructions(
+    *,
+    unit_title: str,
+    unit_map: dict[str, Any] | None,
+    content_blocks: list[dict[str, Any]] | None,
+) -> str:
+    section_plans = unit_map.get("section_plans") if isinstance(unit_map, dict) and isinstance(unit_map.get("section_plans"), list) else []
+    visible_plans = [row for row in section_plans if isinstance(row, dict) and _normalize_outline_title(row.get("section_title"))]
+    plan_rows: list[str] = []
+    for plan in visible_plans[:10]:
+        section_title = _normalize_outline_title(plan.get("section_title"))
+        if not section_title:
+            continue
+        sequence = [
+            _normalize_outline_title(value)
+            for value in (plan.get("delivery_sequence") if isinstance(plan.get("delivery_sequence"), list) else [])
+            if _normalize_outline_title(value)
+        ]
+        sequence_label = " -> ".join(sequence[:8]) if sequence else "-"
+        plan_rows.append(f"- {section_title}: {sequence_label}")
+
+    example_titles: list[str] = []
+    exercise_titles: list[str] = []
+    for block in (content_blocks or [])[:48]:
+        if not isinstance(block, dict):
+            continue
+        title = _normalize_outline_title(block.get("title"))
+        kind = _normalize_content_block_kind(block.get("kind"))
+        if not title:
+            continue
+        if kind == "example" and len(example_titles) < 6:
+            example_titles.append(title)
+        if kind in {"exercise", "evaluation"} and len(exercise_titles) < 6:
+            exercise_titles.append(title)
+
+    goals = [
+        _normalize_content_block_text(value, limit=180)
+        for value in (unit_map.get("teaching_goals") if isinstance(unit_map, dict) and isinstance(unit_map.get("teaching_goals"), list) else [])
+        if _normalize_content_block_text(value, limit=180)
+    ]
+
+    parts = [
+        f"Cree un guide d'etude eleve et enseignant pour l'unite '{unit_title or 'Unite'}'.",
+        "Contraintes pedagogiques:",
+        "- Garde uniquement le contenu visible et utile pour les eleves.",
+        "- Respecte l'ordre reel de la progression dans le document.",
+        "- Pour chaque grande section, suis si possible la logique: activite d'amorce, contenu ou notion, exemple guide, exercice ou auto-verification.",
+        "- N'ajoute pas de rubriques meta enseignant comme objectifs, prerequis, outils didactiques ou gestion du temps dans le corps principal du guide.",
+        "- Fais un support directement exploitable en classe et aussi utile pour la revision.",
+        "- Garde un ton clair, structure, concret, en francais.",
+        "- Si le document contient plusieurs exercices, integre des checkpoints ou mini-verifications a la fin des parties importantes.",
+    ]
+    if goals:
+        parts.append("Objectifs d'apprentissage a garder en tete:")
+        parts.extend(f"- {row}" for row in goals[:6])
+    if plan_rows:
+        parts.append("Progression pedagogique reperee dans l'unite:")
+        parts.extend(plan_rows)
+    if example_titles:
+        parts.append("Exemples importants deja presents dans le document:")
+        parts.extend(f"- {row}" for row in example_titles[:6])
+    if exercise_titles:
+        parts.append("Exercices ou evaluations deja presents dans le document:")
+        parts.extend(f"- {row}" for row in exercise_titles[:6])
+    parts.extend(
+        [
+            "Le guide attendu doit contenir:",
+            "- un bref apercu de l'unite",
+            "- les grandes sections dans l'ordre",
+            "- les notions ou regles a retenir",
+            "- des explications courtes et bien structurees",
+            "- des rappels d'exemples ou de types d'exercices",
+            "- une petite partie finale de revision ou d'auto-verification",
+        ]
+    )
+    return "\n".join(parts)
+
+
+def _normalize_unit_material_payload(
+    *,
+    requested_provider: str,
+    material_type: str,
+    title: str | None,
+    notebook_artifact_id: str | None,
+    source_payload: dict[str, Any] | None,
+    content_markdown: str | None,
+    raw_provider_response: dict[str, Any] | None,
+    error_message: str | None,
+) -> dict[str, Any]:
+    normalized_material_type = _normalize_unit_material_type(material_type)
+    normalized_title = _normalize_content_block_text(title, limit=180) or "Study guide"
+    markdown = str(content_markdown or "").strip() or None
+    return {
+        "provider": "notebooklm" if not error_message else "fallback",
+        "requested_provider": requested_provider,
+        "model": "notebooklm-py" if not error_message else None,
+        "status": "ready" if not error_message else "degraded",
+        "material_type": normalized_material_type,
+        "title": normalized_title,
+        "notebook_artifact_id": str(notebook_artifact_id or "").strip() or None,
+        "source_payload": source_payload if isinstance(source_payload, dict) else None,
+        "content_markdown": markdown,
+        "raw_provider_response": raw_provider_response if isinstance(raw_provider_response, dict) else None,
         "error_message": error_message,
     }
 
@@ -1813,6 +1956,225 @@ async def _notebooklm_generate_unit_assistant_async(
         teacher_request=teacher_request,
         raw_provider_response=raw_provider_response,
         error_message=None if isinstance(parsed, dict) else "notebooklm_invalid_json",
+    )
+
+
+def _notebooklm_generate_unit_material(
+    *,
+    unit_title: str,
+    material_type: str | None,
+    source_text: str,
+    document_path: str | None,
+    provider_context: dict[str, Any] | None,
+    unit_map: dict[str, Any] | None,
+    content_blocks: list[dict[str, Any]] | None,
+    requested_provider: str,
+) -> dict[str, Any]:
+    try:
+        return asyncio.run(
+            _notebooklm_generate_unit_material_async(
+                unit_title=unit_title,
+                material_type=material_type,
+                source_text=source_text,
+                document_path=document_path,
+                provider_context=provider_context,
+                unit_map=unit_map,
+                content_blocks=content_blocks,
+                requested_provider=requested_provider,
+            )
+        )
+    except NotebookLMGenerationUnavailableError:
+        raise
+    except Exception as exc:
+        _record_notebooklm_health(
+            source="unit_material",
+            ok=False,
+            error_message=f"notebooklm_unit_material_runtime_error:{exc.__class__.__name__}",
+            refresh_required=_looks_like_notebooklm_auth_error_message(str(exc)),
+        )
+        return _normalize_unit_material_payload(
+            requested_provider=requested_provider,
+            material_type=material_type or "study_guide",
+            title="Study guide",
+            notebook_artifact_id=None,
+            source_payload={
+                "unit_title": _normalize_outline_title(unit_title) or None,
+                "material_type": _normalize_unit_material_type(material_type),
+            },
+            content_markdown=None,
+            raw_provider_response={"runtime_error": str(exc)},
+            error_message=f"notebooklm_unit_material_runtime_error:{exc.__class__.__name__}",
+        )
+
+
+async def _notebooklm_generate_unit_material_async(
+    *,
+    unit_title: str,
+    material_type: str | None,
+    source_text: str,
+    document_path: str | None,
+    provider_context: dict[str, Any] | None,
+    unit_map: dict[str, Any] | None,
+    content_blocks: list[dict[str, Any]] | None,
+    requested_provider: str,
+) -> dict[str, Any]:
+    normalized_material_type = _normalize_unit_material_type(material_type)
+    if normalized_material_type != "study_guide":
+        return _normalize_unit_material_payload(
+            requested_provider=requested_provider,
+            material_type=normalized_material_type,
+            title="Study guide",
+            notebook_artifact_id=None,
+            source_payload={"unit_title": _normalize_outline_title(unit_title) or None},
+            content_markdown=None,
+            raw_provider_response=None,
+            error_message=f"unsupported_material_type:{normalized_material_type}",
+        )
+
+    client = await _create_notebooklm_client()
+    if client is None:
+        raise NotebookLMGenerationUnavailableError(
+            "NotebookLM is not available for unit material generation. Refresh NotebookLM from the Owner Panel and try again."
+        )
+
+    notebook_id = str((provider_context or {}).get("notebook_id") or "").strip()
+    source_ids = [str(value).strip() for value in ((provider_context or {}).get("source_ids") or []) if str(value).strip()]
+    notebook_title = str((provider_context or {}).get("notebook_title") or "").strip() or f"{str(app_config.NOTEBOOKLM_NOTEBOOK_PREFIX or '').strip()} {unit_title}".strip()
+    created_temp_notebook = False
+    artifact_id = ""
+    markdown_text = ""
+    raw_provider_response: dict[str, Any] = {}
+    temp_output_path = ""
+
+    try:
+        async with client as opened:
+            if not notebook_id:
+                notebook = await opened.notebooks.create(notebook_title)
+                notebook_id = str(getattr(notebook, "id", "") or "").strip()
+                if not notebook_id:
+                    raise RuntimeError("notebooklm_missing_notebook_id")
+                source_ids = await _notebooklm_attach_source(
+                    client=opened,
+                    notebook_id=notebook_id,
+                    unit_title=unit_title,
+                    source_text=source_text,
+                    document_path=document_path,
+                )
+                created_temp_notebook = True
+
+            provider_context = _build_notebooklm_provider_context(
+                notebook_id=notebook_id,
+                source_ids=source_ids,
+                notebook_title=notebook_title,
+            )
+            extra_instructions = _build_notebooklm_study_guide_instructions(
+                unit_title=unit_title,
+                unit_map=unit_map,
+                content_blocks=content_blocks,
+            )
+            generation = await opened.artifacts.generate_study_guide(
+                notebook_id,
+                source_ids=source_ids or None,
+                language="fr",
+                extra_instructions=extra_instructions,
+            )
+            artifact_id = str(getattr(generation, "task_id", "") or "").strip()
+            completed = await opened.artifacts.wait_for_completion(
+                notebook_id,
+                artifact_id,
+                timeout=420.0,
+            )
+            status_text = str(getattr(completed, "status", "") or getattr(generation, "status", "") or "").strip().lower()
+            raw_provider_response = {
+                "generation": {
+                    "task_id": artifact_id or None,
+                    "status": str(getattr(generation, "status", "") or "").strip() or None,
+                    "metadata": getattr(generation, "metadata", None),
+                },
+                "completion": {
+                    "task_id": str(getattr(completed, "task_id", "") or artifact_id or "").strip() or None,
+                    "status": status_text or None,
+                    "error": str(getattr(completed, "error", "") or "").strip() or None,
+                    "error_code": str(getattr(completed, "error_code", "") or "").strip() or None,
+                    "metadata": getattr(completed, "metadata", None),
+                },
+            }
+            if status_text != "completed":
+                error_message = str(getattr(completed, "error", "") or "").strip() or f"notebooklm_unit_material_{status_text or 'failed'}"
+                _record_notebooklm_health(
+                    source="unit_material",
+                    ok=False,
+                    error_message=error_message,
+                    refresh_required=_looks_like_notebooklm_auth_error_message(error_message),
+                )
+                return _normalize_unit_material_payload(
+                    requested_provider=requested_provider,
+                    material_type=normalized_material_type,
+                    title="Study guide",
+                    notebook_artifact_id=artifact_id,
+                    source_payload={
+                        "provider_context": provider_context,
+                        "extra_instructions": extra_instructions,
+                    },
+                    content_markdown=None,
+                    raw_provider_response=raw_provider_response,
+                    error_message=error_message,
+                )
+
+            with tempfile.NamedTemporaryFile("w+b", suffix=".md", delete=False) as handle:
+                temp_output_path = handle.name
+            await opened.artifacts.download_report(notebook_id, temp_output_path, artifact_id=artifact_id)
+            markdown_text = Path(temp_output_path).read_text(encoding="utf-8", errors="ignore").strip()
+    except Exception as exc:
+        _record_notebooklm_health(
+            source="unit_material",
+            ok=False,
+            error_message=f"notebooklm_unit_material_request_failed:{exc.__class__.__name__}:{exc}",
+            refresh_required=_looks_like_notebooklm_auth_error_message(str(exc)),
+        )
+        return _normalize_unit_material_payload(
+            requested_provider=requested_provider,
+            material_type=normalized_material_type,
+            title="Study guide",
+            notebook_artifact_id=artifact_id,
+            source_payload={
+                "provider_context": provider_context if isinstance(provider_context, dict) else None,
+            },
+            content_markdown=None,
+            raw_provider_response=raw_provider_response or {"request_failed": str(exc)},
+            error_message=f"notebooklm_unit_material_request_failed:{exc.__class__.__name__}",
+        )
+    finally:
+        if temp_output_path:
+            try:
+                Path(temp_output_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+        if created_temp_notebook and notebook_id:
+            await _safe_delete_notebook_async(notebook_id)
+
+    _record_notebooklm_health(
+        source="unit_material",
+        ok=True,
+        error_message=None,
+        refresh_required=False,
+    )
+    return _normalize_unit_material_payload(
+        requested_provider=requested_provider,
+        material_type=normalized_material_type,
+        title="Study guide",
+        notebook_artifact_id=artifact_id,
+        source_payload={
+            "provider_context": provider_context,
+            "extra_instructions": _build_notebooklm_study_guide_instructions(
+                unit_title=unit_title,
+                unit_map=unit_map,
+                content_blocks=content_blocks,
+            ),
+        },
+        content_markdown=markdown_text,
+        raw_provider_response=raw_provider_response,
+        error_message=None,
     )
 
 

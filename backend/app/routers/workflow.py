@@ -37,6 +37,7 @@ from ..models import (
     WorkflowChecklistItem,
     WorkflowChecklistItemKind,
     WorkflowSessionChecklistAction,
+    WorkflowUnitMaterial,
     WorkflowSessionWriteup,
     WorkflowUnit,
     WorkflowUnitBlueprint,
@@ -91,6 +92,8 @@ from ..schemas import (
     WorkflowToggleItemIn,
     WorkflowUnitAssistantIn,
     WorkflowUnitAssistantOut,
+    WorkflowUnitMaterialGenerateIn,
+    WorkflowUnitMaterialOut,
     WorkflowUnitExtractionReviewIn,
     WorkflowUnitBlueprintOut,
     WorkflowUnitDeleteOut,
@@ -123,6 +126,7 @@ from ..services.workflow_generation import (
     NotebookLMGenerationUnavailableError,
     delete_provider_unit_context,
     generate_unit_assistant_package,
+    generate_unit_material_package,
 )
 from ..services.report import build_calendar_summary_pdf
 from ..services.excel import build_holiday_export_workbook, build_holiday_import_template, parse_holiday_excel
@@ -1905,6 +1909,26 @@ def _serialize_unit_blueprint(row: WorkflowUnitBlueprint) -> WorkflowUnitBluepri
         reviewed=bool(row.reviewed),
         reviewed_at=row.reviewed_at,
         reviewed_by_user_id=row.reviewed_by_user_id,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+def _serialize_unit_material(row: WorkflowUnitMaterial) -> WorkflowUnitMaterialOut:
+    return WorkflowUnitMaterialOut(
+        id=int(row.id),
+        unit_id=int(row.unit_id),
+        material_type=str(row.material_type or "study_guide"),
+        provider=str(row.provider or "fallback"),
+        model=row.model,
+        status=str(row.status or "ready"),
+        title=row.title,
+        notebook_artifact_id=str(row.notebook_artifact_id or "").strip() or None,
+        source_payload=row.source_payload_json if isinstance(row.source_payload_json, dict) else None,
+        content_markdown=str(row.content_markdown or "").strip() or None,
+        raw_provider_response=row.raw_provider_response if isinstance(row.raw_provider_response, dict) else None,
+        error_message=row.error_message,
+        created_by_user_id=int(row.created_by_user_id) if row.created_by_user_id is not None else None,
         created_at=row.created_at,
         updated_at=row.updated_at,
     )
@@ -5358,6 +5382,111 @@ def ask_workflow_unit_assistant(
         },
     )
     return WorkflowUnitAssistantOut(**result)
+
+
+@router.get("/classes/{class_id}/units/{unit_id}/materials", response_model=list[WorkflowUnitMaterialOut])
+def list_workflow_unit_materials(
+    class_id: int,
+    unit_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[WorkflowUnitMaterialOut]:
+    _ = ensure_class_access(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    rows = db.scalars(
+        select(WorkflowUnitMaterial)
+        .where(WorkflowUnitMaterial.unit_id == int(unit_id))
+        .order_by(WorkflowUnitMaterial.updated_at.desc(), WorkflowUnitMaterial.id.desc())
+    ).all()
+    return [_serialize_unit_material(row) for row in rows]
+
+
+@router.post("/classes/{class_id}/units/{unit_id}/materials/generate", response_model=WorkflowUnitMaterialOut)
+def generate_workflow_unit_material(
+    class_id: int,
+    unit_id: int,
+    payload: WorkflowUnitMaterialGenerateIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkflowUnitMaterialOut:
+    _ = ensure_class_writable(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    row = db.scalar(select(WorkflowUnitBlueprint).where(WorkflowUnitBlueprint.unit_id == int(unit_id)))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Unit blueprint not found.")
+
+    source_text = ""
+    if unit.document_path and Path(str(unit.document_path)).exists():
+        source_text = extract_text_from_document(str(unit.document_path), None)
+    elif row.source_text_excerpt:
+        source_text = str(row.source_text_excerpt or "").strip()
+
+    provider_context = None
+    if isinstance(row.blueprint_json, dict):
+        raw_context = row.blueprint_json.get("provider_context")
+        if isinstance(raw_context, dict):
+            provider_context = raw_context
+
+    try:
+        result = generate_unit_material_package(
+            unit_title=unit.title,
+            material_type=payload.material_type,
+            source_text=source_text,
+            document_path=unit.document_path,
+            provider_context=provider_context,
+            unit_map=row.unit_map_json if isinstance(row.unit_map_json, dict) else None,
+            content_blocks=row.content_blocks_json if isinstance(row.content_blocks_json, list) else None,
+            provider="notebooklm",
+        )
+    except NotebookLMGenerationUnavailableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    material_type = str(result.get("material_type") or payload.material_type or "study_guide").strip().lower() or "study_guide"
+    existing = db.scalar(
+        select(WorkflowUnitMaterial).where(
+            WorkflowUnitMaterial.unit_id == int(unit_id),
+            WorkflowUnitMaterial.material_type == material_type,
+        )
+    )
+    if existing is None:
+        existing = WorkflowUnitMaterial(
+            unit_id=int(unit_id),
+            material_type=material_type,
+            created_by_user_id=int(current_user.id),
+        )
+        db.add(existing)
+
+    existing.provider = str(result.get("provider") or "fallback")
+    existing.model = str(result.get("model") or "").strip() or None
+    existing.status = str(result.get("status") or "ready")
+    existing.title = str(result.get("title") or "").strip() or None
+    existing.notebook_artifact_id = str(result.get("notebook_artifact_id") or "").strip() or None
+    existing.source_payload_json = result.get("source_payload") if isinstance(result.get("source_payload"), dict) else None
+    existing.content_markdown = str(result.get("content_markdown") or "").strip() or None
+    existing.raw_provider_response = result.get("raw_provider_response") if isinstance(result.get("raw_provider_response"), dict) else None
+    existing.error_message = str(result.get("error_message") or "").strip() or None
+    existing.updated_at = _utc_now_naive()
+    db.commit()
+    db.refresh(existing)
+
+    log_audit(
+        db,
+        user=current_user,
+        action="workflow.unit.generate_material",
+        entity_type="workflow_unit",
+        entity_id=unit.id,
+        class_id=class_id,
+        details={
+            "material_type": material_type,
+            "provider": existing.provider,
+            "status": existing.status,
+        },
+    )
+    return _serialize_unit_material(existing)
 
 
 @router.get("/classes/{class_id}/sessions/{session_id}/writeup", response_model=WorkflowSessionWriteupOut)

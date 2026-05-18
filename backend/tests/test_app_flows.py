@@ -1911,6 +1911,80 @@ def test_workflow_unit_assistant_returns_guided_notebook_response(client, monkey
     assert isinstance(captured["unit_map"], dict)
 
 
+def test_workflow_unit_material_generation_persists_study_guide(client, monkeypatch):
+    from app.routers import workflow as workflow_router
+
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Material Class", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Les nombres rationnels",
+            "source_text": (
+                "Les nombres rationnels : Somme et difference\n"
+                "Activites\n"
+                "Contenu de la lecon\n"
+                "Evaluation\n"
+            ),
+        },
+    )
+    assert unit_resp.status_code == 201
+    unit_id = unit_resp.json()["id"]
+
+    captured: dict[str, object] = {}
+
+    def _fake_generate_unit_material_package(**kwargs):
+        captured.update(kwargs)
+        return {
+            "provider": "notebooklm",
+            "requested_provider": "notebooklm",
+            "model": "notebooklm-py",
+            "status": "ready",
+            "material_type": "study_guide",
+            "title": "Study guide",
+            "notebook_artifact_id": "artifact-study-guide-1",
+            "source_payload": {
+                "provider_context": {"provider": "notebooklm", "notebook_id": "nb-unit-1", "source_ids": ["src-1"]},
+            },
+            "content_markdown": "# Guide d'etude\n\n## Section 1\n- Point cle",
+            "raw_provider_response": {"completion": {"status": "completed"}},
+            "error_message": None,
+        }
+
+    monkeypatch.setattr(workflow_router, "generate_unit_material_package", _fake_generate_unit_material_package)
+
+    generate_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/materials/generate",
+        headers=headers,
+        json={"material_type": "study_guide"},
+    )
+    assert generate_resp.status_code == 200
+    payload = generate_resp.json()
+    assert payload["provider"] == "notebooklm"
+    assert payload["material_type"] == "study_guide"
+    assert payload["notebook_artifact_id"] == "artifact-study-guide-1"
+    assert payload["content_markdown"].startswith("# Guide d'etude")
+
+    materials_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/materials",
+        headers=headers,
+    )
+    assert materials_resp.status_code == 200
+    rows = materials_resp.json()
+    assert len(rows) == 1
+    assert rows[0]["material_type"] == "study_guide"
+    assert rows[0]["content_markdown"].startswith("# Guide d'etude")
+
+    assert captured["provider"] == "notebooklm"
+    assert captured["material_type"] == "study_guide"
+    assert isinstance(captured["unit_map"], dict)
+
+
 def test_workflow_unit_reextract_is_blocked_after_teaching_starts(client):
     from app.database import SessionLocal
     from app.models import ClassSession
