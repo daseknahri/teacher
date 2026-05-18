@@ -1098,6 +1098,11 @@ async function _openUnitMaterialStudioModal({ classId, unit, blueprint }) {
         ${item.provider ? `<span class="badge badge-gray">${_escapeHtml(String(item.provider))}</span>` : ''}
         ${item.model ? `<span class="badge badge-gray">${_escapeHtml(String(item.model))}</span>` : ''}
       </div>
+      <div class="flex items-center justify-end mb-4">
+        <button id="unit-material-download" class="btn btn-secondary btn-sm" data-material-id="${_escapeHtml(String(item.id || ''))}">
+          Download
+        </button>
+      </div>
       ${item.error_message ? `<p class="text-[12px] text-amber-700 mb-3"><span class="font-semibold">Provider note:</span> ${_escapeHtml(String(item.error_message || ''))}</p>` : ''}
       <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
         ${_renderMaterialMarkdown(item.content_markdown)}
@@ -1153,6 +1158,25 @@ async function _openUnitMaterialStudioModal({ classId, unit, blueprint }) {
 
   overlay.addEventListener('click', event => {
     if (event.target === overlay) cleanup();
+  });
+  resultNode.addEventListener('click', async event => {
+    const downloadButton = event.target instanceof Element ? event.target.closest('#unit-material-download') : null;
+    if (!downloadButton) return;
+    const item = state.itemsByType[state.materialType] || null;
+    if (!item?.id) return;
+    const selectedMaterial = getSelectedMaterial();
+    setError('');
+    try {
+      downloadButton.setAttribute('disabled', 'disabled');
+      await downloadWithAuth(
+        `/workflow/classes/${classId}/units/${unit.id}/materials/${item.id}/download`,
+        `${selectedMaterial?.id || 'material'}.md`,
+      );
+    } catch (err) {
+      setError(String(err?.message || 'Failed to download the material.'));
+    } finally {
+      downloadButton.removeAttribute('disabled');
+    }
   });
   overlay.querySelector('#unit-material-close-top')?.addEventListener('click', cleanup);
   overlay.querySelector('#unit-material-close')?.addEventListener('click', cleanup);

@@ -1934,6 +1934,15 @@ def _serialize_unit_material(row: WorkflowUnitMaterial) -> WorkflowUnitMaterialO
     )
 
 
+def _build_unit_material_download_filename(unit: WorkflowUnit, material: WorkflowUnitMaterial) -> str:
+    raw_unit_title = str(unit.title or "").strip() or f"unit-{int(unit.id)}"
+    raw_material_title = str(material.title or material.material_type or "material").strip() or "material"
+    stem = f"{raw_unit_title}-{raw_material_title}".lower()
+    stem = re.sub(r"[^a-z0-9]+", "-", stem)
+    stem = stem.strip("-") or f"unit-{int(unit.id)}-material"
+    return f"{stem}.md"
+
+
 def _serialize_session_writeup(row: WorkflowSessionWriteup) -> WorkflowSessionWriteupOut:
     checked_ids = row.checked_item_ids_json if isinstance(row.checked_item_ids_json, list) else []
     checked_titles = row.checked_item_titles_json if isinstance(row.checked_item_titles_json, list) else []
@@ -5401,6 +5410,33 @@ def list_workflow_unit_materials(
         .order_by(WorkflowUnitMaterial.updated_at.desc(), WorkflowUnitMaterial.id.desc())
     ).all()
     return [_serialize_unit_material(row) for row in rows]
+
+
+@router.get("/classes/{class_id}/units/{unit_id}/materials/{material_id}/download")
+def download_workflow_unit_material(
+    class_id: int,
+    unit_id: int,
+    material_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    _ = ensure_class_access(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    material = db.get(WorkflowUnitMaterial, int(material_id))
+    if material is None or int(material.unit_id) != int(unit_id):
+        raise HTTPException(status_code=404, detail="Workflow unit material not found.")
+    content = str(material.content_markdown or "").strip()
+    if not content:
+        raise HTTPException(status_code=409, detail="This material does not have downloadable content yet.")
+    filename = _build_unit_material_download_filename(unit, material)
+    headers = {"Content-Disposition": f'attachment; filename="{filename}"'}
+    return StreamingResponse(
+        BytesIO(content.encode("utf-8")),
+        media_type="text/markdown; charset=utf-8",
+        headers=headers,
+    )
 
 
 @router.post("/classes/{class_id}/units/{unit_id}/materials/generate", response_model=WorkflowUnitMaterialOut)

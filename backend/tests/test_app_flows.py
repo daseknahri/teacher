@@ -2058,6 +2058,70 @@ def test_workflow_unit_material_generation_persists_formative_quiz(client, monke
     assert "content_blocks" in captured
 
 
+def test_workflow_unit_material_download_returns_markdown(client, monkeypatch):
+    from app.routers import workflow as workflow_router
+
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Material Download Class", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Les nombres rationnels",
+            "source_text": (
+                "Les nombres rationnels : Somme et difference\n"
+                "Activites\n"
+                "Contenu de la lecon\n"
+                "Evaluation\n"
+            ),
+        },
+    )
+    assert unit_resp.status_code == 201
+    unit_id = unit_resp.json()["id"]
+
+    def _fake_generate_unit_material_package(**kwargs):
+        return {
+            "provider": "notebooklm",
+            "requested_provider": "notebooklm",
+            "model": "notebooklm-py",
+            "status": "ready",
+            "material_type": "study_guide",
+            "title": "Study guide",
+            "notebook_artifact_id": "artifact-study-guide-1",
+            "source_payload": {
+                "provider_context": {"provider": "notebooklm", "notebook_id": "nb-unit-1", "source_ids": ["src-1"]},
+            },
+            "content_markdown": "# Guide d'etude\n\n## Section 1\n- Point cle",
+            "raw_provider_response": {"completion": {"status": "completed"}},
+            "error_message": None,
+        }
+
+    monkeypatch.setattr(workflow_router, "generate_unit_material_package", _fake_generate_unit_material_package)
+
+    generate_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/materials/generate",
+        headers=headers,
+        json={"material_type": "study_guide"},
+    )
+    assert generate_resp.status_code == 200
+    material_id = generate_resp.json()["id"]
+
+    download_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/materials/{material_id}/download",
+        headers=headers,
+    )
+    assert download_resp.status_code == 200
+    assert "text/markdown" in str(download_resp.headers.get("content-type") or "").lower()
+    disposition = str(download_resp.headers.get("content-disposition") or "")
+    assert "attachment;" in disposition.lower()
+    assert ".md" in disposition.lower()
+    assert "# Guide d'etude" in download_resp.text
+
+
 def test_workflow_unit_reextract_is_blocked_after_teaching_starts(client):
     from app.database import SessionLocal
     from app.models import ClassSession
