@@ -2032,6 +2032,83 @@ function _renderWriteupSourcePayload(payload, { compact = false } = {}) {
   `;
 }
 
+function _collectSessionPlannedNodes(nodes, sessionNumber) {
+  const target = Number(sessionNumber || 0);
+  if (!Number.isFinite(target) || target <= 0 || !Array.isArray(nodes)) return [];
+  const walk = rows => rows.reduce((acc, rawNode) => {
+    if (!rawNode || typeof rawNode !== 'object') return acc;
+    const childMatches = walk(Array.isArray(rawNode.children) ? rawNode.children : []);
+    const ownSession = Number(rawNode.session_number || 0);
+    if (ownSession !== target && !childMatches.length) return acc;
+    acc.push({
+      title: String(rawNode.title || '').trim(),
+      kind: String(rawNode.kind || '').trim(),
+      session_number: ownSession > 0 ? ownSession : null,
+      children: childMatches,
+    });
+    return acc;
+  }, []);
+  return walk(nodes);
+}
+
+function _flattenSessionPlannedTitles(nodes, output = []) {
+  const rows = Array.isArray(nodes) ? nodes : [];
+  rows.forEach(node => {
+    if (!node || typeof node !== 'object') return;
+    const title = String(node.title || '').trim();
+    if (title) output.push(title);
+    _flattenSessionPlannedTitles(node.children || [], output);
+  });
+  return output;
+}
+
+function _renderSessionPlannedTree(nodes, depth = 0) {
+  if (!Array.isArray(nodes) || !nodes.length) {
+    return depth === 0
+      ? '<p class="text-[12px] text-slate-500">No planned checklist flow saved for this unit session.</p>'
+      : '';
+  }
+  const listClass = depth === 0
+    ? 'space-y-1.5'
+    : 'space-y-1.5 ml-4 mt-2 border-l border-slate-200 pl-3';
+  return `
+    <ul class="${listClass}">
+      ${nodes.map(node => `
+        <li>
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-[13px] text-slate-700">${_escapeHtml(node?.title || '')}</span>
+            ${node?.kind ? `<span class="badge badge-gray">${_escapeHtml(String(node.kind))}</span>` : ''}
+            ${node?.session_number ? `<span class="badge badge-blue">S${Number(node.session_number)}</span>` : ''}
+          </div>
+          ${_renderSessionPlannedTree(node?.children || [], depth + 1)}
+        </li>
+      `).join('')}
+    </ul>`;
+}
+
+function _renderSessionPlaybookPreview(unitMap, plannedTitles) {
+  const playbook = Array.isArray(unitMap?.teacher_playbook) ? unitMap.teacher_playbook.filter(Boolean) : [];
+  const titleKeys = new Set((Array.isArray(plannedTitles) ? plannedTitles : []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+  const matched = playbook.filter(entry => {
+    const sectionTitle = String(entry?.section_title || '').trim().toLowerCase();
+    if (sectionTitle && titleKeys.has(sectionTitle)) return true;
+    const sectionPath = Array.isArray(entry?.section_path) ? entry.section_path : [];
+    return sectionPath.some(value => titleKeys.has(String(value || '').trim().toLowerCase()));
+  }).slice(0, 3);
+  if (!matched.length) {
+    return '<p class="text-[12px] text-slate-500">No specific teacher playbook suggestions matched this session yet.</p>';
+  }
+  return matched.map(entry => `
+    <div class="rounded-xl border border-slate-200 bg-white p-3">
+      <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(entry?.section_title || 'Section'))}</p>
+      ${Array.isArray(entry?.suggested_requests) && entry.suggested_requests.length ? `
+        <ul class="mt-2 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+          ${entry.suggested_requests.slice(0, 3).map(row => `<li>${_escapeHtml(String(row || ''))}</li>`).join('')}
+        </ul>` : ''}
+    </div>
+  `).join('');
+}
+
 function _openSessionWriteupModal(writeup) {
   return new Promise(resolve => {
     const item = writeup && typeof writeup === 'object' ? writeup : {};
@@ -2122,8 +2199,18 @@ function _render(el, classId) {
   const recentSessions = getRecentSessions();
   const visibleRecentSessions = _filterRecentSessions(recentSessions, _recentWindow);
   const unitTimelineState = unit ? _getUnitTimelineState(unit.id) : _emptyUnitTimelineState();
+  const unitBlueprintState = unit ? _getUnitBlueprintState(unit.id) : _emptyUnitBlueprintState();
   const students = getStudents();
   const todayDateValue = _toDateInputValue(new Date());
+  const activeBlueprint = unitBlueprintState.item && typeof unitBlueprintState.item === 'object' ? unitBlueprintState.item : null;
+  const activeBlueprintTree = activeBlueprint?.blueprint_json && typeof activeBlueprint.blueprint_json === 'object' && Array.isArray(activeBlueprint.blueprint_json.items)
+    ? activeBlueprint.blueprint_json.items
+    : [];
+  const activeUnitMap = activeBlueprint?.unit_map_json && typeof activeBlueprint.unit_map_json === 'object'
+    ? activeBlueprint.unit_map_json
+    : {};
+  const activeSessionPlanTree = session?.unit_session_number ? _collectSessionPlannedNodes(activeBlueprintTree, session.unit_session_number) : [];
+  const activeSessionPlanTitles = _flattenSessionPlannedTitles(activeSessionPlanTree, []);
 
   // Progress ring
   const checklist = _checklist(unit);
@@ -2483,6 +2570,26 @@ function _render(el, classId) {
                 <input id="session-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.bmp" class="hidden" />
               </label>
               <button id="btn-resume-extraction" class="btn btn-ghost btn-sm">Resume Last Extraction</button>
+            </div>
+            <div class="bg-slate-50 rounded-2xl border border-slate-200 p-4 flex flex-col gap-3">
+              <div class="flex items-center justify-between gap-2 flex-wrap">
+                <div>
+                  <h4 class="text-[13px] font-semibold text-slate-700">Planned Session Route</h4>
+                  <p class="text-[12px] text-slate-500">What this unit session was planned to cover before live teaching started.</p>
+                </div>
+                ${session?.unit_session_number ? `<span class="badge badge-blue">Unit Session ${session.unit_session_number}</span>` : ''}
+              </div>
+              ${unitBlueprintState.loading && !activeBlueprint ? '<p class="text-[12px] text-slate-500">Loading planned route...</p>'
+                : unitBlueprintState.error ? `<p class="text-[12px] text-red-600">${_escapeHtml(unitBlueprintState.error)}</p>`
+                  : !session?.unit_session_number ? '<p class="text-[12px] text-slate-500">This session has no saved unit-session number yet.</p>'
+                    : `
+                      <div class="flex flex-col gap-3">
+                        ${_renderSessionPlannedTree(activeSessionPlanTree)}
+                        <div>
+                          <p class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Teacher Prep</p>
+                          ${_renderSessionPlaybookPreview(activeUnitMap, activeSessionPlanTitles)}
+                        </div>
+                      </div>`}
             </div>
             <div class="bg-slate-50 rounded-2xl border border-slate-200 p-4 flex flex-col gap-3">
               <div class="flex items-center justify-between gap-2 flex-wrap">

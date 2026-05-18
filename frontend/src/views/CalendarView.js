@@ -2361,6 +2361,35 @@ function _renderCalendar(el, classId) {
   const selectedCanEdit = Boolean(selectedEvent) && !selectedIsPastWorkflowLocked;
   const selectedCanAttendanceEdit = Boolean(selectedEvent) && !selectedIsFuture;
   const selectedConfirmLabel = selectedIsFuture ? 'Future Session' : 'Confirm Session';
+  const selectedSessionStateLabel = selectedEvent
+    ? selectedIsFuture
+      ? 'Upcoming'
+      : selectedWriteup
+        ? (selectedWriteup.approved === false ? 'Awaiting review' : 'Completed')
+        : selectedEvent.unit_id != null
+          ? 'Ready to confirm'
+          : 'Standalone session'
+    : '';
+  const selectedSessionStateClass = selectedEvent
+    ? selectedIsFuture
+      ? 'badge-blue'
+      : selectedWriteup
+        ? (selectedWriteup.approved === false ? 'badge-amber' : 'badge-green')
+        : selectedEvent.unit_id != null
+          ? 'badge-amber'
+          : 'badge-gray'
+    : 'badge-gray';
+  const selectedNextStepText = selectedEvent
+    ? selectedIsFuture
+      ? 'Review the planned teaching flow and prep suggestions before class.'
+      : selectedWriteup
+        ? (selectedWriteup.approved === false
+          ? 'Review the generated write-up, then approve it when it reflects what happened in class.'
+          : 'This session is documented. You can still review the write-up or reopen Workflow for unit context.')
+        : selectedEvent.unit_id != null
+          ? 'Confirm the delivered session to auto-check the checklist and generate the textbook write-up.'
+          : 'This session stands outside the workflow unit system, so only note and attendance are tracked here.'
+    : '';
   const selectedConfirmTitle = selectedEvent
     ? (selectedCanConfirm
       ? 'Confirm this delivered session and auto-check checklist flow.'
@@ -2577,9 +2606,11 @@ function _renderCalendar(el, classId) {
           <div class="p-3 rounded-xl border border-slate-200 bg-slate-50">
             <p class="text-[13px] font-semibold text-slate-700">${_escapeHtml(selectedEvent.unit_title || 'Session')}</p>
             <div class="flex gap-2 mt-2 flex-wrap">
+              <span class="badge ${selectedSessionStateClass}">${_escapeHtml(selectedSessionStateLabel)}</span>
               <span class="badge badge-green">${selectedEvent.checked_items_count ?? 0} items done</span>
               <span class="badge badge-red">${selectedEvent.absent_count ?? 0} absent</span>
             </div>
+            ${selectedNextStepText ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedNextStepText)}</p>` : ''}
           </div>
 
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
