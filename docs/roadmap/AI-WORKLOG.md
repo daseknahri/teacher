@@ -38,6 +38,27 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-19 22:05 - Claude
+
+- Status: planned
+- Goal: implement a backend endpoint that generates and saves content for one leaf checklist item using the saved unit brain
+- Files expected:
+  - `backend/app/schemas.py`
+  - `backend/app/routers/workflow.py`
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/test_app_flows.py`
+  - `docs/roadmap/AI-WORKLOG.md`
+- Assumptions:
+  - the next safe slice is per-leaf generation, not frontend reader work yet
+  - the generation contract should follow the existing package style already used for write-ups and unit helpers
+- Notes:
+  - task prompt lives in `docs/roadmap/CLAUDE-TASK-LEAF-CONTENT-GENERATION.md`
+  - this task should not modify checklist/session semantics
+- Result:
+  - pending
+- Follow-up:
+  - after this lands, the next step is the first frontend leaf reader/editor
+
 ### 2026-05-19 21:35 - Codex
 
 - Status: done
