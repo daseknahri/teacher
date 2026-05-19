@@ -2995,8 +2995,25 @@ function _render(el, classId) {
     : activeMatchedDone === 0
       ? { label: 'Not started', className: 'badge-blue', hint: 'This planned route has not been covered yet.' }
       : activeMatchedRemaining === 0
-        ? { label: 'Fully covered', className: 'badge-green', hint: 'All planned rows for this session are already completed.' }
-        : { label: 'Partly covered', className: 'badge-amber', hint: `${activeMatchedRemaining} planned row${activeMatchedRemaining === 1 ? '' : 's'} still remain.` };
+      ? { label: 'Fully covered', className: 'badge-green', hint: 'All planned rows for this session are already completed.' }
+      : { label: 'Partly covered', className: 'badge-amber', hint: `${activeMatchedRemaining} planned row${activeMatchedRemaining === 1 ? '' : 's'} still remain.` };
+  const activeKindCounts = activeMatchedChecklist.reduce((acc, item) => {
+    const kind = String(item?.item_kind || '').trim().toLowerCase();
+    if (!kind || kind === 'other') return acc;
+    acc[kind] = Number(acc[kind] || 0) + 1;
+    return acc;
+  }, {});
+  const activeSummaryBadges = [
+    activeMatchedChecklist.length ? `${activeMatchedChecklist.length} planned items` : '',
+    activeMatchedChecklist.length ? `${activeMatchedDone}/${activeMatchedChecklist.length} done` : '',
+    activeMatchedChecklist.length ? `${activeMatchedRemaining} remaining` : '',
+    activeMatchedChecklist.length ? `${activeCompletionPct}% covered` : '',
+    activeKindCounts.activity ? `${activeKindCounts.activity} activities` : '',
+    activeKindCounts.example ? `${activeKindCounts.example} examples` : '',
+    activeKindCounts.exercise ? `${activeKindCounts.exercise} exercises` : '',
+    activeKindCounts.definition ? `${activeKindCounts.definition} definitions` : '',
+    activeKindCounts.property ? `${activeKindCounts.property} properties` : '',
+  ].filter(Boolean);
   const activeProgressCount = sessionProgressState.loaded ? Number(sessionProgressState.items?.length || 0) : 0;
   const activeWriteupStateLabel = !sessionWriteupState.item
     ? 'Not saved'
