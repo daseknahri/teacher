@@ -5272,6 +5272,20 @@ def confirm_workflow_session(
         raise HTTPException(status_code=404, detail="Workflow session not found.")
     if session.session_date > date.today():
         raise HTTPException(status_code=409, detail="Future sessions cannot be confirmed yet.")
+    already_confirmed = bool(
+        db.scalar(select(WorkflowSessionWriteup.id).where(WorkflowSessionWriteup.session_id == int(session.id)))
+    ) or bool(
+        db.scalar(
+            select(WorkflowSessionChecklistAction.id).where(
+                WorkflowSessionChecklistAction.session_id == int(session.id),
+                WorkflowSessionChecklistAction.checked.is_(True),
+            )
+        )
+    ) or bool(
+        db.scalar(select(ProgressItem.id).where(ProgressItem.session_id == int(session.id)))
+    )
+    if already_confirmed:
+        raise HTTPException(status_code=409, detail="This session is already confirmed.")
 
     now_time = _utc_now_naive().replace(second=0, microsecond=0).time()
     if session.start_time is None:

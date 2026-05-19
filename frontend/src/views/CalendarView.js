@@ -3338,16 +3338,23 @@ function _renderCalendar(el, classId) {
   const selectedDateKey = selectedEvent ? _dateKey(selectedEvent.session_date || selectedEvent.date) : '';
   const selectedIsFuture = Boolean(selectedDateKey) && selectedDateKey > todayKey;
   const selectedIsPastWorkflowLocked = Boolean(selectedEvent) && _isPastWorkflowSession(selectedEvent, todayKey);
-  const selectedCanConfirm = Boolean(selectedEvent && selectedEvent.unit_id != null && !selectedIsFuture);
+  const selectedAlreadyConfirmed = Boolean(
+    selectedEvent
+    && selectedEvent.unit_id != null
+    && (Boolean(selectedEvent.has_saved_writeup) || Number(selectedEvent.checked_items_count || 0) > 0)
+  );
+  const selectedCanConfirm = Boolean(selectedEvent && selectedEvent.unit_id != null && !selectedIsFuture && !selectedAlreadyConfirmed);
   const selectedCanEdit = Boolean(selectedEvent) && !selectedIsPastWorkflowLocked;
   const selectedCanAttendanceEdit = Boolean(selectedEvent) && !selectedIsFuture;
-  const selectedConfirmLabel = selectedIsFuture ? 'Future Session' : 'Confirm Session';
+  const selectedConfirmLabel = selectedIsFuture ? 'Future Session' : selectedAlreadyConfirmed ? 'Already Confirmed' : 'Confirm Session';
   const selectedHasWorkflowUnit = Boolean(selectedEvent && selectedEvent.unit_id != null);
   const selectedCompletedCount = Number(selectedEvent?.checked_items_count || 0);
   const selectedAbsentCount = Number(selectedEvent?.absent_count || 0);
   const selectedSessionStateLabel = selectedEvent
     ? selectedIsFuture
       ? 'Upcoming'
+      : selectedAlreadyConfirmed && !selectedWriteup
+        ? 'Confirmed'
       : selectedWriteup
         ? (selectedWriteup.approved === false ? 'Awaiting review' : 'Completed')
         : selectedHasWorkflowUnit
@@ -3357,6 +3364,8 @@ function _renderCalendar(el, classId) {
   const selectedSessionStateClass = selectedEvent
     ? selectedIsFuture
       ? 'badge-blue'
+      : selectedAlreadyConfirmed && !selectedWriteup
+        ? 'badge-green'
       : selectedWriteup
         ? (selectedWriteup.approved === false ? 'badge-amber' : 'badge-green')
         : selectedHasWorkflowUnit
@@ -3366,6 +3375,8 @@ function _renderCalendar(el, classId) {
   const selectedNextStepText = selectedEvent
     ? selectedIsFuture
       ? 'Review the planned teaching flow and prep suggestions before class.'
+      : selectedAlreadyConfirmed && !selectedWriteup
+        ? 'This session is already confirmed. You can review the saved structure and continue with write-up work if needed.'
       : selectedWriteup
         ? (selectedWriteup.approved === false
           ? 'Review the generated write-up, then approve it when it reflects what happened in class.'
@@ -3402,8 +3413,10 @@ function _renderCalendar(el, classId) {
   const selectedWriteupPracticeCount = Array.isArray(selectedWriteup?.practice_items) ? selectedWriteup.practice_items.length : 0;
   const selectedConfirmTitle = selectedEvent
     ? (selectedCanConfirm
-      ? 'Confirm this delivered session and auto-check checklist flow.'
-      : (selectedEvent.unit_id == null ? 'Only workflow unit sessions can be confirmed.' : 'Future sessions can be confirmed only on/after the session date.'))
+      ? 'Confirm this delivered session.'
+      : (selectedAlreadyConfirmed
+        ? 'This session is already confirmed.'
+        : (selectedEvent.unit_id == null ? 'Only workflow unit sessions can be confirmed.' : 'Future sessions can be confirmed only on/after the session date.')))
     : '';
   const selectedEditTitle = selectedCanEdit
     ? 'Edit session date/time and note.'
@@ -4481,14 +4494,16 @@ function _renderCalendar(el, classId) {
       showToast('Only workflow unit sessions can be confirmed.', 'warning');
       return;
     }
+    if (selectedAlreadyConfirmed) {
+      showToast('This session is already confirmed.', 'info');
+      return;
+    }
     if (selectedIsFuture) {
       showToast('Future sessions can be confirmed only on or after session day.', 'info');
       return;
     }
 
-    const confirmed = await askConfirm(
-      `Confirm session ${fmtDate(selectedEvent.session_date || selectedEvent.date)} and auto-check its checklist progress?`
-    );
+    const confirmed = await askConfirm(`Confirm session ${fmtDate(selectedEvent.session_date || selectedEvent.date)}?`);
     if (!confirmed) return;
 
     const button = event.currentTarget;

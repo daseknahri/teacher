@@ -1670,13 +1670,22 @@ def test_workflow_confirm_can_generate_saved_session_writeup(client):
 
     workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
     assert workspace_resp.status_code == 200
-    active_unit = workspace_resp.json().get("active_unit")
+    workspace_payload = workspace_resp.json()
+    active_unit = workspace_payload.get("active_unit")
     if isinstance(active_unit, dict) and active_unit.get("id"):
         close_active_resp = client.post(
             f"/workflow/classes/{class_id}/units/{active_unit['id']}/close",
             headers=headers,
         )
         assert close_active_resp.status_code == 200
+    active_session = workspace_payload.get("active_session")
+    if isinstance(active_session, dict) and active_session.get("id"):
+        end_active_session_resp = client.post(
+            f"/workflow/classes/{class_id}/sessions/{active_session['id']}/end",
+            headers=headers,
+            json={},
+        )
+        assert end_active_session_resp.status_code == 200
 
     unit_resp = client.post(
         f"/workflow/classes/{class_id}/units/start",
@@ -1724,6 +1733,71 @@ def test_workflow_confirm_can_generate_saved_session_writeup(client):
     assert len(writeup["learning_focus"]) >= 1
     assert len(writeup["teaching_content"]) >= 1
     assert len(writeup["practice_items"]) >= 1
+
+
+def test_workflow_confirm_rejects_already_confirmed_session(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Confirmed Once Class", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    roster_content = _build_roster_file([("B1", "Student Two")])
+    roster_resp = client.post(
+        f"/classes/{class_id}/students/import",
+        headers=headers,
+        files={"file": ("roster.xlsx", roster_content, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert roster_resp.status_code == 200
+
+    workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_resp.status_code == 200
+    active_unit = workspace_resp.json().get("active_unit")
+    if isinstance(active_unit, dict) and active_unit.get("id"):
+        close_active_resp = client.post(
+            f"/workflow/classes/{class_id}/units/{active_unit['id']}/close",
+            headers=headers,
+        )
+        assert close_active_resp.status_code == 200
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Trigonometrie",
+            "source_text": (
+                "1. Trigonometrie\n"
+                "1.1 Activite\n"
+                "Definition: Sinus et cosinus.\n"
+                "Exemple: Triangle rectangle.\n"
+                "Exercices: Calculs.\n"
+            ),
+        },
+    )
+    assert unit_resp.status_code == 201
+
+    start_session_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/start",
+        headers=headers,
+        json={"absent_student_ids": []},
+    )
+    assert start_session_resp.status_code == 201
+    session_id = start_session_resp.json()["id"]
+
+    first_confirm = client.post(
+        f"/workflow/classes/{class_id}/sessions/{session_id}/confirm",
+        headers=headers,
+        json={"generate_session_writeup": True},
+    )
+    assert first_confirm.status_code == 200
+
+    second_confirm = client.post(
+        f"/workflow/classes/{class_id}/sessions/{session_id}/confirm",
+        headers=headers,
+        json={"generate_session_writeup": True},
+    )
+    assert second_confirm.status_code == 409
+    assert second_confirm.json()["detail"] == "This session is already confirmed."
 
 
 def test_workflow_blueprint_records_requested_provider_when_falling_back(client, monkeypatch):
