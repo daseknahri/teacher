@@ -795,7 +795,7 @@ function _buildSessionWriteupMarkdown(writeup, { unitTitle = '', sessionLabel = 
   return lines.join('\n').trim();
 }
 
-function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = false } = {}) {
+function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = false, remainingGuidanceCount = 0 } = {}) {
   if (isFuture) {
     return `
       <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -820,7 +820,11 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
     return `
       <div class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2">
         <p class="text-[12px] font-semibold text-slate-600">Recommended next step</p>
-        <p class="text-[12px] text-slate-500 mt-1">Generate the write-up after confirming what was really covered in class.</p>
+        <p class="text-[12px] text-slate-500 mt-1">
+          ${remainingGuidanceCount > 0
+            ? `You already have ${remainingGuidanceCount} matching saved guidance item${remainingGuidanceCount === 1 ? '' : 's'} for this session. Import one first, or generate the write-up after confirming what was really covered in class.`
+            : 'Generate the write-up after confirming what was really covered in class.'}
+        </p>
         <div class="mt-3 flex gap-2 flex-wrap">
           <button id="btn-calendar-next-generate" class="btn btn-primary btn-sm">Generate now</button>
           <button id="btn-calendar-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>
@@ -831,9 +835,14 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
     return `
       <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
         <p class="text-[12px] font-semibold text-amber-800">Recommended next step</p>
-        <p class="text-[12px] text-amber-700 mt-1">Review this draft, edit it if needed, and approve it once it matches the actual lesson.</p>
+        <p class="text-[12px] text-amber-700 mt-1">
+          ${remainingGuidanceCount > 0
+            ? 'Review this draft, import any remaining saved guidance you still want, and approve it once it matches the actual lesson.'
+            : 'Review this draft, edit it if needed, and approve it once it matches the actual lesson.'}
+        </p>
         <div class="mt-3 flex gap-2 flex-wrap">
           <button id="btn-calendar-next-edit" class="btn btn-primary btn-sm">Edit draft</button>
+          ${remainingGuidanceCount > 0 ? '<button id="btn-calendar-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>' : ''}
           <button id="btn-calendar-next-approve" class="btn btn-secondary btn-sm">Approve now</button>
         </div>
       </div>`;
@@ -3085,6 +3094,7 @@ function _renderCalendar(el, classId) {
     ? _filterCalendarAssistantArtifactsForPlannedTitles(_calendarAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(selectedEvent.unit_id || 0)}`) || [], selectedUnitMap, plannedSessionTitles)
     : [];
   const selectedImportedGuidanceIds = _getCalendarImportedAssistantArtifactIds(selectedWriteup);
+  const selectedRemainingGuidanceCount = selectedMatchedGuidance.filter(item => !selectedImportedGuidanceIds.has(Number(item?.id || 0))).length;
   const plannedResumeSectionPlan = plannedResumeNode ? _findCalendarSectionPlanForTitle(selectedSectionPlans, plannedResumeNode.title) : null;
   const plannedResumePlaybookEntry = _findCalendarTeacherPlaybookEntry(selectedUnitMap, plannedResumeSectionPlan, plannedResumeNode?.title || '');
   const studentsById = new Map((getStudents() || []).map(student => [Number(student.id), student]));
@@ -3514,7 +3524,11 @@ function _renderCalendar(el, classId) {
                 ${_renderCalendarSessionMatchedGuidance(selectedMatchedGuidance, { canImport: selectedEvent.unit_id != null && !selectedIsFuture, importedIds: selectedImportedGuidanceIds })}
               </div>
             </div>
-            ${_renderCalendarWriteupNextStep(selectedWriteup, { isFuture: selectedIsFuture, hasUnit: selectedEvent.unit_id != null })}
+            ${_renderCalendarWriteupNextStep(selectedWriteup, {
+              isFuture: selectedIsFuture,
+              hasUnit: selectedEvent.unit_id != null,
+              remainingGuidanceCount: selectedRemainingGuidanceCount,
+            })}
             ${_selectedSessionLoading
               ? '<p class="text-[12px] text-slate-500 mt-2">Loading workflow write-up...</p>'
               : selectedWriteup
