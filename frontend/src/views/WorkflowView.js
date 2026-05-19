@@ -390,6 +390,22 @@ function _renderGuidanceQuickPickButtons(items, prefix) {
   `;
 }
 
+function _renderGuidanceKindImportButtons(items, prefix) {
+  const summary = _summarizeRemainingGuidanceKinds(items);
+  if (summary.length <= 1) return '';
+  return `
+    <div class="mt-2 flex flex-wrap gap-2">
+      ${summary.map(([kind, count]) => `
+        <button
+          id="${_escapeHtmlAttr(`${prefix}-${kind}`)}"
+          class="btn btn-ghost btn-sm btn-guidance-kind-import"
+          data-artifact-kind="${_escapeHtmlAttr(kind)}"
+        >Import ${_escapeHtml(_assistantArtifactKindLabel(kind))} (${count})</button>
+      `).join('')}
+    </div>
+  `;
+}
+
 function _getImportedAssistantArtifactIds(writeup) {
   const meta = _normalizeWriteupSourcePayload(writeup?.source_payload);
   return new Set((meta?.importedAssistantArtifacts || []).map(item => Number(item?.artifactId || 0)).filter(Boolean));
@@ -1226,6 +1242,7 @@ function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuid
           <button id="btn-session-next-generate" class="btn btn-primary btn-sm">Generate now</button>
           <button id="btn-session-next-guidance" class="btn btn-secondary btn-sm">${remainingGuidanceCount === 1 && bestRemainingGuidanceTitle ? `Choose Other Guidance` : 'Use Saved Guidance'}</button>
         </div>
+        ${remainingGuidanceCount > 1 ? _renderGuidanceKindImportButtons(quickGuidanceItems, 'session-next-guidance-kind') : ''}
         ${remainingGuidanceCount > 1 ? _renderGuidanceQuickPickButtons(quickGuidanceItems, 'session-next-guidance') : ''}
       </div>`;
   }
@@ -1246,6 +1263,7 @@ function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuid
           ${remainingGuidanceCount > 0 ? '<button id="btn-session-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>' : ''}
           <button id="btn-session-next-approve" class="btn btn-secondary btn-sm">Approve now</button>
         </div>
+        ${remainingGuidanceCount > 1 ? _renderGuidanceKindImportButtons(quickGuidanceItems, 'session-draft-guidance-kind') : ''}
         ${remainingGuidanceCount > 1 ? _renderGuidanceQuickPickButtons(quickGuidanceItems, 'session-draft-guidance') : ''}
       </div>`;
   }
@@ -5157,6 +5175,36 @@ function _bindWorkflowEvents(el, classId) {
     } catch (err) {
       showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
     }
+  });
+  el.querySelectorAll('.btn-guidance-kind-import').forEach(button => {
+    button.addEventListener('click', async () => {
+      const session = getActiveSession();
+      if (!session) return;
+      const artifactKind = String(button.dataset.artifactKind || '').trim().toLowerCase();
+      if (!artifactKind) return;
+      const matches = activeSessionRemainingGuidance.filter(item => String(item?.artifact_kind || '').trim().toLowerCase() === artifactKind);
+      if (!matches.length) return;
+      try {
+        let updated = null;
+        for (const item of matches) {
+          updated = await api(`/workflow/classes/${classId}/sessions/${session.id}/writeup/import-assistant-artifact`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ artifact_id: Number(item.id) }),
+          });
+        }
+        _setSessionWriteupState(session.id, {
+          loading: false,
+          loaded: true,
+          error: null,
+          item: updated || null,
+        });
+        _render(el, classId);
+        showToast(`${matches.length} ${_assistantArtifactKindLabel(artifactKind).toLowerCase()} item${matches.length === 1 ? '' : 's'} imported.`, 'ok');
+      } catch (err) {
+        showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
+      }
+    });
   });
   el.querySelectorAll('.btn-guidance-quick-pick').forEach(button => {
     button.addEventListener('click', async () => {

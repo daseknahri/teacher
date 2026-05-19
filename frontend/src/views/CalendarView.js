@@ -878,6 +878,7 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
           <button id="btn-calendar-next-generate" class="btn btn-primary btn-sm">Generate now</button>
           <button id="btn-calendar-next-guidance" class="btn btn-secondary btn-sm">${remainingGuidanceCount === 1 && bestRemainingGuidanceTitle ? 'Choose Other Guidance' : 'Use Saved Guidance'}</button>
         </div>
+        ${remainingGuidanceCount > 1 ? _renderCalendarGuidanceKindImportButtons(quickGuidanceItems, 'calendar-next-guidance-kind') : ''}
         ${remainingGuidanceCount > 1 ? _renderCalendarGuidanceQuickPickButtons(quickGuidanceItems, 'calendar-next-guidance') : ''}
       </div>`;
   }
@@ -898,6 +899,7 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
           ${remainingGuidanceCount > 0 ? '<button id="btn-calendar-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>' : ''}
           <button id="btn-calendar-next-approve" class="btn btn-secondary btn-sm">Approve now</button>
         </div>
+        ${remainingGuidanceCount > 1 ? _renderCalendarGuidanceKindImportButtons(quickGuidanceItems, 'calendar-draft-guidance-kind') : ''}
         ${remainingGuidanceCount > 1 ? _renderCalendarGuidanceQuickPickButtons(quickGuidanceItems, 'calendar-draft-guidance') : ''}
       </div>`;
   }
@@ -1017,6 +1019,22 @@ function _renderCalendarGuidanceQuickPickButtons(items, prefix) {
           class="btn btn-ghost btn-sm btn-calendar-guidance-quick-pick"
           data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}"
         >${_escapeHtml(_assistantArtifactKindLabel(item?.artifact_kind))}: ${_escapeHtml(String(item?.title || 'Saved guidance'))}</button>
+      `).join('')}
+    </div>
+  `;
+}
+
+function _renderCalendarGuidanceKindImportButtons(items, prefix) {
+  const summary = _summarizeCalendarRemainingGuidanceKinds(items);
+  if (summary.length <= 1) return '';
+  return `
+    <div class="mt-2 flex flex-wrap gap-2">
+      ${summary.map(([kind, count]) => `
+        <button
+          id="${_escapeHtmlAttr(`${prefix}-${kind}`)}"
+          class="btn btn-ghost btn-sm btn-calendar-guidance-kind-import"
+          data-artifact-kind="${_escapeHtmlAttr(kind)}"
+        >Import ${_escapeHtml(_assistantArtifactKindLabel(kind))} (${count})</button>
       `).join('')}
     </div>
   `;
@@ -4428,6 +4446,35 @@ function _renderCalendar(el, classId) {
     } catch (err) {
       showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
     }
+  });
+  el.querySelectorAll('.btn-calendar-guidance-kind-import').forEach(button => {
+    button.addEventListener('click', async () => {
+      if (!selectedEvent || selectedEvent.unit_id == null) return;
+      const artifactKind = String(button.dataset.artifactKind || '').trim().toLowerCase();
+      if (!artifactKind) return;
+      const matches = selectedRemainingGuidance.filter(item => String(item?.artifact_kind || '').trim().toLowerCase() === artifactKind);
+      if (!matches.length) return;
+      try {
+        let updated = null;
+        for (const item of matches) {
+          updated = await api(`/workflow/classes/${classId}/sessions/${selectedEvent.session_id}/writeup/import-assistant-artifact`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ artifact_id: Number(item.id) }),
+          });
+        }
+        const current = _sessionDetailCache.get(Number(selectedEvent.session_id)) || {};
+        _sessionDetailCache.set(Number(selectedEvent.session_id), {
+          ...current,
+          workflow_writeup: updated || null,
+          workflow_writeup_error: null,
+        });
+        _renderCalendar(el, classId);
+        showToast(`${matches.length} ${_assistantArtifactKindLabel(artifactKind).toLowerCase()} item${matches.length === 1 ? '' : 's'} imported.`, 'ok');
+      } catch (err) {
+        showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
+      }
+    });
   });
   el.querySelectorAll('.btn-calendar-guidance-quick-pick').forEach(button => {
     button.addEventListener('click', async () => {
