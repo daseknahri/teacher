@@ -4286,6 +4286,7 @@ function _render(el, classId) {
                 </div>
                 <span class="todo-title text-[13px] leading-snug flex-1">${item.title}</span>
                 ${isStructural ? '<span class="text-[10px] text-slate-400 whitespace-nowrap">Auto-completes when all child rows are done</span>' : ''}
+                ${hasChildren ? `<button class="btn btn-ghost btn-sm !text-sky-600 btn-checklist-group-complete" data-item-id="${item.id}" title="Mark all unfinished lesson steps under this heading">Check group</button>` : ''}
               </div>`;
     }).join('')}
               </div>
@@ -5011,6 +5012,72 @@ function _bindWorkflowEvents(el, classId) {
     });
   }
 
+  async function applyChecklistGroupCheck(itemId, triggerBtn = null) {
+    await _withActionLock(`workflow:session-mutate:${classId}`, async () => {
+      const numericItemId = Number(itemId);
+      if (!Number.isFinite(numericItemId) || numericItemId <= 0) return;
+      const session = getActiveSession();
+      if (!session) {
+        showToast('Start a session first, then mark checklist items.', 'warning');
+        return;
+      }
+
+      const unit = getActiveUnit();
+      const items = _checklist(unit);
+      const parentItem = items.find(i => Number(i.id) === numericItemId);
+      if (!parentItem) return;
+      const descendants = _findDescendantItems(items, numericItemId);
+      const actionable = descendants.filter(row => {
+        const rowId = Number(row?.id || 0);
+        if (!rowId) return false;
+        const rowHasChildren = items.some(candidate => Number(candidate?.parent_item_id || 0) === rowId);
+        if (_isStructuralChecklistItem(row) || rowHasChildren) return false;
+        return !(row.is_completed || row.done);
+      });
+      if (!actionable.length) {
+        showToast('Everything under this heading is already marked.', 'info');
+        return;
+      }
+
+      const ok = await askConfirm(
+        `Mark ${actionable.length} lesson step${actionable.length === 1 ? '' : 's'} under "${parentItem.title}" as taught?`,
+      );
+      if (!ok) return;
+
+      _setBusy(triggerBtn, true);
+      try {
+        for (const row of actionable) {
+          await api(`/workflow/classes/${classId}/sessions/${session.id}/items/${Number(row.id)}/toggle`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ checked: true }),
+          });
+        }
+        const ws = await api(`/workflow/classes/${classId}`);
+        setWorkspace(ws);
+        await _refreshWorkflowCalendarSnapshot(classId);
+        _render(el, classId);
+        showToast(
+          `${actionable.length} lesson step${actionable.length === 1 ? '' : 's'} marked under "${parentItem.title}".`,
+          'ok',
+        );
+      } catch (err) {
+        if (_isClosedSessionConflict(err)) {
+          const ws = await api(`/workflow/classes/${classId}`).catch(() => null);
+          if (ws) {
+            setWorkspace(ws);
+            _render(el, classId);
+          }
+          showToast('Session already closed. Workspace refreshed.', 'warning');
+          return;
+        }
+        showToast(err.message || 'Group checklist update failed', 'error');
+      } finally {
+        _setBusy(triggerBtn, false);
+      }
+    });
+  }
+
   /*  checklist item check (active session tab)  */
   el.querySelectorAll('[data-item-id][data-session-id]').forEach(node => {
     const checkChecklistItem = async () => {
@@ -5034,6 +5101,14 @@ function _bindWorkflowEvents(el, classId) {
       if (e.key !== 'Enter' && e.key !== ' ') return;
       e.preventDefault();
       await checkSessionFlowItem(e);
+    });
+  });
+
+  el.querySelectorAll('.btn-checklist-group-complete').forEach(btn => {
+    btn.addEventListener('click', async event => {
+      event.preventDefault();
+      event.stopPropagation();
+      await applyChecklistGroupCheck(btn.dataset.itemId, btn);
     });
   });
 

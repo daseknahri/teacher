@@ -2483,6 +2483,74 @@ function _absentRowsFromDetail(detail, selectedEvent, studentsById) {
 }
 
 function _headlineBlocksFromDetail(detail, selectedEvent) {
+  const checkedItemPaths = Array.isArray(selectedEvent?.checked_item_paths)
+    ? selectedEvent.checked_item_paths
+      .map(path => Array.isArray(path) ? path.map(value => String(value || '').trim()).filter(Boolean) : [])
+      .filter(path => path.length)
+    : [];
+  const checkedSectionPaths = Array.isArray(selectedEvent?.checked_section_paths)
+    ? selectedEvent.checked_section_paths
+      .map(path => Array.isArray(path) ? path.map(value => String(value || '').trim()).filter(Boolean) : [])
+      .filter(path => path.length)
+    : [];
+  if (checkedItemPaths.length) {
+    const rootTitles = [];
+    const rootSeen = new Set();
+    const grouped = new Map();
+    checkedItemPaths.forEach((itemPath, index) => {
+      const sectionPath = Array.isArray(checkedSectionPaths[index]) && checkedSectionPaths[index].length
+        ? checkedSectionPaths[index]
+        : (itemPath.length > 1 ? itemPath.slice(0, -1) : itemPath);
+      const rootTitle = sectionPath[0] || itemPath[0];
+      if (rootTitle && !rootSeen.has(rootTitle.toLowerCase())) {
+        rootSeen.add(rootTitle.toLowerCase());
+        rootTitles.push(rootTitle);
+      }
+
+      const blockPath = sectionPath.length ? sectionPath : itemPath;
+      const blockLabel = blockPath[blockPath.length - 1] || itemPath[itemPath.length - 1] || 'Checklist branch';
+      const blockContext = blockPath.slice(0, -1);
+      const blockKey = blockPath.join(' > ').toLowerCase() || blockLabel.toLowerCase();
+      if (!grouped.has(blockKey)) {
+        grouped.set(blockKey, {
+          label: blockLabel,
+          context: blockContext.join(' > '),
+          items: [],
+          _seen: new Set(),
+        });
+      }
+      const block = grouped.get(blockKey);
+      const tail = itemPath.length > blockPath.length
+        ? itemPath.slice(blockPath.length)
+        : [itemPath[itemPath.length - 1]].filter(Boolean);
+      const renderedTail = tail.join(' > ').trim();
+      if (renderedTail) {
+        const key = renderedTail.toLowerCase();
+        if (!block._seen.has(key)) {
+          block._seen.add(key);
+          block.items.push(renderedTail);
+        }
+      }
+    });
+
+    const blocks = [];
+    if (rootTitles.length) {
+      blocks.push({
+        label: rootTitles.length === 1 ? 'Unit / chapter' : 'Unit branches',
+        context: '',
+        items: rootTitles,
+      });
+    }
+    grouped.forEach(block => {
+      blocks.push({
+        label: block.label,
+        context: block.context,
+        items: block.items.length ? block.items : ['Section started in this session'],
+      });
+    });
+    if (blocks.length) return blocks;
+  }
+
   const progressItems = Array.isArray(detail?.progress_items) ? detail.progress_items : [];
   const grouped = _groupProgressItems(progressItems);
   if (grouped.length) return grouped;
@@ -4180,6 +4248,7 @@ function _renderCalendar(el, classId) {
                      <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(block.label)}</p>
                      <span class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">${Array.isArray(block.items) ? block.items.length : 0} item${Array.isArray(block.items) && block.items.length === 1 ? '' : 's'}</span>
                    </div>
+                   ${block.context ? `<p class="mt-1 text-[11px] text-slate-400 leading-relaxed">${_escapeHtml(block.context)}</p>` : ''}
                    <ul class="mt-2 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
                      ${block.items.map(item => `<li>${_escapeHtml(item)}</li>`).join('')}
                    </ul>
