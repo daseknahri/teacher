@@ -258,6 +258,28 @@ function _filterAssistantArtifactsForSection(artifacts, sectionPlan, fallbackTit
   });
 }
 
+function _filterAssistantArtifactsForPlannedTitles(artifacts, unitMap, plannedTitles) {
+  const safeRows = Array.isArray(artifacts) ? artifacts : [];
+  const titleKeys = new Set((Array.isArray(plannedTitles) ? plannedTitles : []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+  const pathKeys = new Set();
+  const sectionPlans = Array.isArray(unitMap?.section_plans) ? unitMap.section_plans.filter(Boolean) : [];
+  sectionPlans.forEach(plan => {
+    const sectionTitle = String(plan?.section_title || '').trim().toLowerCase();
+    const delivery = Array.isArray(plan?.delivery_sequence) ? plan.delivery_sequence.map(value => String(value || '').trim().toLowerCase()).filter(Boolean) : [];
+    const matched = (sectionTitle && titleKeys.has(sectionTitle)) || delivery.some(value => titleKeys.has(value));
+    if (matched) {
+      const pathKey = _normalizeSectionPathKey(plan?.section_path);
+      if (pathKey) pathKeys.add(pathKey);
+    }
+  });
+  return safeRows.filter(item => {
+    const itemTitle = String(item?.section_title || '').trim().toLowerCase();
+    if (itemTitle && titleKeys.has(itemTitle)) return true;
+    const itemPathKey = _normalizeSectionPathKey(item?.section_path);
+    return itemPathKey ? pathKeys.has(itemPathKey) : false;
+  });
+}
+
 function _artifactDownloadFilename(item, fallbackTitle = '') {
   const base = String(item?.title || fallbackTitle || 'saved-guidance')
     .trim()
@@ -293,6 +315,37 @@ function _renderSavedGuidancePreviewRows(items, fallbackTitle = '') {
       `).join('')}
       ${Array.isArray(items) && items.length > visible.length
         ? `<p class="text-[11px] text-amber-700">Showing ${visible.length} of ${items.length} saved guidance item${items.length === 1 ? '' : 's'} for this focus.</p>`
+        : ''}
+    </div>
+  `;
+}
+
+function _renderSessionMatchedGuidance(items, { canImport = false } = {}) {
+  const visible = Array.isArray(items) ? items.slice(0, 4) : [];
+  if (!visible.length) {
+    return '<p class="text-[12px] text-slate-500">No saved guidance matches this session route yet. Save a good result from Ask This Unit to reuse it here.</p>';
+  }
+  return `
+    <div class="flex flex-col gap-2">
+      ${visible.map(item => `
+        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap">
+              <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(item?.title || 'Saved guidance'))}</p>
+              <span class="badge badge-blue">${_escapeHtml(_assistantArtifactKindLabel(item?.artifact_kind))}</span>
+              ${item?.action ? `<span class="badge badge-gray">${_escapeHtml(_assistantActionLabel(item.action))}</span>` : ''}
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              ${canImport ? `<button class="btn btn-primary btn-sm btn-session-matched-guidance-import" data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}">Use in Write-Up</button>` : ''}
+              <button class="btn btn-ghost btn-sm btn-session-matched-guidance-copy" data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}">Copy</button>
+              <button class="btn btn-secondary btn-sm btn-session-matched-guidance-download" data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}">Download</button>
+            </div>
+          </div>
+          ${item?.content_markdown ? `<p class="text-[12px] text-slate-600 leading-6 mt-2">${_escapeHtml(String(item.content_markdown).split('\n').slice(0, 3).join(' '))}</p>` : ''}
+        </div>
+      `).join('')}
+      ${Array.isArray(items) && items.length > visible.length
+        ? `<p class="text-[11px] text-slate-500">Showing ${visible.length} of ${items.length} matching saved guidance items.</p>`
         : ''}
     </div>
   `;
@@ -2613,6 +2666,7 @@ function _render(el, classId) {
   const previewSessionTitleKeys = new Set(previewSessionPlanTitles.map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
   const activeSessionPlanTree = session?.unit_session_number ? _collectSessionPlannedNodes(activeBlueprintTree, session.unit_session_number) : [];
   const activeSessionPlanTitles = _flattenSessionPlannedTitles(activeSessionPlanTree, []);
+  const activeSessionMatchedGuidance = unit?.id ? _filterAssistantArtifactsForPlannedTitles(_unitAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(unit.id || 0)}`) || [], activeUnitMap, activeSessionPlanTitles) : [];
 
   // Progress ring
   const checklist = _checklist(unit);
@@ -3176,6 +3230,13 @@ function _render(el, classId) {
                   <button id="btn-edit-session-writeup" class="btn btn-ghost btn-sm" ${sessionWriteupState.item ? '' : 'disabled'}>Edit</button>
                   <button id="btn-import-session-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>
                 </div>
+              </div>
+              <div class="rounded-xl border border-slate-200 bg-white p-3 flex flex-col gap-2">
+                <div>
+                  <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
+                  <p class="text-[12px] text-slate-500 mt-1">Reusable section help that matches this planned session route.</p>
+                </div>
+                ${_renderSessionMatchedGuidance(activeSessionMatchedGuidance, { canImport: Boolean(session) })}
               </div>
               ${_renderSessionWriteupNextStep(sessionWriteupState.item, { hasSession: Boolean(session) })}
               ${sessionWriteupState.loading
@@ -4823,6 +4884,65 @@ function _bindWorkflowEvents(el, classId) {
       }
     });
   });
+  el.querySelectorAll('.btn-session-matched-guidance-copy').forEach(button => {
+    button.addEventListener('click', async () => {
+      const artifactId = Number(button.dataset.artifactId || 0);
+      const item = activeSessionMatchedGuidance.find(row => Number(row?.id || 0) === artifactId);
+      if (!item?.content_markdown) return;
+      try {
+        await copyText(String(item.content_markdown));
+        showToast('Saved guidance copied.', 'ok');
+      } catch {
+        showToast('Failed to copy saved guidance.', 'error');
+      }
+    });
+  });
+  el.querySelectorAll('.btn-session-matched-guidance-download').forEach(button => {
+    button.addEventListener('click', () => {
+      const artifactId = Number(button.dataset.artifactId || 0);
+      const item = activeSessionMatchedGuidance.find(row => Number(row?.id || 0) === artifactId);
+      if (!item?.content_markdown) return;
+      _downloadTextContent(String(item.content_markdown), _artifactDownloadFilename(item, unit?.title || 'session-guidance'));
+    });
+  });
+  el.querySelectorAll('.btn-session-matched-guidance-import').forEach(button => {
+    button.addEventListener('click', async () => {
+      const session = getActiveSession();
+      if (!session || !unit) return;
+      const artifactId = Number(button.dataset.artifactId || 0);
+      if (!artifactId) return;
+      try {
+        const updated = await api(`/workflow/classes/${classId}/sessions/${session.id}/writeup/import-assistant-artifact`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ artifact_id: artifactId }),
+        });
+        _setSessionWriteupState(session.id, {
+          loading: false,
+          loaded: true,
+          error: null,
+          item: updated || null,
+        });
+        _render(el, classId);
+        showToast('Saved guidance imported into the session write-up.', 'ok');
+      } catch (err) {
+        showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
+      }
+    });
+  });
+
+  if (session && unit?.id && activeSessionPlanTitles.length) {
+    const artifactCacheKey = `${Number(classId || 0)}:${Number(unit.id || 0)}`;
+    if (!_unitAssistantArtifactCache.has(artifactCacheKey)) {
+      _loadUnitAssistantArtifacts(classId, unit.id).then(() => {
+        const latestSession = getActiveSession();
+        const latestUnit = getActiveUnit();
+        if (latestSession && latestUnit && Number(latestSession.id) === Number(session.id) && Number(latestUnit.id) === Number(unit.id)) {
+          _render(el, classId);
+        }
+      }).catch(() => {});
+    }
+  }
 
   el.querySelector('#btn-copy-session-writeup')?.addEventListener('click', async () => {
     const session = getActiveSession();

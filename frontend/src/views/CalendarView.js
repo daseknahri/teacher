@@ -183,6 +183,28 @@ function _filterCalendarAssistantArtifactsForSection(artifacts, sectionPlan, fal
   });
 }
 
+function _filterCalendarAssistantArtifactsForPlannedTitles(artifacts, unitMap, plannedTitles) {
+  const safeRows = Array.isArray(artifacts) ? artifacts : [];
+  const titleKeys = new Set((Array.isArray(plannedTitles) ? plannedTitles : []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+  const pathKeys = new Set();
+  const sectionPlans = Array.isArray(unitMap?.section_plans) ? unitMap.section_plans.filter(Boolean) : [];
+  sectionPlans.forEach(plan => {
+    const sectionTitle = String(plan?.section_title || '').trim().toLowerCase();
+    const delivery = Array.isArray(plan?.delivery_sequence) ? plan.delivery_sequence.map(value => String(value || '').trim().toLowerCase()).filter(Boolean) : [];
+    const matched = (sectionTitle && titleKeys.has(sectionTitle)) || delivery.some(value => titleKeys.has(value));
+    if (matched) {
+      const pathKey = _normalizeSectionPathKey(plan?.section_path);
+      if (pathKey) pathKeys.add(pathKey);
+    }
+  });
+  return safeRows.filter(item => {
+    const itemTitle = String(item?.section_title || '').trim().toLowerCase();
+    if (itemTitle && titleKeys.has(itemTitle)) return true;
+    const itemPathKey = _normalizeSectionPathKey(item?.section_path);
+    return itemPathKey ? pathKeys.has(itemPathKey) : false;
+  });
+}
+
 function _setWorkflowViewIntent(intent) {
   try {
     sessionStorage.setItem(WORKFLOW_VIEW_INTENT_KEY, JSON.stringify({
@@ -846,6 +868,37 @@ function _renderCalendarSavedGuidancePreviewRows(items, fallbackTitle = '') {
       `).join('')}
       ${Array.isArray(items) && items.length > visible.length
         ? `<p class="text-[11px] text-amber-700">Showing ${visible.length} of ${items.length} saved guidance item${items.length === 1 ? '' : 's'} for this focus.</p>`
+        : ''}
+    </div>
+  `;
+}
+
+function _renderCalendarSessionMatchedGuidance(items, { canImport = false } = {}) {
+  const visible = Array.isArray(items) ? items.slice(0, 4) : [];
+  if (!visible.length) {
+    return '<p class="text-[12px] text-slate-500">No saved guidance matches this session route yet. Save a good result from Ask This Unit to reuse it here.</p>';
+  }
+  return `
+    <div class="flex flex-col gap-2">
+      ${visible.map(item => `
+        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap">
+              <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(item?.title || 'Saved guidance'))}</p>
+              <span class="badge badge-blue">${_escapeHtml(_assistantArtifactKindLabel(item?.artifact_kind))}</span>
+              ${item?.action ? `<span class="badge badge-gray">${_escapeHtml(_assistantActionLabel(item.action))}</span>` : ''}
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              ${canImport ? `<button class="btn btn-primary btn-sm btn-calendar-session-guidance-import" data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}">Use in Write-Up</button>` : ''}
+              <button class="btn btn-ghost btn-sm btn-calendar-session-guidance-copy" data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}">Copy</button>
+              <button class="btn btn-secondary btn-sm btn-calendar-session-guidance-download" data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}">Download</button>
+            </div>
+          </div>
+          ${item?.content_markdown ? `<p class="text-[12px] text-slate-600 leading-6 mt-2">${_escapeHtml(String(item.content_markdown).split('\n').slice(0, 3).join(' '))}</p>` : ''}
+        </div>
+      `).join('')}
+      ${Array.isArray(items) && items.length > visible.length
+        ? `<p class="text-[11px] text-slate-500">Showing ${visible.length} of ${items.length} matching saved guidance items.</p>`
         : ''}
     </div>
   `;
@@ -2989,6 +3042,9 @@ function _renderCalendar(el, classId) {
     ? selectedBlueprint.unit_map_json
     : {};
   const selectedSectionPlans = Array.isArray(selectedUnitMap?.section_plans) ? selectedUnitMap.section_plans : [];
+  const selectedMatchedGuidance = selectedEvent?.unit_id != null
+    ? _filterCalendarAssistantArtifactsForPlannedTitles(_calendarAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(selectedEvent.unit_id || 0)}`) || [], selectedUnitMap, plannedSessionTitles)
+    : [];
   const plannedResumeSectionPlan = plannedResumeNode ? _findCalendarSectionPlanForTitle(selectedSectionPlans, plannedResumeNode.title) : null;
   const plannedResumePlaybookEntry = _findCalendarTeacherPlaybookEntry(selectedUnitMap, plannedResumeSectionPlan, plannedResumeNode?.title || '');
   const studentsById = new Map((getStudents() || []).map(student => [Number(student.id), student]));
@@ -3409,6 +3465,15 @@ function _renderCalendar(el, classId) {
                   : ''}
               </div>
             </div>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 mt-2">
+              <div>
+                <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
+                <p class="text-[12px] text-slate-500 mt-1">Reusable unit help that matches this planned session route.</p>
+              </div>
+              <div class="mt-3">
+                ${_renderCalendarSessionMatchedGuidance(selectedMatchedGuidance, { canImport: selectedEvent.unit_id != null && !selectedIsFuture })}
+              </div>
+            </div>
             ${_renderCalendarWriteupNextStep(selectedWriteup, { isFuture: selectedIsFuture, hasUnit: selectedEvent.unit_id != null })}
             ${_selectedSessionLoading
               ? '<p class="text-[12px] text-slate-500 mt-2">Loading workflow write-up...</p>'
@@ -3826,6 +3891,62 @@ function _renderCalendar(el, classId) {
       navigate('workflow');
     });
   });
+  el.querySelectorAll('.btn-calendar-session-guidance-copy').forEach(button => {
+    button.addEventListener('click', async () => {
+      const artifactId = Number(button.dataset.artifactId || 0);
+      const item = selectedMatchedGuidance.find(row => Number(row?.id || 0) === artifactId);
+      if (!item?.content_markdown) return;
+      try {
+        await copyText(String(item.content_markdown));
+        showToast('Saved guidance copied.', 'ok');
+      } catch {
+        showToast('Failed to copy saved guidance.', 'error');
+      }
+    });
+  });
+  el.querySelectorAll('.btn-calendar-session-guidance-download').forEach(button => {
+    button.addEventListener('click', () => {
+      const artifactId = Number(button.dataset.artifactId || 0);
+      const item = selectedMatchedGuidance.find(row => Number(row?.id || 0) === artifactId);
+      if (!item?.content_markdown) return;
+      _downloadTextContent(String(item.content_markdown), _calendarArtifactDownloadFilename(item, selectedEvent?.unit_title || 'session-guidance'));
+    });
+  });
+  el.querySelectorAll('.btn-calendar-session-guidance-import').forEach(button => {
+    button.addEventListener('click', async () => {
+      if (!selectedEvent || selectedEvent.unit_id == null || selectedIsFuture) return;
+      const artifactId = Number(button.dataset.artifactId || 0);
+      if (!artifactId) return;
+      try {
+        const updated = await api(`/workflow/classes/${classId}/sessions/${selectedEvent.session_id}/writeup/import-assistant-artifact`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ artifact_id: artifactId }),
+        });
+        const current = _sessionDetailCache.get(Number(selectedEvent.session_id)) || {};
+        _sessionDetailCache.set(Number(selectedEvent.session_id), {
+          ...current,
+          workflow_writeup: updated || null,
+          workflow_writeup_error: null,
+        });
+        _renderCalendar(el, classId);
+        showToast('Saved guidance imported into the session write-up.', 'ok');
+      } catch (err) {
+        showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
+      }
+    });
+  });
+
+  if (selectedEvent?.unit_id != null && plannedSessionTitles.length) {
+    const artifactCacheKey = `${Number(classId || 0)}:${Number(selectedEvent.unit_id || 0)}`;
+    if (!_calendarAssistantArtifactCache.has(artifactCacheKey)) {
+      _loadCalendarAssistantArtifacts(classId, selectedEvent.unit_id).then(() => {
+        if (Number(_selectedSessionId || 0) === Number(selectedEvent.session_id || 0)) {
+          _renderCalendar(el, classId);
+        }
+      }).catch(() => {});
+    }
+  }
 
   el.querySelector('#btn-open-selected-material-studio')?.addEventListener('click', () => {
     const intent = _buildCalendarWorkflowIntent(selectedEvent, 'material_studio', {
