@@ -104,6 +104,8 @@ from ..schemas import (
     WorkflowUnitDeleteOut,
     WorkflowUnitOut,
     WorkflowWorkspaceOut,
+    WorkflowLeafContentGenerateIn,
+    WorkflowLeafContentGenerateOut,
     WorkflowLeafContentOut,
     WorkflowLeafContentUpsertIn,
 )
@@ -134,6 +136,7 @@ from ..services.workflow_content import (
 from ..services.workflow_generation import (
     NotebookLMGenerationUnavailableError,
     delete_provider_unit_context,
+    generate_leaf_content_package,
     generate_unit_assistant_package,
     generate_unit_material_package,
 )
@@ -6708,3 +6711,147 @@ def upsert_leaf_content(
     db.commit()
     db.refresh(row)
     return row
+
+
+@router.post(
+    "/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}/generate",
+    response_model=WorkflowLeafContentGenerateOut,
+)
+def generate_leaf_content(
+    class_id: int,
+    unit_id: int,
+    item_id: int,
+    payload: WorkflowLeafContentGenerateIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkflowLeafContentGenerateOut:
+    _ = ensure_class_writable(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    if unit.status != WorkflowUnitStatus.ACTIVE:
+        raise HTTPException(status_code=409, detail="Leaf content can only be generated for an active unit.")
+    item = db.get(WorkflowChecklistItem, int(item_id))
+    if item is None or int(item.unit_id) != int(unit_id):
+        raise HTTPException(status_code=404, detail="Checklist item not found in this unit.")
+    child_count = db.scalar(
+        select(func.count()).select_from(WorkflowChecklistItem).where(WorkflowChecklistItem.parent_item_id == int(item_id))
+    ) or 0
+    if child_count > 0:
+        raise HTTPException(status_code=400, detail="Only leaf checklist items can have content records.")
+
+    blueprint = db.scalar(select(WorkflowUnitBlueprint).where(WorkflowUnitBlueprint.unit_id == int(unit_id)))
+    if blueprint is None:
+        raise HTTPException(status_code=409, detail="Unit blueprint is required for leaf content generation. Generate the unit blueprint first.")
+
+    provider_context: dict | None = None
+    if isinstance(blueprint.blueprint_json, dict):
+        raw_context = blueprint.blueprint_json.get("provider_context")
+        if isinstance(raw_context, dict):
+            provider_context = raw_context
+
+    source_text = ""
+    if unit.document_path and Path(str(unit.document_path)).exists():
+        source_text = extract_text_from_document(str(unit.document_path), None)
+    elif blueprint.source_text_excerpt:
+        source_text = str(blueprint.source_text_excerpt or "").strip()
+
+    existing = db.scalar(
+        select(WorkflowLeafContent).where(
+            WorkflowLeafContent.unit_id == int(unit_id),
+            WorkflowLeafContent.checklist_item_id == int(item_id),
+        )
+    )
+
+    item_path: list[str] | None = existing.item_path_json if existing and isinstance(existing.item_path_json, list) else None
+    section_path: list[str] | None = existing.section_path_json if existing and isinstance(existing.section_path_json, list) else None
+    if item_path is None or section_path is None:
+        derived_item_path, derived_section_path = _derive_leaf_item_paths(db, unit_id=int(unit_id), item_id=int(item_id))
+        if item_path is None:
+            item_path = derived_item_path
+        if section_path is None:
+            section_path = derived_section_path
+
+    if existing is not None and not bool(payload.regenerate):
+        return WorkflowLeafContentGenerateOut(
+            requested_provider=str(payload.provider or existing.provider or "notebooklm").strip() or "notebooklm",
+            provider=str(existing.provider or "notebooklm").strip() or "notebooklm",
+            status=str(existing.status or "ready").strip() or "ready",
+            leaf_content=WorkflowLeafContentOut.model_validate(existing),
+        )
+
+    try:
+        result = generate_leaf_content_package(
+            unit_title=str(unit.title or "").strip(),
+            item_title=str(item.title or "").strip(),
+            item_path=item_path,
+            section_path=section_path,
+            source_text=source_text,
+            document_path=unit.document_path,
+            provider_context=provider_context,
+            unit_map=blueprint.unit_map_json if isinstance(blueprint.unit_map_json, dict) else None,
+            content_blocks=blueprint.content_blocks_json if isinstance(blueprint.content_blocks_json, list) else None,
+            source_text_excerpt=str(blueprint.source_text_excerpt or "").strip() or None,
+            provider=payload.provider,
+        )
+    except NotebookLMGenerationUnavailableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    if existing is None:
+        existing = WorkflowLeafContent(unit_id=int(unit_id), checklist_item_id=int(item_id))
+        db.add(existing)
+
+    if item_path:
+        existing.item_path_json = item_path
+    if section_path:
+        existing.section_path_json = section_path
+
+    existing.provider = str(result.get("provider") or "fallback")
+    existing.model = str(result.get("model") or "").strip() or None
+    existing.status = str(result.get("status") or "ready")
+    for field in (
+        "teaching_goal_md",
+        "launch_activity_md",
+        "explanation_md",
+        "worked_example_md",
+        "practice_md",
+        "solution_md",
+        "assessment_md",
+        "teacher_notes_md",
+        "source_excerpt_md",
+    ):
+        value = result.get(field)
+        if value is not None:
+            setattr(existing, field, str(value).strip() or None)
+    if isinstance(result.get("source_payload"), dict):
+        existing.source_payload_json = {
+            **result["source_payload"],
+            "item_path": item_path or [],
+            "section_path": section_path or [],
+        }
+    if isinstance(result.get("raw_provider_response"), dict):
+        existing.raw_provider_response_json = result["raw_provider_response"]
+    existing.updated_at = _utc_now_naive()
+    db.commit()
+    db.refresh(existing)
+
+    log_audit(
+        db,
+        user=current_user,
+        action="workflow.leaf_content.generate",
+        entity_type="workflow_leaf_content",
+        entity_id=existing.id,
+        class_id=class_id,
+        details={
+            "item_id": int(item_id),
+            "unit_id": int(unit_id),
+            "provider": existing.provider,
+            "status": existing.status,
+        },
+    )
+    return WorkflowLeafContentGenerateOut(
+        requested_provider=str(result.get("requested_provider") or "notebooklm"),
+        provider=existing.provider,
+        status=existing.status,
+        leaf_content=WorkflowLeafContentOut.model_validate(existing),
+    )

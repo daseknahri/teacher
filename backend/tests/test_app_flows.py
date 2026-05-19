@@ -6666,3 +6666,173 @@ def test_leaf_content_rejects_non_leaf_item(client):
     )
     assert put_resp.status_code == 400
     assert "leaf" in put_resp.json()["detail"].lower()
+
+
+def test_leaf_content_generate_happy_path(client, monkeypatch):
+    from app.routers import workflow as workflow_router
+
+    headers = _auth_headers(client)
+    class_id, unit_id, item_id = _setup_unit_with_leaf(client, headers)
+
+    captured: dict = {}
+
+    def _fake_generate_leaf_content_package(**kwargs):
+        captured.update(kwargs)
+        return {
+            "provider": "notebooklm",
+            "requested_provider": "notebooklm",
+            "model": "notebooklm-py",
+            "status": "ready",
+            "teaching_goal_md": "L'eleve comprend la propriete.",
+            "launch_activity_md": "Activite d'amorce: question ouverte.",
+            "explanation_md": "Explication en **Markdown** avec $x^2$.",
+            "worked_example_md": "Exemple: $2x + 3 = 7 \\Rightarrow x = 2$",
+            "practice_md": "Resoudre $x^2 - 4 = 0$.",
+            "solution_md": "$x = \\pm 2$",
+            "assessment_md": "Mini-evaluation: donner un exemple.",
+            "teacher_notes_md": "Note interne enseignant.",
+            "source_excerpt_md": "Extrait du document source.",
+            "source_payload": {"item_title": "Propriete", "requested_provider": "notebooklm"},
+            "raw_provider_response": {"answer": "..."},
+            "error_message": None,
+        }
+
+    monkeypatch.setattr(workflow_router, "generate_leaf_content_package", _fake_generate_leaf_content_package)
+
+    resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}/generate",
+        headers=headers,
+        json={"provider": "notebooklm", "regenerate": True},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["requested_provider"] == "notebooklm"
+    assert body["provider"] == "notebooklm"
+    assert body["status"] == "ready"
+    lc = body["leaf_content"]
+    assert lc["unit_id"] == unit_id
+    assert lc["checklist_item_id"] == item_id
+    assert lc["teaching_goal_md"] == "L'eleve comprend la propriete."
+    assert lc["explanation_md"] == "Explication en **Markdown** avec $x^2$."
+    assert lc["worked_example_md"] == "Exemple: $2x + 3 = 7 \\Rightarrow x = 2$"
+    assert lc["practice_md"] == "Resoudre $x^2 - 4 = 0$."
+    assert lc["solution_md"] == "$x = \\pm 2$"
+    assert lc["provider"] == "notebooklm"
+    assert lc["status"] == "ready"
+    assert isinstance(lc["item_path_json"], list) and lc["item_path_json"]
+    assert isinstance(lc["section_path_json"], list) and lc["section_path_json"]
+    assert body["leaf_content"]["source_payload_json"]["item_path"] == lc["item_path_json"]
+    assert body["leaf_content"]["source_payload_json"]["section_path"] == lc["section_path_json"]
+
+    # GET also returns the persisted record
+    get_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}",
+        headers=headers,
+    )
+    assert get_resp.status_code == 200
+    fetched = get_resp.json()
+    assert fetched["id"] == lc["id"]
+    assert fetched["teaching_goal_md"] == "L'eleve comprend la propriete."
+
+    assert captured["unit_title"]
+    assert captured["item_title"]
+
+    second_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}/generate",
+        headers=headers,
+        json={"provider": "notebooklm", "regenerate": False},
+    )
+    assert second_resp.status_code == 200
+    second_body = second_resp.json()
+    assert second_body["leaf_content"]["id"] == lc["id"]
+
+
+def test_leaf_content_generate_rejects_non_leaf(client, monkeypatch):
+    from app.routers import workflow as workflow_router
+
+    headers = _auth_headers(client)
+    class_resp = client.post(
+        "/classes",
+        json={"name": f"GenNonLeaf {uuid.uuid4().hex[:6]}", "subject": "Math"},
+        headers=headers,
+    )
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    start_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={"unit_type": "chapter", "title": "Gen Non-Leaf Unit", "source_text": "Section 1\n1.1 Propriete"},
+    )
+    assert start_resp.status_code == 201
+    unit_id = start_resp.json()["id"]
+
+    workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    checklist = workspace_resp.json()["active_unit"]["checklist"]
+    flat = _flatten_checklist(checklist)
+    parent_ids = {
+        int(row["parent_item_id"])
+        for row in flat
+        if isinstance(row, dict) and row.get("parent_item_id") is not None
+    }
+    non_leaf = next((row for row in flat if int(row.get("id") or 0) in parent_ids), None)
+    if non_leaf is None:
+        parent_item = flat[0]
+        client.post(
+            f"/workflow/classes/{class_id}/units/{unit_id}/items",
+            headers=headers,
+            json={"title": "Child", "item_kind": "other", "parent_item_id": parent_item["id"]},
+        )
+        non_leaf = parent_item
+
+    monkeypatch.setattr(workflow_router, "generate_leaf_content_package", lambda **kwargs: {})
+
+    resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{non_leaf['id']}/generate",
+        headers=headers,
+        json={},
+    )
+    assert resp.status_code == 400
+    assert "leaf" in resp.json()["detail"].lower()
+
+
+def test_leaf_content_generate_requires_blueprint(client):
+    headers = _auth_headers(client)
+    class_resp = client.post(
+        "/classes",
+        json={"name": f"NoBlueprintGen {uuid.uuid4().hex[:6]}", "subject": "Math"},
+        headers=headers,
+    )
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    start_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={"unit_type": "chapter", "title": "No Blueprint Unit", "source_text": "Section 1\n1.1 Propriete\n1.2 Exemple"},
+    )
+    assert start_resp.status_code == 201
+    unit_id = start_resp.json()["id"]
+
+    workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    checklist = workspace_resp.json()["active_unit"]["checklist"]
+    leaf = _first_leaf_checklist_item(checklist)
+    assert leaf is not None
+    item_id = leaf["id"]
+
+    # Delete the blueprint that was automatically created during unit start
+    from app.database import SessionLocal
+    from app.models import WorkflowUnitBlueprint
+    from sqlalchemy import delete as sa_delete
+
+    with SessionLocal() as db_session:
+        db_session.execute(sa_delete(WorkflowUnitBlueprint).where(WorkflowUnitBlueprint.unit_id == unit_id))
+        db_session.commit()
+
+    resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}/generate",
+        headers=headers,
+        json={},
+    )
+    assert resp.status_code == 409
+    assert "blueprint" in resp.json()["detail"].lower()

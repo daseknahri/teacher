@@ -26,6 +26,7 @@ SUPPORTED_UNIT_PLANNER_PROVIDERS = {"openai", "fallback", "notebooklm"}
 SUPPORTED_SESSION_WRITER_PROVIDERS = {"openai", "fallback", "notebooklm"}
 SUPPORTED_UNIT_ASSISTANT_PROVIDERS = {"notebooklm"}
 SUPPORTED_UNIT_MATERIAL_PROVIDERS = {"notebooklm"}
+SUPPORTED_LEAF_CONTENT_PROVIDERS = {"notebooklm"}
 NUMBERED_HEADING_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)*)(?:\s*[-.):]\s*|\s+)(.+)$")
 CHAPTER_START_PATTERN = re.compile(r"^\s*(chapter|chapitre|title|titre|lesson|lecon)\b", re.IGNORECASE)
 NUMBERED_ROW_START_PATTERN = re.compile(r"(?<!\S)\d+(?:\.\d+)+(?:[)\].:-])?(?:\s+|$)")
@@ -929,6 +930,41 @@ def generate_unit_material_package(
         provider_context=provider_context,
         unit_map=unit_map,
         content_blocks=content_blocks,
+        requested_provider=requested_provider,
+    )
+
+
+def generate_leaf_content_package(
+    *,
+    unit_title: str,
+    item_title: str,
+    item_path: list[str] | None,
+    section_path: list[str] | None,
+    source_text: str,
+    document_path: str | None,
+    provider_context: dict[str, Any] | None,
+    unit_map: dict[str, Any] | None,
+    content_blocks: list[dict[str, Any]] | None,
+    source_text_excerpt: str | None = None,
+    provider: str | None = None,
+) -> dict[str, Any]:
+    requested_provider = _normalize_provider_name(
+        provider or "notebooklm",
+        supported=SUPPORTED_LEAF_CONTENT_PROVIDERS,
+        default="notebooklm",
+    )
+    ensure_notebooklm_generation_ready(action_label="leaf content generation")
+    return _notebooklm_generate_leaf_content(
+        unit_title=unit_title,
+        item_title=item_title,
+        item_path=item_path,
+        section_path=section_path,
+        source_text=source_text,
+        document_path=document_path,
+        provider_context=provider_context,
+        unit_map=unit_map,
+        content_blocks=content_blocks,
+        source_text_excerpt=source_text_excerpt,
         requested_provider=requested_provider,
     )
 
@@ -6449,3 +6485,283 @@ def _build_teaching_content(
     return [
         "Cette seance a ete consacree a la consolidation des acquis precedents par des activites de rappel et des exercices structures."
     ]
+
+
+_LEAF_CONTENT_FIELDS = (
+    "teaching_goal_md",
+    "launch_activity_md",
+    "explanation_md",
+    "worked_example_md",
+    "practice_md",
+    "solution_md",
+    "assessment_md",
+    "teacher_notes_md",
+    "source_excerpt_md",
+)
+
+
+def _normalize_leaf_content_payload(
+    *,
+    parsed: dict[str, Any] | None,
+    requested_provider: str,
+    item_title: str,
+    item_path: list[str] | None,
+    section_path: list[str] | None,
+    raw_provider_response: dict[str, Any] | None,
+    error_message: str | None,
+) -> dict[str, Any]:
+    normalized_item_path = [
+        _normalize_outline_title(value)
+        for value in (item_path or [])
+        if _normalize_outline_title(value)
+    ]
+    normalized_section_path = [
+        _normalize_outline_title(value)
+        for value in (section_path or [])
+        if _normalize_outline_title(value)
+    ]
+    result: dict[str, Any] = {
+        "provider": "notebooklm" if not error_message else "fallback",
+        "requested_provider": requested_provider,
+        "model": "notebooklm-py" if not error_message else None,
+        "status": "ready" if not error_message else "degraded",
+        "raw_provider_response": raw_provider_response if isinstance(raw_provider_response, dict) else None,
+        "error_message": error_message,
+        "source_payload": {
+            "item_title": str(item_title or "").strip() or None,
+            "requested_provider": requested_provider,
+            "item_path": normalized_item_path,
+            "section_path": normalized_section_path,
+        },
+    }
+    for field in _LEAF_CONTENT_FIELDS:
+        raw = (parsed or {}).get(field)
+        result[field] = str(raw).strip() if raw and str(raw).strip() else None
+    return result
+
+
+def _build_notebooklm_leaf_content_prompt(
+    *,
+    unit_title: str,
+    item_title: str,
+    item_path: list[str] | None,
+    section_path: list[str] | None,
+    content_blocks: list[dict[str, Any]],
+) -> str:
+    path_label = " > ".join(
+        _normalize_outline_title(value)
+        for value in (item_path or [])
+        if _normalize_outline_title(value)
+    )
+    section_label = " > ".join(
+        _normalize_outline_title(value)
+        for value in (section_path or [])
+        if _normalize_outline_title(value)
+    )
+    block_rows: list[dict[str, Any]] = []
+    for block in content_blocks[:14]:
+        title = _normalize_outline_title(block.get("title"))
+        kind = _normalize_content_block_kind(block.get("kind"))
+        material = _normalize_content_block_text(block.get("teaching_material"), limit=300)
+        excerpt = _normalize_content_block_text(block.get("source_excerpt"), limit=220)
+        if not title:
+            continue
+        block_rows.append(
+            {
+                "title": title,
+                "kind": kind,
+                "teaching_material": material,
+                "source_excerpt": excerpt,
+            }
+        )
+    compact_json = json.dumps(block_rows, ensure_ascii=False, indent=2)
+    return "\n".join(
+        [
+            "Tu es un expert pedagogique qui produit du contenu d'enseignement structure pour un enseignant.",
+            "Reponds uniquement avec un JSON strict de la forme suivante (tous les champs en Markdown, LaTeX inline $...$ ou bloc $$...$$):",
+            "{",
+            '  "teaching_goal_md": "Objectif pedagogique de cet element",',
+            '  "launch_activity_md": "Activite d\'amorce ou question d\'accroche",',
+            '  "explanation_md": "Explication claire de la notion ou regle",',
+            '  "worked_example_md": "Exemple guide avec solution etape par etape",',
+            '  "practice_md": "Exercice de pratique pour les eleves",',
+            '  "solution_md": "Correction de l\'exercice de pratique",',
+            '  "assessment_md": "Question ou mini-evaluation rapide",',
+            '  "teacher_notes_md": "Notes internes pour l\'enseignant",',
+            '  "source_excerpt_md": "Extrait pertinent du document source"',
+            "}",
+            "Regles:",
+            "- Reponds en francais.",
+            "- Chaque champ doit etre une chaine Markdown utilisable directement.",
+            "- Utilise LaTeX uniquement pour les formules mathematiques.",
+            "- Si tu ne trouves pas de contenu pour un champ, mets null.",
+            "- Ne reponds qu'avec le JSON, sans commentaire autour.",
+            f"Unite: {unit_title or 'Unite'}",
+            f"Element cible: {str(item_title or '').strip() or 'Element'}",
+            f"Chemin complet: {path_label or str(item_title or '').strip() or '-'}",
+            f"Section parente: {section_label or '-'}",
+            "Blocs pedagogiques disponibles pour cette section:",
+            compact_json,
+        ]
+    )
+
+
+def _notebooklm_generate_leaf_content(
+    *,
+    unit_title: str,
+    item_title: str,
+    item_path: list[str] | None,
+    section_path: list[str] | None,
+    source_text: str,
+    document_path: str | None,
+    provider_context: dict[str, Any] | None,
+    unit_map: dict[str, Any] | None,
+    content_blocks: list[dict[str, Any]] | None,
+    source_text_excerpt: str | None,
+    requested_provider: str,
+) -> dict[str, Any]:
+    try:
+        return asyncio.run(
+            _notebooklm_generate_leaf_content_async(
+                unit_title=unit_title,
+                item_title=item_title,
+                item_path=item_path,
+                section_path=section_path,
+                source_text=source_text,
+                document_path=document_path,
+                provider_context=provider_context,
+                unit_map=unit_map,
+                content_blocks=content_blocks,
+                source_text_excerpt=source_text_excerpt,
+                requested_provider=requested_provider,
+            )
+        )
+    except NotebookLMGenerationUnavailableError:
+        raise
+    except Exception as exc:
+        _record_notebooklm_health(
+            source="leaf_content",
+            ok=False,
+            error_message=f"notebooklm_leaf_content_runtime_error:{exc.__class__.__name__}:{exc}",
+            refresh_required=_looks_like_notebooklm_auth_error_message(str(exc)),
+        )
+        return _normalize_leaf_content_payload(
+            parsed=None,
+            requested_provider=requested_provider,
+            item_title=item_title,
+            item_path=item_path,
+            section_path=section_path,
+            raw_provider_response={"runtime_error": str(exc)},
+            error_message=f"notebooklm_leaf_content_runtime_error:{exc.__class__.__name__}",
+        )
+
+
+async def _notebooklm_generate_leaf_content_async(
+    *,
+    unit_title: str,
+    item_title: str,
+    item_path: list[str] | None,
+    section_path: list[str] | None,
+    source_text: str,
+    document_path: str | None,
+    provider_context: dict[str, Any] | None,
+    unit_map: dict[str, Any] | None,
+    content_blocks: list[dict[str, Any]] | None,
+    source_text_excerpt: str | None,
+    requested_provider: str,
+) -> dict[str, Any]:
+    client = await _create_notebooklm_client()
+    if client is None:
+        return _normalize_leaf_content_payload(
+            parsed=None,
+            requested_provider=requested_provider,
+            item_title=item_title,
+            item_path=item_path,
+            section_path=section_path,
+            raw_provider_response=None,
+            error_message="notebooklm_client_unavailable",
+        )
+
+    section_title = section_path[-1] if section_path else None
+    selected_blocks = _filter_content_blocks_for_section(
+        content_blocks,
+        section_title=section_title,
+        section_path=section_path or None,
+    )
+    prompt = _build_notebooklm_leaf_content_prompt(
+        unit_title=unit_title,
+        item_title=item_title,
+        item_path=item_path,
+        section_path=section_path,
+        content_blocks=selected_blocks,
+    )
+
+    notebook_id = str((provider_context or {}).get("notebook_id") or "").strip()
+    notebook_title = f"{app_config.NOTEBOOKLM_NOTEBOOK_PREFIX}{unit_title or 'Unit'}".strip()
+    created_temporary_notebook = False
+    source_ids = [str(value).strip() for value in ((provider_context or {}).get("source_ids") or []) if str(value).strip()]
+    raw_provider_response: dict[str, Any] | None = None
+    try:
+        async with client as opened:
+            if not notebook_id:
+                notebook = await opened.notebooks.create(notebook_title)
+                notebook_id = str(getattr(notebook, "id", "") or "").strip()
+                created_temporary_notebook = True
+                source_ids = await _notebooklm_attach_source(
+                    client=opened,
+                    notebook_id=notebook_id,
+                    unit_title=unit_title,
+                    source_text=source_text_excerpt or source_text,
+                    document_path=document_path,
+                )
+            result = await _ask_notebooklm_with_source_retry(
+                opened=opened,
+                notebook_id=notebook_id,
+                prompt=prompt,
+                source_ids=source_ids,
+                retries=3,
+            )
+            answer = str(getattr(result, "answer", "") or "").strip()
+            parsed = _json_object_from_text(answer)
+            raw_provider_response = {
+                "notebook_id": notebook_id,
+                "source_ids": source_ids,
+                "conversation_id": str(getattr(result, "conversation_id", "") or "").strip() or None,
+                "prompt": prompt,
+                "answer": answer,
+            }
+    except Exception as exc:
+        _record_notebooklm_health(
+            source="leaf_content",
+            ok=False,
+            error_message=f"notebooklm_leaf_content_request_failed:{exc.__class__.__name__}:{exc}",
+            refresh_required=_looks_like_notebooklm_auth_error_message(str(exc)),
+        )
+        return _normalize_leaf_content_payload(
+            parsed=None,
+            requested_provider=requested_provider,
+            item_title=item_title,
+            item_path=item_path,
+            section_path=section_path,
+            raw_provider_response=raw_provider_response,
+            error_message=f"notebooklm_leaf_content_request_failed:{exc.__class__.__name__}",
+        )
+    finally:
+        if created_temporary_notebook and notebook_id:
+            await _safe_delete_notebook_async(notebook_id)
+
+    _record_notebooklm_health(
+        source="leaf_content",
+        ok=True,
+        error_message=None,
+        refresh_required=False,
+    )
+    return _normalize_leaf_content_payload(
+        parsed=parsed if isinstance(parsed, dict) else None,
+        requested_provider=requested_provider,
+        item_title=item_title,
+        item_path=item_path,
+        section_path=section_path,
+        raw_provider_response=raw_provider_response,
+        error_message=None if isinstance(parsed, dict) else "notebooklm_invalid_json",
+    )
