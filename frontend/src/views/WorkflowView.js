@@ -3616,14 +3616,34 @@ function _render(el, classId) {
                   : !session?.unit_session_number ? '<p class="text-[12px] text-slate-500">This session has no saved unit-session number yet.</p>'
                     : `
                       <div class="flex flex-col gap-3">
-                        <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                          <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">Planned Route</p>
-                          ${_renderSessionPlannedTree(activeSessionPlanTree)}
+                        <div class="grid grid-cols-1 lg:grid-cols-[0.85fr_1.15fr] gap-3">
+                          <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                            <p class="text-[12px] font-semibold text-slate-700">Unit Session ${Number(session.unit_session_number)}</p>
+                            <div class="mt-2 flex items-center gap-2 flex-wrap">
+                              <span class="badge ${activeRouteStatus.className}">${_escapeHtml(activeRouteStatus.label)}</span>
+                            </div>
+                            <p class="mt-2 text-[12px] text-slate-600 leading-relaxed">${_escapeHtml(activeRouteStatus.hint)}</p>
+                            <p class="mt-2 text-[11px] text-slate-400">Saved checklist route for this live unit session.</p>
+                          </div>
+                          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                            <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">Session Route Brief</p>
+                            ${activeSummaryBadges.length
+                              ? `<div class="flex flex-wrap gap-2">
+                                  ${activeSummaryBadges.map(label => `<span class="badge badge-gray">${_escapeHtml(label)}</span>`).join('')}
+                                </div>`
+                              : '<p class="text-[12px] text-slate-500">No saved route summary for this session yet.</p>'}
+                          </div>
                         </div>
-                        <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                          <p class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Teacher Prep</p>
-                          <p class="text-[12px] text-slate-500 mb-3">Notebook-backed suggestions tied to this planned route.</p>
-                          ${_renderSessionPlaybookPreview(activeUnitMap, activeSessionPlanTitles)}
+                        <div class="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-3">
+                          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                            <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">Planned Route</p>
+                            ${_renderSessionPlannedTree(activeSessionPlanTree)}
+                          </div>
+                          <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                            <p class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Teacher Prep</p>
+                            <p class="text-[12px] text-slate-500 mb-3">Notebook-backed suggestions tied to this planned route.</p>
+                            ${_renderSessionPlaybookPreview(activeUnitMap, activeSessionPlanTitles)}
+                          </div>
                         </div>
                       </div>`}
             </div>
@@ -3670,7 +3690,7 @@ function _render(el, classId) {
               <div class="flex items-center justify-between gap-2 flex-wrap">
                 <div>
                   <h4 class="text-[13px] font-semibold text-slate-700">Session Write-Up</h4>
-                  <p class="text-[12px] text-slate-500">Generate and review the textbook text for this session.</p>
+                  <p class="text-[12px] text-slate-500">Generate and review the saved lesson brief for this session.</p>
                 </div>
                 <div class="flex flex-col items-stretch sm:items-end gap-2 w-full lg:w-auto">
                   <button id="btn-toggle-session-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto">${_workflowCollapseSessionWriteup ? 'Expand' : 'Collapse'}</button>
@@ -3738,7 +3758,7 @@ function _render(el, classId) {
                 <div class="flex items-center justify-between gap-2 flex-wrap">
                   <div>
                     <p class="text-[15px] font-semibold text-slate-800">${_escapeHtml(sessionWriteupState.item.title || 'Session write-up')}</p>
-                    <p class="mt-1 text-[12px] text-slate-500">A classroom-facing summary of what was taught, reinforced, and practiced.</p>
+                    <p class="mt-1 text-[12px] text-slate-500">A classroom-facing lesson brief covering what was taught, reinforced, and practiced.</p>
                   </div>
                   <div class="flex items-center gap-2 flex-wrap">
                     <span class="badge ${sessionWriteupState.item.approved === false ? 'badge-amber' : 'badge-green'}">${sessionWriteupState.item.approved === false ? 'Draft' : 'Approved'}</span>
@@ -3747,43 +3767,56 @@ function _render(el, classId) {
                   </div>
                 </div>
                 <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                  <div class="flex items-start justify-between gap-3 flex-wrap">
+                  <div class="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-3 items-start">
                     <div>
                       <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Lesson Brief</p>
                       <p class="mt-1 text-[12px] text-slate-500">The write-up is organized so you can quickly review focus, delivery, and practice.</p>
                     </div>
-                    <div class="flex flex-wrap gap-2">
-                      <span class="badge badge-gray">${Array.isArray(sessionWriteupState.item.learning_focus) ? sessionWriteupState.item.learning_focus.length : 0} focus</span>
-                      <span class="badge badge-gray">${Array.isArray(sessionWriteupState.item.teaching_content) ? sessionWriteupState.item.teaching_content.length : 0} content</span>
-                      <span class="badge badge-gray">${Array.isArray(sessionWriteupState.item.practice_items) ? sessionWriteupState.item.practice_items.length : 0} practice</span>
+                    <div class="grid grid-cols-3 gap-2">
+                      <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center">
+                        <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Focus</p>
+                        <p class="mt-1 text-[15px] font-semibold text-slate-900">${Array.isArray(sessionWriteupState.item.learning_focus) ? sessionWriteupState.item.learning_focus.length : 0}</p>
+                      </div>
+                      <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center">
+                        <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Content</p>
+                        <p class="mt-1 text-[15px] font-semibold text-slate-900">${Array.isArray(sessionWriteupState.item.teaching_content) ? sessionWriteupState.item.teaching_content.length : 0}</p>
+                      </div>
+                      <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center">
+                        <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Practice</p>
+                        <p class="mt-1 text-[15px] font-semibold text-slate-900">${Array.isArray(sessionWriteupState.item.practice_items) ? sessionWriteupState.item.practice_items.length : 0}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
                 ${_renderImportedGuidanceSummary(sessionWriteupState.item.source_payload)}
-                ${Array.isArray(sessionWriteupState.item.learning_focus) && sessionWriteupState.item.learning_focus.length ? `
-                  <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                    <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Learning Focus</p>
-                    <p class="mt-1 text-[12px] text-slate-500">The main ideas or objectives that shaped the lesson.</p>
-                    <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
-                      ${sessionWriteupState.item.learning_focus.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
-                    </ul>
-                  </div>` : ''}
-                ${Array.isArray(sessionWriteupState.item.teaching_content) && sessionWriteupState.item.teaching_content.length ? `
-                  <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4 flex flex-col gap-2">
-                    <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Teaching Content</p>
-                    <p class="text-[12px] text-slate-500">What was explained, modeled, or discussed with students.</p>
-                    <div class="flex flex-col gap-3">
-                      ${sessionWriteupState.item.teaching_content.map(row => `<div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3"><p class="text-[13px] text-slate-700 leading-relaxed">${_escapeHtml(row)}</p></div>`).join('')}
-                    </div>
-                  </div>` : ''}
-                ${Array.isArray(sessionWriteupState.item.practice_items) && sessionWriteupState.item.practice_items.length ? `
-                  <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                    <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Practice</p>
-                    <p class="mt-1 text-[12px] text-slate-500">Exercises, reinforcement, or checks for understanding used in class.</p>
-                    <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
-                      ${sessionWriteupState.item.practice_items.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
-                    </ul>
-                  </div>` : ''}
+                <div class="grid grid-cols-1 xl:grid-cols-[0.9fr_1.1fr] gap-3">
+                  <div class="flex flex-col gap-3">
+                    ${Array.isArray(sessionWriteupState.item.learning_focus) && sessionWriteupState.item.learning_focus.length ? `
+                      <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Learning Focus</p>
+                        <p class="mt-1 text-[12px] text-slate-500">The main ideas that shaped the lesson.</p>
+                        <ul class="mt-2 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+                          ${sessionWriteupState.item.learning_focus.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
+                        </ul>
+                      </div>` : ''}
+                    ${Array.isArray(sessionWriteupState.item.practice_items) && sessionWriteupState.item.practice_items.length ? `
+                      <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Practice</p>
+                        <p class="mt-1 text-[12px] text-slate-500">Exercises or checks for understanding used in class.</p>
+                        <ul class="mt-2 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+                          ${sessionWriteupState.item.practice_items.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
+                        </ul>
+                      </div>` : ''}
+                  </div>
+                  ${Array.isArray(sessionWriteupState.item.teaching_content) && sessionWriteupState.item.teaching_content.length ? `
+                    <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4 flex flex-col gap-2">
+                      <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Teaching Content</p>
+                      <p class="text-[12px] text-slate-500">What was explained, modeled, or discussed with students.</p>
+                      <div class="flex flex-col gap-2">
+                        ${sessionWriteupState.item.teaching_content.map(row => `<div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3"><p class="text-[13px] text-slate-700 leading-relaxed">${_escapeHtml(row)}</p></div>`).join('')}
+                      </div>
+                    </div>` : ''}
+                </div>
                 ${_renderWriteupSourcePayload(sessionWriteupState.item.source_payload, { compact: false })}
               </div>`
             : '<p class="text-[12px] text-slate-500">No saved write-up yet. Generate one after checking the completed items.</p>'}
