@@ -231,6 +231,28 @@ function _filterCalendarAssistantArtifactsForPlannedTitles(artifacts, unitMap, p
   }));
 }
 
+function _filterCalendarAssistantArtifactsForRouteContext(artifacts, unitMap, routeTitles, routeSectionPaths = []) {
+  const safeRows = Array.isArray(artifacts) ? artifacts : [];
+  const titleKeys = new Set((Array.isArray(routeTitles) ? routeTitles : []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+  const pathKeys = new Set((Array.isArray(routeSectionPaths) ? routeSectionPaths : []).map(path => _normalizeSectionPathKey(path)).filter(Boolean));
+  const sectionPlans = Array.isArray(unitMap?.section_plans) ? unitMap.section_plans.filter(Boolean) : [];
+  sectionPlans.forEach(plan => {
+    const sectionTitle = String(plan?.section_title || '').trim().toLowerCase();
+    const delivery = Array.isArray(plan?.delivery_sequence) ? plan.delivery_sequence.map(value => String(value || '').trim().toLowerCase()).filter(Boolean) : [];
+    const matched = (sectionTitle && titleKeys.has(sectionTitle)) || delivery.some(value => titleKeys.has(value));
+    if (matched) {
+      const pathKey = _normalizeSectionPathKey(plan?.section_path);
+      if (pathKey) pathKeys.add(pathKey);
+    }
+  });
+  return _sortCalendarAssistantArtifactsForTeaching(safeRows.filter(item => {
+    const itemTitle = String(item?.section_title || '').trim().toLowerCase();
+    if (itemTitle && titleKeys.has(itemTitle)) return true;
+    const itemPathKey = _normalizeSectionPathKey(item?.section_path);
+    return itemPathKey ? pathKeys.has(itemPathKey) : false;
+  }));
+}
+
 function _setWorkflowViewIntent(intent) {
   try {
     sessionStorage.setItem(WORKFLOW_VIEW_INTENT_KEY, JSON.stringify({
@@ -801,13 +823,16 @@ function _teacherActionLabel(action) {
   return labels[normalized] || normalized.replace(/_/g, ' ');
 }
 
-function _renderCalendarTeacherPrep(unitMap, plannedTitles) {
+function _renderCalendarTeacherPrep(unitMap, plannedTitles, routeSectionPaths = []) {
   const playbook = Array.isArray(unitMap?.teacher_playbook) ? unitMap.teacher_playbook.filter(Boolean) : [];
   const materialStudio = unitMap?.material_studio && typeof unitMap.material_studio === 'object' ? unitMap.material_studio : {};
   const titleKeys = new Set((Array.isArray(plannedTitles) ? plannedTitles : []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+  const routePathKeys = new Set((Array.isArray(routeSectionPaths) ? routeSectionPaths : []).map(path => _normalizeSectionPathKey(path)).filter(Boolean));
   const matchedPlaybook = playbook.filter(entry => {
     const sectionTitle = String(entry?.section_title || '').trim().toLowerCase();
     if (sectionTitle && titleKeys.has(sectionTitle)) return true;
+    const entryPathKey = _normalizeSectionPathKey(entry?.section_path);
+    if (entryPathKey && routePathKeys.has(entryPathKey)) return true;
     const sectionPath = Array.isArray(entry?.section_path) ? entry.section_path : [];
     return sectionPath.some(value => titleKeys.has(String(value || '').trim().toLowerCase()));
   }).slice(0, 4);
@@ -1417,6 +1442,12 @@ function _coerceCalendarEvent(row) {
     absent_student_ids: Array.isArray(row?.absent_student_ids) ? row.absent_student_ids.map(Number).filter(Number.isFinite) : [],
     checked_items_count: Number(row?.checked_items_count || 0),
     checked_items: Array.isArray(row?.checked_items) ? row.checked_items.map(v => String(v || '').trim()).filter(Boolean) : [],
+    checked_item_paths: Array.isArray(row?.checked_item_paths)
+      ? row.checked_item_paths.map(path => Array.isArray(path) ? path.map(v => String(v || '').trim()).filter(Boolean) : []).filter(path => path.length)
+      : [],
+    checked_section_paths: Array.isArray(row?.checked_section_paths)
+      ? row.checked_section_paths.map(path => Array.isArray(path) ? path.map(v => String(v || '').trim()).filter(Boolean) : []).filter(path => path.length)
+      : [],
     note: row?.note == null ? null : String(row.note),
   };
 }
@@ -3344,6 +3375,9 @@ function _renderCalendar(el, classId) {
   const selectedCheckedItems = Array.isArray(selectedEvent?.checked_items)
     ? selectedEvent.checked_items.map(value => String(value || '').trim()).filter(Boolean)
     : [];
+  const selectedCheckedSectionPaths = Array.isArray(selectedEvent?.checked_section_paths)
+    ? selectedEvent.checked_section_paths.map(path => Array.isArray(path) ? path.map(value => String(value || '').trim()).filter(Boolean) : []).filter(path => path.length)
+    : [];
   const plannedSessionTree = selectedSessionNumber ? _collectSessionBlueprintNodes(selectedBlueprintTree, selectedSessionNumber) : [];
   const plannedSessionTitles = _flattenCalendarBlueprintTitles(plannedSessionTree, []);
   const selectedEffectiveRouteTitles = plannedSessionTitles.length ? plannedSessionTitles : selectedCheckedItems;
@@ -3376,7 +3410,12 @@ function _renderCalendar(el, classId) {
     : {};
   const selectedSectionPlans = Array.isArray(selectedUnitMap?.section_plans) ? selectedUnitMap.section_plans : [];
   const selectedMatchedGuidance = selectedEvent?.unit_id != null
-    ? _filterCalendarAssistantArtifactsForPlannedTitles(_calendarAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(selectedEvent.unit_id || 0)}`) || [], selectedUnitMap, selectedEffectiveRouteTitles)
+    ? _filterCalendarAssistantArtifactsForRouteContext(
+      _calendarAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(selectedEvent.unit_id || 0)}`) || [],
+      selectedUnitMap,
+      selectedEffectiveRouteTitles,
+      selectedCheckedSectionPaths,
+    )
     : [];
   const selectedImportedGuidanceIds = _getCalendarImportedAssistantArtifactIds(selectedWriteup);
   const selectedRemainingGuidance = selectedMatchedGuidance.filter(item => !selectedImportedGuidanceIds.has(Number(item?.id || 0)));
@@ -4010,7 +4049,7 @@ function _renderCalendar(el, classId) {
                 : selectedBlueprintError
                   ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedBlueprintError)}</p>`
                   : `<div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                      ${_renderCalendarTeacherPrep(selectedUnitMap, selectedEffectiveRouteTitles)}
+                      ${_renderCalendarTeacherPrep(selectedUnitMap, selectedEffectiveRouteTitles, selectedCheckedSectionPaths)}
                     </div>`}
           </div>
 

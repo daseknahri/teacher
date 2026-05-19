@@ -306,6 +306,32 @@ function _filterAssistantArtifactsForPlannedTitles(artifacts, unitMap, plannedTi
   }));
 }
 
+function _filterAssistantArtifactsForRouteContext(artifacts, unitMap, routeTitles, routeSectionPaths = []) {
+  const safeRows = Array.isArray(artifacts) ? artifacts : [];
+  const titleKeys = new Set((Array.isArray(routeTitles) ? routeTitles : []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+  const pathKeys = new Set();
+  const sectionPlans = Array.isArray(unitMap?.section_plans) ? unitMap.section_plans.filter(Boolean) : [];
+  (Array.isArray(routeSectionPaths) ? routeSectionPaths : []).forEach(path => {
+    const key = _normalizeSectionPathKey(path);
+    if (key) pathKeys.add(key);
+  });
+  sectionPlans.forEach(plan => {
+    const sectionTitle = String(plan?.section_title || '').trim().toLowerCase();
+    const delivery = Array.isArray(plan?.delivery_sequence) ? plan.delivery_sequence.map(value => String(value || '').trim().toLowerCase()).filter(Boolean) : [];
+    const matched = (sectionTitle && titleKeys.has(sectionTitle)) || delivery.some(value => titleKeys.has(value));
+    if (matched) {
+      const pathKey = _normalizeSectionPathKey(plan?.section_path);
+      if (pathKey) pathKeys.add(pathKey);
+    }
+  });
+  return _sortAssistantArtifactsForTeaching(safeRows.filter(item => {
+    const itemTitle = String(item?.section_title || '').trim().toLowerCase();
+    if (itemTitle && titleKeys.has(itemTitle)) return true;
+    const itemPathKey = _normalizeSectionPathKey(item?.section_path);
+    return itemPathKey ? pathKeys.has(itemPathKey) : false;
+  }));
+}
+
 function _artifactDownloadFilename(item, fallbackTitle = '') {
   const base = String(item?.title || fallbackTitle || 'saved-guidance')
     .trim()
@@ -2728,12 +2754,15 @@ function _renderSessionFallbackRouteRows(rows) {
   `;
 }
 
-function _renderSessionPlaybookPreview(unitMap, plannedTitles) {
+function _renderSessionPlaybookPreview(unitMap, plannedTitles, routeSectionPaths = []) {
   const playbook = Array.isArray(unitMap?.teacher_playbook) ? unitMap.teacher_playbook.filter(Boolean) : [];
   const titleKeys = new Set((Array.isArray(plannedTitles) ? plannedTitles : []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+  const routePathKeys = new Set((Array.isArray(routeSectionPaths) ? routeSectionPaths : []).map(path => _normalizeSectionPathKey(path)).filter(Boolean));
   const matched = playbook.filter(entry => {
     const sectionTitle = String(entry?.section_title || '').trim().toLowerCase();
     if (sectionTitle && titleKeys.has(sectionTitle)) return true;
+    const entryPathKey = _normalizeSectionPathKey(entry?.section_path);
+    if (entryPathKey && routePathKeys.has(entryPathKey)) return true;
     const sectionPath = Array.isArray(entry?.section_path) ? entry.section_path : [];
     return sectionPath.some(value => titleKeys.has(String(value || '').trim().toLowerCase()));
   }).slice(0, 3);
@@ -2973,6 +3002,12 @@ function _render(el, classId) {
   const activeSessionCheckedChecklist = session
     ? checklist.filter(item => Number(item?.completed_session_id || 0) === Number(session.id || 0))
     : [];
+  const activeSessionCheckedSectionPaths = Array.isArray(session?.checked_section_paths) && session.checked_section_paths.length
+    ? session.checked_section_paths.map(path => Array.isArray(path) ? path.map(value => String(value || '').trim()).filter(Boolean) : []).filter(path => path.length)
+    : _deriveChecklistSectionPaths(
+      checklist,
+      activeSessionCheckedChecklist.map(item => Number(item?.id || 0))
+    );
   const activeSessionCheckedTitles = activeSessionCheckedChecklist.map(item => String(item?.title || '').trim()).filter(Boolean);
   const activeEffectiveRouteTitles = activeSessionPlanTitles.length ? activeSessionPlanTitles : activeSessionCheckedTitles;
   const activeEffectiveTitleKeys = new Set(activeEffectiveRouteTitles.map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
@@ -2983,7 +3018,14 @@ function _render(el, classId) {
   const activeFallbackRouteRows = activeSessionPlanTitles.length
     ? []
     : _visibleChecklistRows(checklist.filter(item => activeFallbackFocusIds.has(Number(item?.id || 0))), new Set());
-  const activeSessionMatchedGuidance = unit?.id ? _filterAssistantArtifactsForPlannedTitles(_unitAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(unit.id || 0)}`) || [], activeUnitMap, activeEffectiveRouteTitles) : [];
+  const activeSessionMatchedGuidance = unit?.id
+    ? _filterAssistantArtifactsForRouteContext(
+      _unitAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(unit.id || 0)}`) || [],
+      activeUnitMap,
+      activeEffectiveRouteTitles,
+      activeSessionCheckedSectionPaths,
+    )
+    : [];
   const activeSessionImportedGuidanceIds = _getImportedAssistantArtifactIds(sessionWriteupState.item);
   const activeSessionRemainingGuidance = activeSessionMatchedGuidance.filter(item => !activeSessionImportedGuidanceIds.has(Number(item?.id || 0)));
   const activeSessionRemainingGuidanceCount = activeSessionRemainingGuidance.length;
@@ -3720,7 +3762,7 @@ function _render(el, classId) {
                           <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
                             <p class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Teacher Prep</p>
                             <p class="text-[12px] text-slate-500 mb-3">${activeSessionPlanTitles.length ? 'Notebook-backed suggestions tied to this planned route.' : 'Notebook-backed suggestions tied to the checklist work already captured in this session.'}</p>
-                            ${_renderSessionPlaybookPreview(activeUnitMap, activeEffectiveRouteTitles)}
+                            ${_renderSessionPlaybookPreview(activeUnitMap, activeEffectiveRouteTitles, activeSessionCheckedSectionPaths)}
                           </div>
                         </div>
                       </div>`}
@@ -4066,6 +4108,43 @@ function _collectPreviewFocusIds(items, titleKeys) {
     }
   });
   return focusIds;
+}
+
+function _deriveChecklistSectionPaths(items, targetIds = []) {
+  const rows = Array.isArray(items) ? items : [];
+  const selected = new Set((Array.isArray(targetIds) ? targetIds : []).map(value => Number(value)).filter(value => Number.isFinite(value) && value > 0));
+  if (!selected.size || !rows.length) return [];
+  const byId = new Map(rows.map(row => [Number(row?.id || 0), row]).filter(([id]) => id > 0));
+  const structuralKinds = new Set(['chapter', 'section', 'subsection']);
+  const output = [];
+  const seen = new Set();
+  selected.forEach(itemId => {
+    let current = byId.get(itemId) || null;
+    const visited = new Set();
+    const itemPath = [];
+    const sectionPath = [];
+    while (current && !visited.has(Number(current?.id || 0))) {
+      const currentId = Number(current?.id || 0);
+      if (!currentId) break;
+      visited.add(currentId);
+      const title = String(current?.title || '').trim();
+      const kind = String(current?.item_kind || '').trim().toLowerCase();
+      if (title) {
+        itemPath.push(title);
+        if (structuralKinds.has(kind)) sectionPath.push(title);
+      }
+      const parentId = current?.parent_item_id == null ? 0 : Number(current.parent_item_id || 0);
+      current = parentId > 0 ? byId.get(parentId) || null : null;
+    }
+    itemPath.reverse();
+    sectionPath.reverse();
+    const normalizedSectionPath = sectionPath.length ? sectionPath : (itemPath.length ? itemPath.slice(0, -1).length ? itemPath.slice(0, -1) : itemPath : []);
+    const key = normalizedSectionPath.join(' > ').toLowerCase();
+    if (!normalizedSectionPath.length || seen.has(key)) return;
+    seen.add(key);
+    output.push(normalizedSectionPath);
+  });
+  return output;
 }
 
 function _visibleChecklistRows(items, collapsedIds) {

@@ -122,6 +122,7 @@ from ..services.timetable_import import (
 )
 from ..services.workflow import extract_text_from_document, generate_unit_checklist
 from ..services.workflow_content import (
+    _serialize_checked_item_contexts,
     build_document_hash,
     generate_and_store_session_writeup,
     save_unit_blueprint,
@@ -2180,6 +2181,25 @@ def _serialize_session(db: Session, session: ClassSession) -> WorkflowSessionOut
     has_saved_writeup = bool(
         db.scalar(select(WorkflowSessionWriteup.id).where(WorkflowSessionWriteup.session_id == int(session.id)))
     )
+    checked_ids = [
+        int(value)
+        for value in db.scalars(
+            select(WorkflowSessionChecklistAction.item_id).where(
+                WorkflowSessionChecklistAction.session_id == session.id,
+                WorkflowSessionChecklistAction.checked.is_(True),
+            )
+        ).all()
+        if int(value) > 0
+    ]
+    checked_contexts = (
+        _serialize_checked_item_contexts(
+            db,
+            unit_id=int(session.unit_id),
+            checked_item_ids=checked_ids,
+        )
+        if session.unit_id is not None and checked_ids
+        else []
+    )
     return WorkflowSessionOut(
         id=session.id,
         class_id=session.class_id,
@@ -2192,6 +2212,16 @@ def _serialize_session(db: Session, session: ClassSession) -> WorkflowSessionOut
         absent_count=absent_count,
         absent_student_ids=sorted(int(value) for value in absent_ids),
         checked_items_count=checked_items_count,
+        checked_item_paths=[
+            [str(part).strip() for part in (row.get("item_path") or []) if str(part).strip()]
+            for row in checked_contexts
+            if isinstance(row, dict)
+        ],
+        checked_section_paths=[
+            [str(part).strip() for part in (row.get("section_path") or []) if str(part).strip()]
+            for row in checked_contexts
+            if isinstance(row, dict)
+        ],
         has_saved_writeup=has_saved_writeup,
     )
 
@@ -6262,6 +6292,15 @@ def _build_calendar_events(db: Session, class_id: int) -> list[WorkflowCalendarE
             _format_checklist_item_label(number_label_by_id.get(int(row.id)), str(row.title or ""))
             for row in sorted_checked_rows
         ]
+        checked_item_contexts = (
+            _serialize_checked_item_contexts(
+                db,
+                unit_id=int(session.unit_id),
+                checked_item_ids=[int(row.id) for row in sorted_checked_rows],
+            )
+            if session.unit_id is not None and sorted_checked_rows
+            else []
+        )
         unit = unit_by_id.get(session.unit_id)
         events.append(
             WorkflowCalendarEventOut(
@@ -6278,6 +6317,16 @@ def _build_calendar_events(db: Session, class_id: int) -> list[WorkflowCalendarE
                 absent_student_ids=sorted(int(value) for value in absent_ids),
                 checked_items_count=len(checked_items),
                 checked_items=checked_items,
+                checked_item_paths=[
+                    [str(part).strip() for part in (row.get("item_path") or []) if str(part).strip()]
+                    for row in checked_item_contexts
+                    if isinstance(row, dict)
+                ],
+                checked_section_paths=[
+                    [str(part).strip() for part in (row.get("section_path") or []) if str(part).strip()]
+                    for row in checked_item_contexts
+                    if isinstance(row, dict)
+                ],
                 note=session.note,
             )
         )
