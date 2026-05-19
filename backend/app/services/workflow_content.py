@@ -30,6 +30,41 @@ def build_document_hash(content: bytes | str | None) -> str | None:
     return sha256(payload).hexdigest()
 
 
+def _filter_actionable_item_ids_for_unit(
+    db: Session,
+    *,
+    unit_id: int,
+    item_ids: list[int],
+) -> list[int]:
+    normalized_ids = sorted({int(value) for value in (item_ids or []) if int(value) > 0})
+    if not normalized_ids:
+        return []
+
+    rows = db.scalars(
+        select(WorkflowChecklistItem).where(WorkflowChecklistItem.unit_id == int(unit_id))
+    ).all()
+    if not rows:
+        return []
+
+    child_counts: dict[int, int] = {}
+    by_id: dict[int, WorkflowChecklistItem] = {}
+    for row in rows:
+        by_id[int(row.id)] = row
+        if row.parent_item_id is not None:
+            parent_id = int(row.parent_item_id)
+            child_counts[parent_id] = child_counts.get(parent_id, 0) + 1
+
+    actionable_ids: list[int] = []
+    for item_id in normalized_ids:
+        item = by_id.get(int(item_id))
+        if item is None:
+            continue
+        if child_counts.get(int(item.id), 0) > 0:
+            continue
+        actionable_ids.append(int(item.id))
+    return actionable_ids
+
+
 def save_unit_blueprint(
     db: Session,
     *,
@@ -207,6 +242,14 @@ def generate_and_store_session_writeup(
     ).all()
 
     checked_item_ids = [int(row.id) for row in checked_rows]
+    if unit is not None and checked_item_ids:
+        checked_item_ids = _filter_actionable_item_ids_for_unit(
+            db,
+            unit_id=int(unit.id),
+            item_ids=checked_item_ids,
+        )
+    actionable_id_set = {int(value) for value in checked_item_ids}
+    checked_rows = [row for row in checked_rows if int(row.id) in actionable_id_set]
     checked_titles = [str(row.title or "").strip() for row in checked_rows if str(row.title or "").strip()]
     session_number = session.unit_session_number or 0
     if session_number <= 0:

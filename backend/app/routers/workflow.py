@@ -2228,15 +2228,6 @@ def _serialize_session(db: Session, session: ClassSession) -> WorkflowSessionOut
         )
     ).all()
     absent_count = len(absent_ids)
-    checked_items_count = int(
-        db.scalar(
-            select(func.count(WorkflowSessionChecklistAction.id)).where(
-                WorkflowSessionChecklistAction.session_id == session.id,
-                WorkflowSessionChecklistAction.checked.is_(True),
-            )
-        )
-        or 0
-    )
     has_saved_writeup = bool(
         db.scalar(select(WorkflowSessionWriteup.id).where(WorkflowSessionWriteup.session_id == int(session.id)))
     )
@@ -2250,6 +2241,13 @@ def _serialize_session(db: Session, session: ClassSession) -> WorkflowSessionOut
         ).all()
         if int(value) > 0
     ]
+    if session.unit_id is not None and checked_ids:
+        checked_ids = _filter_actionable_check_item_ids(
+            db,
+            unit_id=int(session.unit_id),
+            item_ids=checked_ids,
+        )
+    checked_items_count = len(checked_ids)
     checked_contexts = (
         _serialize_checked_item_contexts(
             db,
@@ -6349,6 +6347,17 @@ def _build_calendar_events(db: Session, class_id: int) -> list[WorkflowCalendarE
                 unit_item_number_cache[int(session.unit_id)] = cached_numbers
             order_index_by_id = cached_order
             number_label_by_id = cached_numbers
+        actionable_checked_ids = (
+            _filter_actionable_check_item_ids(
+                db,
+                unit_id=int(session.unit_id),
+                item_ids=[int(row.id) for row in checked_rows],
+            )
+            if session.unit_id is not None
+            else [int(row.id) for row in checked_rows]
+        )
+        actionable_checked_id_set = {int(value) for value in actionable_checked_ids}
+        checked_rows = [row for row in checked_rows if int(row.id) in actionable_checked_id_set]
         sorted_checked_rows = sorted(
             checked_rows,
             key=lambda row: (order_index_by_id.get(int(row.id), 10**9), int(row.id)),

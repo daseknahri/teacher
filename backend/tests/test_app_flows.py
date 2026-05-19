@@ -493,6 +493,8 @@ def test_workflow_unit_session_lifecycle(client):
     assert workspace_after_leaf_resp.status_code == 200
     workspace_after_leaf = workspace_after_leaf_resp.json()
     assert workspace_after_leaf["active_unit"]["checklist"][0]["is_completed"] is False
+    assert int(workspace_after_leaf["active_session"]["checked_items_count"]) == 1
+    assert len(workspace_after_leaf["active_session"]["checked_item_paths"]) == 1
 
     # Forward-only checklist flow: unchecking is blocked even while session is open.
     toggle_uncheck_open_resp = client.post(

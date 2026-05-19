@@ -501,6 +501,28 @@ def _build_checklist_order_maps(items: list[WorkflowChecklistItem]) -> tuple[dic
     return order_index_by_id, number_label_by_id
 
 
+def _filter_actionable_report_check_rows(rows: list) -> list:
+    if not rows:
+        return []
+    child_counts: dict[int, int] = {}
+    for row in rows:
+        parent_id = getattr(row, "parent_item_id", None)
+        if parent_id is None:
+            continue
+        parent_key = int(parent_id)
+        child_counts[parent_key] = child_counts.get(parent_key, 0) + 1
+
+    filtered: list = []
+    for row in rows:
+        item_id = int(getattr(row, "item_id", getattr(row, "id", 0)) or 0)
+        if item_id <= 0:
+            continue
+        if child_counts.get(item_id, 0) > 0:
+            continue
+        filtered.append(row)
+    return filtered
+
+
 def _format_progress_item(row: ProgressItem) -> str:
     heading = str(row.heading or "").strip()
     content = str(row.content or "").strip()
@@ -603,6 +625,7 @@ def build_class_pdf_report(db: Session, class_id: int, mask_personal_data: bool 
                 WorkflowChecklistItem.id.label("item_id"),
                 WorkflowChecklistItem.title,
                 WorkflowChecklistItem.unit_id,
+                WorkflowChecklistItem.parent_item_id,
             )
             .join(WorkflowChecklistItem, WorkflowSessionChecklistAction.item_id == WorkflowChecklistItem.id)
             .where(
@@ -638,6 +661,7 @@ def build_class_pdf_report(db: Session, class_id: int, mask_personal_data: bool 
                 unit_number_map[int(unit_id)] = number_label_by_id
 
         for session_id, rows in checked_by_session.items():
+            rows = _filter_actionable_report_check_rows(rows)
             unit_id = next((int(row.unit_id) for row in rows if row.unit_id is not None), None)
             order_map = unit_order_map.get(unit_id, {}) if unit_id is not None else {}
             number_map = unit_number_map.get(unit_id, {}) if unit_id is not None else {}
@@ -888,6 +912,8 @@ def build_calendar_summary_pdf(
         checked_rows = db.execute(
             select(
                 WorkflowSessionChecklistAction.session_id,
+                WorkflowChecklistItem.id.label("item_id"),
+                WorkflowChecklistItem.parent_item_id,
                 WorkflowChecklistItem.title,
             )
             .join(WorkflowChecklistItem, WorkflowSessionChecklistAction.item_id == WorkflowChecklistItem.id)
@@ -901,7 +927,8 @@ def build_calendar_summary_pdf(
                 WorkflowChecklistItem.id.asc(),
             )
         ).all()
-        for row in checked_rows:
+        filtered_checked_rows = _filter_actionable_report_check_rows(list(checked_rows))
+        for row in filtered_checked_rows:
             session_key = int(row.session_id)
             title = str(row.title or "").strip()
             if title:
