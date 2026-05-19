@@ -5210,7 +5210,7 @@ function _bindWorkflowEvents(el, classId) {
 
   const currentSessionForArtifacts = getActiveSession();
   const currentUnitForArtifacts = getActiveUnit();
-  if (currentSessionForArtifacts && currentUnitForArtifacts?.id && activeSessionPlanTitles.length) {
+  if (currentSessionForArtifacts && currentUnitForArtifacts?.id) {
     const artifactCacheKey = `${Number(classId || 0)}:${Number(currentUnitForArtifacts.id || 0)}`;
     if (!_unitAssistantArtifactCache.has(artifactCacheKey)) {
       _loadUnitAssistantArtifacts(classId, currentUnitForArtifacts.id).then(() => {
