@@ -354,18 +354,14 @@ function _normalizeCalendarWriteupSourcePayload(payload) {
 function _renderCalendarWriteupSourcePayload(payload) {
   const normalized = _normalizeCalendarWriteupSourcePayload(payload);
   if (!normalized) return '';
+  const summaryBadges = [];
+  if (normalized.requestedProvider) summaryBadges.push(`Requested ${_escapeHtml(normalized.requestedProvider)}`);
+  if (normalized.providerUsed) summaryBadges.push(`Used ${_escapeHtml(normalized.providerUsed)}`);
+  summaryBadges.push(normalized.unitBrainUsed ? 'Unit brain matched' : 'Generic session context');
   const rows = [];
-  if (normalized.requestedProvider || normalized.providerUsed) {
-    rows.push(`
-      <div class="flex flex-wrap gap-2 text-[11px] text-slate-500">
-        ${normalized.requestedProvider ? `<span>Requested: <strong class="text-slate-600">${_escapeHtml(normalized.requestedProvider)}</strong></span>` : ''}
-        ${normalized.providerUsed ? `<span>Used: <strong class="text-slate-600">${_escapeHtml(normalized.providerUsed)}</strong></span>` : ''}
-      </div>`);
-  }
-  rows.push(`<p class="text-[11px] text-slate-500">Unit brain matched: <strong class="text-slate-600">${normalized.unitBrainUsed ? 'Yes' : 'No'}</strong></p>`);
   if (normalized.matchedSections.length) {
     rows.push(`
-      <div>
+      <div class="rounded-xl border border-slate-200 bg-white px-3 py-3">
         <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Matched Sections</p>
         <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
           ${normalized.matchedSections.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
@@ -374,7 +370,7 @@ function _renderCalendarWriteupSourcePayload(payload) {
   }
   if (normalized.matchedPaths.length) {
     rows.push(`
-      <div>
+      <div class="rounded-xl border border-slate-200 bg-white px-3 py-3">
         <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Matched Paths</p>
         <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
           ${normalized.matchedPaths.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
@@ -383,7 +379,7 @@ function _renderCalendarWriteupSourcePayload(payload) {
   }
   if (normalized.matchedBlocks.length) {
     rows.push(`
-      <div>
+      <div class="rounded-xl border border-slate-200 bg-white px-3 py-3">
         <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Matched Blocks</p>
         <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
           ${normalized.matchedBlocks.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
@@ -392,7 +388,7 @@ function _renderCalendarWriteupSourcePayload(payload) {
   }
   if (normalized.matchedGuidance.length) {
     rows.push(`
-      <div>
+      <div class="rounded-xl border border-slate-200 bg-white px-3 py-3">
         <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Saved Guidance Used</p>
         <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
           ${normalized.matchedGuidance.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
@@ -401,7 +397,7 @@ function _renderCalendarWriteupSourcePayload(payload) {
   }
   if (normalized.importedAssistantArtifacts.length) {
     rows.push(`
-      <div>
+      <div class="rounded-xl border border-slate-200 bg-white px-3 py-3">
         <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Imported Saved Guidance</p>
         <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
           ${normalized.importedAssistantArtifacts.map(item => `
@@ -415,7 +411,18 @@ function _renderCalendarWriteupSourcePayload(payload) {
       </div>`);
   }
   return rows.length
-    ? `<div class="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3 flex flex-col gap-2">${rows.join('')}</div>`
+    ? `
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 flex flex-col gap-3">
+        <div>
+          <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">AI Context Used</p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            ${summaryBadges.map(label => `<span class="badge badge-gray">${label}</span>`).join('')}
+          </div>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          ${rows.join('')}
+        </div>
+      </div>`
     : '';
 }
 
@@ -424,11 +431,12 @@ function _renderCalendarImportedGuidanceSummary(payload) {
   const items = Array.isArray(normalized?.importedAssistantArtifacts) ? normalized.importedAssistantArtifacts : [];
   if (!items.length) return '';
   return `
-    <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-3 flex flex-col gap-2">
+    <div class="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-3 flex flex-col gap-2">
       <div class="flex items-center justify-between gap-2 flex-wrap">
         <p class="text-[12px] font-semibold text-emerald-800">Imported guidance in this write-up</p>
         <span class="badge badge-green">${items.length} imported</span>
       </div>
+      <p class="text-[12px] text-emerald-700">Saved teacher help already merged into this lesson record.</p>
       <div class="flex flex-wrap gap-2">
         ${items.map(item => `
           <span class="badge badge-white border border-emerald-200 !text-emerald-800">
@@ -3363,6 +3371,9 @@ function _renderCalendar(el, classId) {
     ? `${selectedSessionNote.slice(0, 177).trim()}...`
     : selectedSessionNote;
   const selectedHeadlineCount = headlineBlocks.reduce((sum, block) => sum + (Array.isArray(block?.items) ? block.items.length : 0), 0);
+  const selectedWriteupFocusCount = Array.isArray(selectedWriteup?.learning_focus) ? selectedWriteup.learning_focus.length : 0;
+  const selectedWriteupContentCount = Array.isArray(selectedWriteup?.teaching_content) ? selectedWriteup.teaching_content.length : 0;
+  const selectedWriteupPracticeCount = Array.isArray(selectedWriteup?.practice_items) ? selectedWriteup.practice_items.length : 0;
   const selectedConfirmTitle = selectedEvent
     ? (selectedCanConfirm
       ? 'Confirm this delivered session and auto-check checklist flow.'
@@ -3868,23 +3879,40 @@ function _renderCalendar(el, classId) {
               : selectedWriteup
                 ? `
                   <div class="mt-3 flex flex-col gap-3">
-                    <p class="text-[13px] font-semibold text-slate-700">${_escapeHtml(selectedWriteup.title || 'Session write-up')}</p>
+                    <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                      <div class="flex items-start justify-between gap-3 flex-wrap">
+                        <div>
+                          <p class="text-[15px] font-semibold text-slate-800">${_escapeHtml(selectedWriteup.title || 'Session write-up')}</p>
+                          <p class="mt-1 text-[12px] text-slate-500">A classroom-facing summary of what was taught, reinforced, and practiced.</p>
+                        </div>
+                        <div class="flex flex-wrap gap-2">
+                          <span class="badge badge-gray">${selectedWriteupFocusCount} focus</span>
+                          <span class="badge badge-gray">${selectedWriteupContentCount} content</span>
+                          <span class="badge badge-gray">${selectedWriteupPracticeCount} practice</span>
+                        </div>
+                      </div>
+                    </div>
                     ${_renderCalendarImportedGuidanceSummary(selectedWriteup.source_payload)}
                     ${Array.isArray(selectedWriteup.learning_focus) && selectedWriteup.learning_focus.length ? `
-                      <div>
-                        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Learning Focus</p>
+                      <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Learning Focus</p>
+                        <p class="mt-1 text-[12px] text-slate-500">The main ideas or objectives that shaped the lesson.</p>
                         <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
                           ${selectedWriteup.learning_focus.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
                         </ul>
                       </div>` : ''}
                     ${Array.isArray(selectedWriteup.teaching_content) && selectedWriteup.teaching_content.length ? `
-                      <div class="flex flex-col gap-2">
-                        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Teaching Content</p>
-                        ${selectedWriteup.teaching_content.map(row => `<p class="text-[13px] text-slate-700 leading-relaxed">${_escapeHtml(row)}</p>`).join('')}
+                      <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4 flex flex-col gap-2">
+                        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Teaching Content</p>
+                        <p class="text-[12px] text-slate-500">What was explained, modeled, or discussed with students.</p>
+                        <div class="flex flex-col gap-3">
+                          ${selectedWriteup.teaching_content.map(row => `<div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3"><p class="text-[13px] text-slate-700 leading-relaxed">${_escapeHtml(row)}</p></div>`).join('')}
+                        </div>
                       </div>` : ''}
                     ${Array.isArray(selectedWriteup.practice_items) && selectedWriteup.practice_items.length ? `
-                      <div>
-                        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Practice</p>
+                      <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Practice</p>
+                        <p class="mt-1 text-[12px] text-slate-500">Exercises, reinforcement, or checks for understanding used in class.</p>
                         <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
                           ${selectedWriteup.practice_items.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
                         </ul>
