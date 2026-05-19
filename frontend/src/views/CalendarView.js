@@ -1022,12 +1022,12 @@ function _renderCalendarSessionMatchedGuidance(items, { canImport = false, impor
     }
     return '<p class="text-[12px] text-slate-500">No saved guidance matches this session route yet. Save a good result from Ask This Unit to reuse it here.</p>';
   }
-  return `
-    <div class="flex flex-col gap-2">
-      ${visible.map(item => {
-        const artifactId = Number(item?.id || 0);
-        const imported = importedIds.has(artifactId);
-        return `
+  const visibleRemaining = visible.filter(item => !importedIds.has(Number(item?.id || 0)));
+  const visibleImported = visible.filter(item => importedIds.has(Number(item?.id || 0)));
+  const renderRows = rows => rows.map(item => {
+    const artifactId = Number(item?.id || 0);
+    const imported = importedIds.has(artifactId);
+    return `
         <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
           <div class="flex items-center justify-between gap-3 flex-wrap">
             <div class="flex items-center gap-2 flex-wrap">
@@ -1044,7 +1044,13 @@ function _renderCalendarSessionMatchedGuidance(items, { canImport = false, impor
           </div>
           ${item?.content_markdown ? `<p class="text-[12px] text-slate-600 leading-6 mt-2">${_escapeHtml(String(item.content_markdown).split('\n').slice(0, 3).join(' '))}</p>` : ''}
         </div>
-      `;}).join('')}
+      `;
+  }).join('');
+  return `
+    <div class="flex flex-col gap-2">
+      ${visibleRemaining.length && visibleImported.length && !hideImported ? '<p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Ready to reuse</p>' : ''}
+      ${renderRows(visibleRemaining.length && visibleImported.length && !hideImported ? visibleRemaining : visible)}
+      ${visibleRemaining.length && visibleImported.length && !hideImported ? `<p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 pt-1">Already imported</p>${renderRows(visibleImported)}` : ''}
       ${sorted.length > visible.length
         ? `<p class="text-[11px] text-slate-500">Showing ${visible.length} of ${sorted.length} matching saved guidance items${hideImported ? ' still available to import' : ''}.</p>`
         : ''}
