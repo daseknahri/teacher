@@ -401,9 +401,9 @@ function _renderSessionMatchedGuidance(items, { canImport = false, importedIds =
       ${showGroupedSections ? `
         <div class="flex items-center justify-between gap-2 pt-1">
           <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Already imported (${importedCount})</p>
-          <button id="btn-session-guidance-collapse-imported-toggle" class="btn btn-ghost btn-sm">${_sessionGuidanceCollapseImported ? 'Show Section' : 'Hide Section'}</button>
+          <button id="btn-session-guidance-collapse-imported-toggle" class="btn btn-ghost btn-sm">${_sessionGuidanceCollapseImported ? `Show Imported (${importedCount})` : `Hide Imported (${importedCount})`}</button>
         </div>
-        ${_sessionGuidanceCollapseImported ? '<p class="text-[11px] text-slate-500">Imported guidance is hidden for a cleaner review.</p>' : renderRows(visibleImported)}
+        ${_sessionGuidanceCollapseImported ? `<p class="text-[11px] text-slate-500">${importedCount} imported guidance item${importedCount === 1 ? '' : 's'} hidden for a cleaner review.</p>` : renderRows(visibleImported)}
       ` : ''}
       ${sorted.length > visible.length
         ? `<p class="text-[11px] text-slate-500">Showing ${visible.length} of ${sorted.length} matching saved guidance items${hideImported ? ' still available to import' : ''}.</p>`
