@@ -2569,6 +2569,21 @@ function _normalizeWriteupSourcePayload(payload) {
   const matchedGuidance = Array.isArray(payload.matched_guidance_titles)
     ? payload.matched_guidance_titles.map(row => String(row || '').trim()).filter(Boolean)
     : [];
+  const teachingSections = Array.isArray(payload.teaching_sections)
+    ? payload.teaching_sections
+      .map(row => {
+        if (!row || typeof row !== 'object') return '';
+        const sectionTitle = String(row.section_title || '').trim();
+        const delivery = Array.isArray(row.delivery_sequence)
+          ? row.delivery_sequence.map(value => String(value || '').trim()).filter(Boolean)
+          : [];
+        if (!sectionTitle) return '';
+        return delivery.length
+          ? `${sectionTitle}: ${delivery.join(' -> ')}`
+          : sectionTitle;
+      })
+      .filter(Boolean)
+    : [];
   const importedAssistantArtifacts = Array.isArray(payload.imported_assistant_artifacts)
     ? payload.imported_assistant_artifacts
       .map(entry => {
@@ -2591,6 +2606,7 @@ function _normalizeWriteupSourcePayload(payload) {
     checkedSectionPaths,
     matchedSections,
     matchedPaths,
+    teachingSections,
     matchedBlocks,
     matchedGuidance,
     importedAssistantArtifacts,
@@ -2610,6 +2626,7 @@ function _renderWriteupSourcePayload(payload, { compact = false } = {}) {
     ['Checked teaching sections', meta.checkedSectionPaths],
     ['Matched sections', meta.matchedSections],
     ['Matched paths', meta.matchedPaths],
+    ['Session teaching flow', meta.teachingSections],
     ['Matched blocks', meta.matchedBlocks],
     ['Saved guidance used', meta.matchedGuidance],
   ].filter(([, rows]) => Array.isArray(rows) && rows.length);

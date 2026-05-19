@@ -858,6 +858,7 @@ def generate_session_writeup_package(
         "checked_section_paths": session_context.get("checked_section_paths") or [],
         "matched_section_titles": session_context.get("matched_section_titles") or [],
         "matched_section_paths": session_context.get("matched_section_paths") or [],
+        "teaching_sections": session_context.get("teaching_sections") or [],
         "matched_block_titles": session_context.get("matched_block_titles") or [],
         "matched_guidance_titles": session_context.get("matched_guidance_titles") or [],
     }
@@ -1496,6 +1497,7 @@ async def _notebooklm_generate_session_writeup_async(
                 matched_section_plans=session_context.get("matched_plans") if isinstance(session_context, dict) else None,
                 matched_content_blocks=session_context.get("matched_blocks") if isinstance(session_context, dict) else None,
                 matched_guidance=session_context.get("matched_guidance") if isinstance(session_context, dict) else None,
+                teaching_sections=session_context.get("teaching_sections") if isinstance(session_context, dict) else None,
             )
             result = await _ask_notebooklm_with_source_retry(
                 opened=opened,
@@ -1663,6 +1665,119 @@ def _extract_saved_guidance_excerpt(artifact: dict[str, Any] | None, *, limit: i
     lines = [re.sub(r"^#+\s*", "", row).strip() for row in markdown.splitlines()]
     text = " ".join(row for row in lines if row)
     return _normalize_content_block_text(text, limit=limit) or ""
+
+
+def _build_session_teaching_sections(
+    matched_plans: list[dict[str, Any]] | None,
+    matched_blocks: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    grouped: dict[str, dict[str, Any]] = {}
+    ordered_keys: list[str] = []
+
+    def ensure_group(section_title: str, section_path: list[str]) -> dict[str, Any]:
+        normalized_title = _normalize_outline_title(section_title) or "Section"
+        normalized_path = [
+            _normalize_outline_title(value)
+            for value in (section_path or [])
+            if _normalize_outline_title(value)
+        ] or [normalized_title]
+        key = "|".join(_semantic_title_key(value) for value in normalized_path if _semantic_title_key(value)) or _semantic_title_key(normalized_title)
+        if key not in grouped:
+            grouped[key] = {
+                "section_title": normalized_title,
+                "section_path": normalized_path,
+                "activity_titles": [],
+                "content_titles": [],
+                "example_titles": [],
+                "practice_titles": [],
+                "assessment_titles": [],
+                "delivery_sequence": [],
+            }
+            ordered_keys.append(key)
+        return grouped[key]
+
+    for raw_plan in matched_plans or []:
+        if not isinstance(raw_plan, dict):
+            continue
+        section_title = _normalize_outline_title(raw_plan.get("section_title"))
+        if not section_title:
+            continue
+        section_path = [
+            _normalize_outline_title(value)
+            for value in (raw_plan.get("section_path") if isinstance(raw_plan.get("section_path"), list) else [section_title])
+            if _normalize_outline_title(value)
+        ] or [section_title]
+        group = ensure_group(section_title, section_path)
+        for source_key, target_key in (
+            ("activity_titles", "activity_titles"),
+            ("content_titles", "content_titles"),
+            ("example_titles", "example_titles"),
+            ("exercise_titles", "practice_titles"),
+        ):
+            for title in (
+                _normalize_outline_title(value)
+                for value in (raw_plan.get(source_key) if isinstance(raw_plan.get(source_key), list) else [])
+            ):
+                if title and title not in group[target_key]:
+                    group[target_key].append(title)
+        for title in (
+            _normalize_outline_title(value)
+            for value in (raw_plan.get("delivery_sequence") if isinstance(raw_plan.get("delivery_sequence"), list) else [])
+        ):
+            if title and title not in group["delivery_sequence"]:
+                group["delivery_sequence"].append(title)
+
+    for raw_block in matched_blocks or []:
+        if not isinstance(raw_block, dict):
+            continue
+        title = _normalize_outline_title(raw_block.get("title"))
+        section_title = _normalize_outline_title(raw_block.get("section_title")) or title
+        if not section_title:
+            continue
+        section_path = [
+            _normalize_outline_title(value)
+            for value in (raw_block.get("section_path") if isinstance(raw_block.get("section_path"), list) else [section_title])
+            if _normalize_outline_title(value)
+        ] or [section_title]
+        group = ensure_group(section_title, section_path)
+        phase = str(raw_block.get("teaching_phase") or "").strip().lower() or _normalize_content_block_phase(
+            None,
+            kind=_normalize_content_block_kind(raw_block.get("kind")),
+            title=title,
+        )
+        normalized_title = title or section_title
+        target_key = "content_titles"
+        if phase == "activity":
+            target_key = "activity_titles"
+        elif phase == "example":
+            target_key = "example_titles"
+        elif phase == "assessment":
+            target_key = "assessment_titles"
+        elif phase == "practice":
+            target_key = "practice_titles"
+        if normalized_title and normalized_title not in group[target_key]:
+            group[target_key].append(normalized_title)
+        if normalized_title and normalized_title not in group["delivery_sequence"]:
+            group["delivery_sequence"].append(normalized_title)
+
+    sections: list[dict[str, Any]] = []
+    for key in ordered_keys:
+        row = grouped.get(key) or {}
+        if not row.get("delivery_sequence"):
+            continue
+        sections.append(
+            {
+                "section_title": row.get("section_title"),
+                "section_path": row.get("section_path") or [],
+                "delivery_sequence": row.get("delivery_sequence")[:10],
+                "activity_titles": row.get("activity_titles")[:5],
+                "content_titles": row.get("content_titles")[:6],
+                "example_titles": row.get("example_titles")[:5],
+                "practice_titles": row.get("practice_titles")[:6],
+                "assessment_titles": row.get("assessment_titles")[:4],
+            }
+        )
+    return sections[:8]
 
 
 def _build_session_writeup_context(
@@ -1842,12 +1957,15 @@ def _build_session_writeup_context(
         matched_guidance.append(artifact)
         matched_guidance_titles.append(title or section_title or f"Saved guidance {len(matched_guidance)}")
 
+    teaching_sections = _build_session_teaching_sections(matched_plans[:8], matched_blocks[:18])
+
     return {
         "checked_item_paths": checked_item_paths[:12],
         "checked_section_paths": checked_section_paths[:12],
         "matched_plans": matched_plans[:8],
         "matched_blocks": matched_blocks[:18],
         "matched_guidance": matched_guidance[:6],
+        "teaching_sections": teaching_sections,
         "matched_section_titles": matched_section_titles[:8],
         "matched_section_paths": matched_section_paths[:8],
         "matched_block_titles": [title for title in matched_block_titles[:18] if title],
@@ -4516,6 +4634,7 @@ def _build_notebooklm_session_writeup_prompt(
     matched_section_plans: list[dict[str, Any]] | None = None,
     matched_content_blocks: list[dict[str, Any]] | None = None,
     matched_guidance: list[dict[str, Any]] | None = None,
+    teaching_sections: list[dict[str, Any]] | None = None,
 ) -> str:
     checked_text = json.dumps([str(value or "").strip() for value in checked_item_titles if str(value or "").strip()], ensure_ascii=False)
     plan_rows: list[str] = []
@@ -4569,6 +4688,54 @@ def _build_notebooklm_session_writeup_prompt(
             }
         )
 
+    teaching_section_rows: list[dict[str, Any]] = []
+    for row in (teaching_sections or [])[:6]:
+        if not isinstance(row, dict):
+            continue
+        section_title = _normalize_outline_title(row.get("section_title"))
+        if not section_title:
+            continue
+        teaching_section_rows.append(
+            {
+                "section_title": section_title,
+                "section_path": [
+                    _normalize_outline_title(value)
+                    for value in (row.get("section_path") if isinstance(row.get("section_path"), list) else [])
+                    if _normalize_outline_title(value)
+                ],
+                "delivery_sequence": [
+                    _normalize_outline_title(value)
+                    for value in (row.get("delivery_sequence") if isinstance(row.get("delivery_sequence"), list) else [])
+                    if _normalize_outline_title(value)
+                ][:10],
+                "activity_titles": [
+                    _normalize_outline_title(value)
+                    for value in (row.get("activity_titles") if isinstance(row.get("activity_titles"), list) else [])
+                    if _normalize_outline_title(value)
+                ][:5],
+                "content_titles": [
+                    _normalize_outline_title(value)
+                    for value in (row.get("content_titles") if isinstance(row.get("content_titles"), list) else [])
+                    if _normalize_outline_title(value)
+                ][:6],
+                "example_titles": [
+                    _normalize_outline_title(value)
+                    for value in (row.get("example_titles") if isinstance(row.get("example_titles"), list) else [])
+                    if _normalize_outline_title(value)
+                ][:5],
+                "practice_titles": [
+                    _normalize_outline_title(value)
+                    for value in (row.get("practice_titles") if isinstance(row.get("practice_titles"), list) else [])
+                    if _normalize_outline_title(value)
+                ][:6],
+                "assessment_titles": [
+                    _normalize_outline_title(value)
+                    for value in (row.get("assessment_titles") if isinstance(row.get("assessment_titles"), list) else [])
+                    if _normalize_outline_title(value)
+                ][:4],
+            }
+        )
+
     prompt_parts = [
         "A partir des contenus sources de ce notebook et du contexte pedagogique de la seance, redige uniquement un JSON strict avec les cles `title`, `learning_focus`, `teaching_content`, `practice_items`.",
         "Contraintes:",
@@ -4590,6 +4757,9 @@ def _build_notebooklm_session_writeup_prompt(
     if plan_rows:
         prompt_parts.append("Sections pedagogiques reperees pour cette seance:")
         prompt_parts.extend(plan_rows)
+    if teaching_section_rows:
+        prompt_parts.append("Structure pedagogique groupee de la seance:")
+        prompt_parts.append(json.dumps(teaching_section_rows, ensure_ascii=False, indent=2))
     if block_rows:
         prompt_parts.append("Blocs de contenu relies a cette seance:")
         prompt_parts.append(json.dumps(block_rows, ensure_ascii=False, indent=2))
@@ -4744,6 +4914,20 @@ def _openai_generate_session_writeup(
         for row in (session_context.get("matched_guidance") or [])[:4]
         if isinstance(row, dict)
     ]
+    teaching_section_rows = [
+        {
+            "section_title": _normalize_outline_title(row.get("section_title")) or None,
+            "section_path": row.get("section_path") if isinstance(row.get("section_path"), list) else [],
+            "delivery_sequence": row.get("delivery_sequence") if isinstance(row.get("delivery_sequence"), list) else [],
+            "activity_titles": row.get("activity_titles") if isinstance(row.get("activity_titles"), list) else [],
+            "content_titles": row.get("content_titles") if isinstance(row.get("content_titles"), list) else [],
+            "example_titles": row.get("example_titles") if isinstance(row.get("example_titles"), list) else [],
+            "practice_titles": row.get("practice_titles") if isinstance(row.get("practice_titles"), list) else [],
+            "assessment_titles": row.get("assessment_titles") if isinstance(row.get("assessment_titles"), list) else [],
+        }
+        for row in (session_context.get("teaching_sections") or [])[:6]
+        if isinstance(row, dict)
+    ]
     user_prompt = (
         f"Unite: {unit_title or 'unite en cours'}\n"
         f"Type d'unite: {unit_type.value if unit_type is not None else 'chapter'}\n"
@@ -4751,6 +4935,7 @@ def _openai_generate_session_writeup(
         f"Points coches: {json.dumps(checked_titles, ensure_ascii=False)}\n"
         f"Note enseignant: {note_text.strip() if note_text.strip() else '(aucune)'}\n"
         f"Sections liees: {json.dumps(session_context.get('matched_section_titles') or [], ensure_ascii=False)}\n"
+        f"Structure pedagogique groupee: {json.dumps(teaching_section_rows, ensure_ascii=False)}\n"
         f"Blocs relies: {json.dumps(matched_block_rows, ensure_ascii=False)}\n"
         f"Guidance sauvegardee: {json.dumps(guidance_rows, ensure_ascii=False)}\n"
         "Source de reference:\n"
@@ -4859,6 +5044,7 @@ def _fallback_session_writeup_package(
         note_text=note_text,
         content_blocks=session_context.get("matched_blocks") if isinstance(session_context, dict) else None,
         saved_guidance=session_context.get("matched_guidance") if isinstance(session_context, dict) else None,
+        teaching_sections=session_context.get("teaching_sections") if isinstance(session_context, dict) else None,
     )
     return _normalize_writeup_payload(
         title=title,
@@ -6203,6 +6389,7 @@ def _build_teaching_content(
     note_text: str,
     content_blocks: list[dict[str, Any]] | None = None,
     saved_guidance: list[dict[str, Any]] | None = None,
+    teaching_sections: list[dict[str, Any]] | None = None,
 ) -> list[str]:
     anchors = [str(item or "").strip().rstrip(".") for item in focus_items if str(item or "").strip()]
     if note_text:
@@ -6226,6 +6413,22 @@ def _build_teaching_content(
         if not excerpt:
             continue
         rows.append(_clean_sentence(excerpt))
+    for section in (teaching_sections or [])[:2]:
+        if not isinstance(section, dict):
+            continue
+        section_title = _normalize_outline_title(section.get("section_title"))
+        sequence = [
+            _normalize_outline_title(value)
+            for value in (section.get("delivery_sequence") if isinstance(section.get("delivery_sequence"), list) else [])
+            if _normalize_outline_title(value)
+        ]
+        if not section_title or not sequence:
+            continue
+        rows.append(
+            _clean_sentence(
+                f"Dans la partie {section_title.lower()}, la seance a suivi la progression suivante : {' puis '.join(value.lower() for value in sequence[:4])}."
+            )
+        )
     rows = _dedupe_sentence_list(rows)
     if rows:
         return rows[:4]

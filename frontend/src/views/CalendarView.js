@@ -382,6 +382,21 @@ function _normalizeCalendarWriteupSourcePayload(payload) {
     matchedGuidance: Array.isArray(payload.matched_guidance_titles)
       ? payload.matched_guidance_titles.map(row => String(row || '').trim()).filter(Boolean)
       : [],
+    teachingSections: Array.isArray(payload.teaching_sections)
+      ? payload.teaching_sections
+        .map(row => {
+          if (!row || typeof row !== 'object') return '';
+          const sectionTitle = String(row.section_title || '').trim();
+          const delivery = Array.isArray(row.delivery_sequence)
+            ? row.delivery_sequence.map(value => String(value || '').trim()).filter(Boolean)
+            : [];
+          if (!sectionTitle) return '';
+          return delivery.length
+            ? `${sectionTitle}: ${delivery.join(' -> ')}`
+            : sectionTitle;
+        })
+        .filter(Boolean)
+      : [],
     importedAssistantArtifacts,
   };
 }
@@ -427,6 +442,15 @@ function _renderCalendarWriteupSourcePayload(payload) {
         <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Matched Paths</p>
         <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
           ${normalized.matchedPaths.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
+        </ul>
+      </div>`);
+  }
+  if (normalized.teachingSections.length) {
+    rows.push(`
+      <div class="rounded-xl border border-slate-200 bg-white px-3 py-3">
+        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Session Teaching Flow</p>
+        <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+          ${normalized.teachingSections.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
         </ul>
       </div>`);
   }
