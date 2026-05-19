@@ -16,6 +16,7 @@ let _selectedSessionId = null;
 let _selectedSessionLoading = false;
 let _selectedSessionError = null;
 let _mutationInFlight = false;
+let _calendarPlannedHideDone = false;
 let _holidayByDate = new Map();
 const _timetableRulesByClass = new Map();
 const _timetableExceptionsByClass = new Map();
@@ -412,9 +413,10 @@ function _renderCalendarBlueprintTree(nodes, depth = 0) {
       ${nodes.map(node => `
         <li>
           <div class="flex items-center gap-2 flex-wrap">
-            <span class="text-[13px] text-slate-700">${_escapeHtml(node?.title || '')}</span>
+            <span class="text-[13px] ${node?.is_completed ? 'text-slate-400 line-through' : 'text-slate-700'}">${_escapeHtml(node?.title || '')}</span>
             ${node?.kind ? `<span class="badge badge-gray">${_escapeHtml(String(node.kind))}</span>` : ''}
             ${node?.session_number ? `<span class="badge badge-blue">S${Number(node.session_number)}</span>` : ''}
+            ${node?.is_completed ? `<span class="badge badge-green">Done</span>` : ''}
           </div>
           ${_renderCalendarBlueprintTree(node?.children || [], depth + 1)}
         </li>
@@ -464,6 +466,22 @@ function _buildCalendarPlannedSessionSummary(nodes) {
     kindCounts.definition ? `${kindCounts.definition} definitions` : '',
     kindCounts.property ? `${kindCounts.property} properties` : '',
   ].filter(Boolean);
+}
+
+function _filterCalendarBlueprintTree(nodes, { hideDone = false } = {}) {
+  const rows = Array.isArray(nodes) ? nodes : [];
+  if (!hideDone) return rows;
+  return rows.reduce((acc, node) => {
+    if (!node || typeof node !== 'object') return acc;
+    const filteredChildren = _filterCalendarBlueprintTree(node.children || [], { hideDone });
+    const isDone = Boolean(node.is_completed);
+    if (isDone && !filteredChildren.length) return acc;
+    acc.push({
+      ...node,
+      children: filteredChildren,
+    });
+    return acc;
+  }, []);
 }
 
 function _renderCalendarSectionPlans(sectionPlans, plannedTitles) {
@@ -1703,6 +1721,7 @@ async function _selectSession(sessionId, el, classId) {
 
   _selectedSessionId = sid;
   _selectedSessionError = null;
+  _calendarPlannedHideDone = false;
 
   if (_sessionDetailCache.has(sid)) {
     _selectedSessionLoading = false;
@@ -2754,6 +2773,8 @@ function _renderCalendar(el, classId) {
   const plannedSessionTree = selectedSessionNumber ? _collectSessionBlueprintNodes(selectedBlueprintTree, selectedSessionNumber) : [];
   const plannedSessionTitles = _flattenCalendarBlueprintTitles(plannedSessionTree, []);
   const plannedSessionSummary = _buildCalendarPlannedSessionSummary(plannedSessionTree);
+  const plannedSessionDoneCount = _flattenCalendarBlueprintNodes(plannedSessionTree, []).filter(node => Boolean(node?.is_completed)).length;
+  const visiblePlannedSessionTree = _filterCalendarBlueprintTree(plannedSessionTree, { hideDone: _calendarPlannedHideDone });
   const selectedUnitMap = selectedBlueprint?.unit_map_json && typeof selectedBlueprint.unit_map_json === 'object'
     ? selectedBlueprint.unit_map_json
     : {};
@@ -3090,7 +3111,12 @@ function _renderCalendar(el, classId) {
           </div>
 
           <div class="p-3 rounded-xl border border-slate-200">
-            <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Planned Teaching Flow</h4>
+            <div class="flex items-center justify-between gap-2 flex-wrap">
+              <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Planned Teaching Flow</h4>
+              ${plannedSessionDoneCount > 0
+                ? `<button id="btn-calendar-planned-hide-done-toggle" class="btn btn-ghost btn-sm !text-amber-700">${_calendarPlannedHideDone ? 'Show Completed Rows' : 'Hide Completed Rows'}</button>`
+                : ''}
+            </div>
             ${_selectedSessionLoading
               ? '<p class="text-[12px] text-slate-500 mt-2">Loading planned unit flow...</p>'
               : selectedEvent.unit_id == null
@@ -3099,14 +3125,15 @@ function _renderCalendar(el, classId) {
                   ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedBlueprintError)}</p>`
                 : !selectedSessionNumber
                   ? '<p class="text-[12px] text-slate-500 mt-2">This workflow session has no saved unit-session number yet.</p>'
-                  : `
+                    : `
                       <div class="mt-2 flex flex-col gap-3">
                         <p class="text-[12px] text-slate-500">Planned checklist path for unit session ${Number(selectedSessionNumber)}.</p>
                         ${plannedSessionSummary.length ? `
                           <div class="flex flex-wrap gap-2">
                             ${plannedSessionSummary.map(label => `<span class="badge badge-gray">${_escapeHtml(label)}</span>`).join('')}
                           </div>` : ''}
-                        ${_renderCalendarBlueprintTree(plannedSessionTree)}
+                        ${_calendarPlannedHideDone && plannedSessionDoneCount > 0 ? '<p class="text-[11px] text-amber-700">Showing only remaining planned rows.</p>' : ''}
+                        ${_renderCalendarBlueprintTree(visiblePlannedSessionTree)}
                         <div>
                           <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Matched Section Plans</p>
                           ${_renderCalendarSectionPlans(selectedSectionPlans, plannedSessionTitles)}
@@ -3448,6 +3475,7 @@ function _renderCalendar(el, classId) {
     _selectedSessionId = null;
     _selectedSessionError = null;
     _selectedSessionLoading = false;
+    _calendarPlannedHideDone = false;
     const nextWeekDays = _buildWeekDays(_weekStart);
     await Promise.all([
       _loadWeekHolidays(_weekStart).catch(() => {}),
@@ -3461,6 +3489,7 @@ function _renderCalendar(el, classId) {
     _selectedSessionId = null;
     _selectedSessionError = null;
     _selectedSessionLoading = false;
+    _calendarPlannedHideDone = false;
     const nextWeekDays = _buildWeekDays(_weekStart);
     await Promise.all([
       _loadWeekHolidays(_weekStart).catch(() => {}),
@@ -3474,6 +3503,7 @@ function _renderCalendar(el, classId) {
     _selectedSessionId = null;
     _selectedSessionError = null;
     _selectedSessionLoading = false;
+    _calendarPlannedHideDone = false;
     const nextWeekDays = _buildWeekDays(_weekStart);
     await Promise.all([
       _loadWeekHolidays(_weekStart).catch(() => {}),
@@ -3486,6 +3516,7 @@ function _renderCalendar(el, classId) {
     _selectedSessionId = null;
     _selectedSessionError = null;
     _selectedSessionLoading = false;
+    _calendarPlannedHideDone = false;
     _renderCalendar(el, classId);
   });
 
@@ -3886,6 +3917,12 @@ function _renderCalendar(el, classId) {
   el.querySelector('#btn-retry-session-detail')?.addEventListener('click', async () => {
     if (!selectedEvent) return;
     await _selectSession(Number(selectedEvent.session_id), el, classId);
+  });
+
+  el.querySelector('#btn-calendar-planned-hide-done-toggle')?.addEventListener('click', event => {
+    event.preventDefault();
+    _calendarPlannedHideDone = !_calendarPlannedHideDone;
+    _renderCalendar(el, classId);
   });
 
   el.querySelectorAll('.cal-chip[data-session-id]').forEach(btn => {
