@@ -292,6 +292,20 @@ function _buildWorkflowSessionIntent(session, action = '') {
 
 function _normalizeCalendarWriteupSourcePayload(payload) {
   if (!payload || typeof payload !== 'object') return null;
+  const importedAssistantArtifacts = Array.isArray(payload.imported_assistant_artifacts)
+    ? payload.imported_assistant_artifacts
+      .map(entry => {
+        const artifactId = Number(entry?.artifact_id || 0);
+        if (!artifactId) return null;
+        return {
+          artifactId,
+          artifactKind: String(entry?.artifact_kind || '').trim().toLowerCase(),
+          sectionTitle: String(entry?.section_title || '').trim(),
+          action: String(entry?.action || '').trim().toLowerCase(),
+        };
+      })
+      .filter(Boolean)
+    : [];
   return {
     requestedProvider: payload.requested_provider ? String(payload.requested_provider).trim() : '',
     providerUsed: payload.provider_used ? String(payload.provider_used).trim() : '',
@@ -310,6 +324,7 @@ function _normalizeCalendarWriteupSourcePayload(payload) {
     matchedGuidance: Array.isArray(payload.matched_guidance_titles)
       ? payload.matched_guidance_titles.map(row => String(row || '').trim()).filter(Boolean)
       : [],
+    importedAssistantArtifacts,
   };
 }
 
@@ -358,6 +373,21 @@ function _renderCalendarWriteupSourcePayload(payload) {
         <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Saved Guidance Used</p>
         <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
           ${normalized.matchedGuidance.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
+        </ul>
+      </div>`);
+  }
+  if (normalized.importedAssistantArtifacts.length) {
+    rows.push(`
+      <div>
+        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Imported Saved Guidance</p>
+        <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+          ${normalized.importedAssistantArtifacts.map(item => `
+            <li>
+              ${_escapeHtml(item.sectionTitle || 'Saved guidance')}
+              ${item.artifactKind ? ` • ${_escapeHtml(_assistantArtifactKindLabel(item.artifactKind))}` : ''}
+              ${item.action ? ` • ${_escapeHtml(_assistantActionLabel(item.action))}` : ''}
+            </li>
+          `).join('')}
         </ul>
       </div>`);
   }
@@ -833,6 +863,11 @@ function _assistantActionLabel(action) {
   return _teacherActionLabel(action);
 }
 
+function _getCalendarImportedAssistantArtifactIds(writeup) {
+  const meta = _normalizeCalendarWriteupSourcePayload(writeup?.source_payload);
+  return new Set((meta?.importedAssistantArtifacts || []).map(item => Number(item?.artifactId || 0)).filter(Boolean));
+}
+
 function _calendarArtifactDownloadFilename(item, fallbackTitle = '') {
   const base = String(item?.title || fallbackTitle || 'saved-guidance')
     .trim()
@@ -873,30 +908,34 @@ function _renderCalendarSavedGuidancePreviewRows(items, fallbackTitle = '') {
   `;
 }
 
-function _renderCalendarSessionMatchedGuidance(items, { canImport = false } = {}) {
+function _renderCalendarSessionMatchedGuidance(items, { canImport = false, importedIds = new Set() } = {}) {
   const visible = Array.isArray(items) ? items.slice(0, 4) : [];
   if (!visible.length) {
     return '<p class="text-[12px] text-slate-500">No saved guidance matches this session route yet. Save a good result from Ask This Unit to reuse it here.</p>';
   }
   return `
     <div class="flex flex-col gap-2">
-      ${visible.map(item => `
+      ${visible.map(item => {
+        const artifactId = Number(item?.id || 0);
+        const imported = importedIds.has(artifactId);
+        return `
         <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
           <div class="flex items-center justify-between gap-3 flex-wrap">
             <div class="flex items-center gap-2 flex-wrap">
               <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(item?.title || 'Saved guidance'))}</p>
               <span class="badge badge-blue">${_escapeHtml(_assistantArtifactKindLabel(item?.artifact_kind))}</span>
               ${item?.action ? `<span class="badge badge-gray">${_escapeHtml(_assistantActionLabel(item.action))}</span>` : ''}
+              ${imported ? '<span class="badge badge-green">Imported</span>' : ''}
             </div>
             <div class="flex items-center gap-2 flex-wrap">
-              ${canImport ? `<button class="btn btn-primary btn-sm btn-calendar-session-guidance-import" data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}">Use in Write-Up</button>` : ''}
+              ${canImport ? `<button class="btn btn-primary btn-sm btn-calendar-session-guidance-import" data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}" ${imported ? 'disabled' : ''}>${imported ? 'Already Imported' : 'Use in Write-Up'}</button>` : ''}
               <button class="btn btn-ghost btn-sm btn-calendar-session-guidance-copy" data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}">Copy</button>
               <button class="btn btn-secondary btn-sm btn-calendar-session-guidance-download" data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}">Download</button>
             </div>
           </div>
           ${item?.content_markdown ? `<p class="text-[12px] text-slate-600 leading-6 mt-2">${_escapeHtml(String(item.content_markdown).split('\n').slice(0, 3).join(' '))}</p>` : ''}
         </div>
-      `).join('')}
+      `;}).join('')}
       ${Array.isArray(items) && items.length > visible.length
         ? `<p class="text-[11px] text-slate-500">Showing ${visible.length} of ${items.length} matching saved guidance items.</p>`
         : ''}
@@ -3045,6 +3084,7 @@ function _renderCalendar(el, classId) {
   const selectedMatchedGuidance = selectedEvent?.unit_id != null
     ? _filterCalendarAssistantArtifactsForPlannedTitles(_calendarAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(selectedEvent.unit_id || 0)}`) || [], selectedUnitMap, plannedSessionTitles)
     : [];
+  const selectedImportedGuidanceIds = _getCalendarImportedAssistantArtifactIds(selectedWriteup);
   const plannedResumeSectionPlan = plannedResumeNode ? _findCalendarSectionPlanForTitle(selectedSectionPlans, plannedResumeNode.title) : null;
   const plannedResumePlaybookEntry = _findCalendarTeacherPlaybookEntry(selectedUnitMap, plannedResumeSectionPlan, plannedResumeNode?.title || '');
   const studentsById = new Map((getStudents() || []).map(student => [Number(student.id), student]));
@@ -3471,7 +3511,7 @@ function _renderCalendar(el, classId) {
                 <p class="text-[12px] text-slate-500 mt-1">Reusable unit help that matches this planned session route.</p>
               </div>
               <div class="mt-3">
-                ${_renderCalendarSessionMatchedGuidance(selectedMatchedGuidance, { canImport: selectedEvent.unit_id != null && !selectedIsFuture })}
+                ${_renderCalendarSessionMatchedGuidance(selectedMatchedGuidance, { canImport: selectedEvent.unit_id != null && !selectedIsFuture, importedIds: selectedImportedGuidanceIds })}
               </div>
             </div>
             ${_renderCalendarWriteupNextStep(selectedWriteup, { isFuture: selectedIsFuture, hasUnit: selectedEvent.unit_id != null })}
