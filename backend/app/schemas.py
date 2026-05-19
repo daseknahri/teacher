@@ -944,3 +944,15 @@ class WorkflowLeafContentUpsertIn(BaseModel):
     raw_provider_response: dict | None = None
 
 
+class WorkflowLeafContentGenerateIn(BaseModel):
+    provider: str | None = None
+    regenerate: bool = True
+
+
+class WorkflowLeafContentGenerateOut(BaseModel):
+    requested_provider: str
+    provider: str
+    status: str
+    leaf_content: WorkflowLeafContentOut
+
+

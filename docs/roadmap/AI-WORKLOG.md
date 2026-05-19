@@ -40,7 +40,7 @@ Keep entries short and factual.
 
 ### 2026-05-19 22:05 - Claude
 
-- Status: planned
+- Status: done
 - Goal: implement a backend endpoint that generates and saves content for one leaf checklist item using the saved unit brain
 - Files expected:
   - `backend/app/schemas.py`
@@ -51,13 +51,25 @@ Keep entries short and factual.
 - Assumptions:
   - the next safe slice is per-leaf generation, not frontend reader work yet
   - the generation contract should follow the existing package style already used for write-ups and unit helpers
+  - fallback provider produces a stub result when NotebookLM is not configured (error_message set, status=degraded)
+  - blueprint must exist for generation; missing blueprint returns 409
+  - provider_context in blueprint.blueprint_json is used for the existing notebook; if absent a temporary notebook is created
+  - item_path / section_path derived via existing _derive_leaf_item_paths if not stored yet on the row
 - Notes:
   - task prompt lives in `docs/roadmap/CLAUDE-TASK-LEAF-CONTENT-GENERATION.md`
   - this task should not modify checklist/session semantics
+  - no frontend code added; no partial regeneration added
 - Result:
-  - pending
+  - added WorkflowLeafContentGenerateIn and WorkflowLeafContentGenerateOut Pydantic schemas
+  - added SUPPORTED_LEAF_CONTENT_PROVIDERS constant to workflow_generation.py
+  - added generate_leaf_content_package (public), _notebooklm_generate_leaf_content (sync), _notebooklm_generate_leaf_content_async, _normalize_leaf_content_payload, _build_notebooklm_leaf_content_prompt helpers
+  - added POST /workflow/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}/generate endpoint
+  - endpoint: ensure_class_writable, active unit required, leaf-only check, blueprint required (409), derives paths if missing, upserts WorkflowLeafContent, logs audit
+  - added test_leaf_content_generate_happy_path (monkeypatched), test_leaf_content_generate_rejects_non_leaf, test_leaf_content_generate_requires_blueprint
+  - compile check passes; all 5 leaf_content tests pass
 - Follow-up:
-  - after this lands, the next step is the first frontend leaf reader/editor
+  - after this lands, the next step is the first frontend leaf reader/editor (Phase 4 in LEAF-CONTENT-READER-ROADMAP.md)
+  - consider adding a fallback stub path for generate_leaf_content_package when NotebookLM is not configured (currently raises 409)
 
 ### 2026-05-19 21:35 - Codex
 
