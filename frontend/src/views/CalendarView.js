@@ -814,6 +814,33 @@ function _buildSessionWriteupMarkdown(writeup, { unitTitle = '', sessionLabel = 
   return lines.join('\n').trim();
 }
 
+function _summarizeCalendarRemainingGuidanceKinds(items) {
+  const counts = new Map();
+  (Array.isArray(items) ? items : []).forEach(item => {
+    const kind = String(item?.artifact_kind || 'teacher_notes').trim().toLowerCase() || 'teacher_notes';
+    counts.set(kind, (counts.get(kind) || 0) + 1);
+  });
+  return Array.from(counts.entries());
+}
+
+function _renderCalendarRemainingGuidanceSummary(items) {
+  const normalized = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!normalized.length) return '';
+  const kindSummary = _summarizeCalendarRemainingGuidanceKinds(normalized);
+  const previewTitles = normalized
+    .slice(0, 3)
+    .map(item => String(item?.title || item?.section_title || 'Saved guidance').trim())
+    .filter(Boolean);
+  return `
+    <div class="mt-3 rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
+      <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Still available to import</p>
+      <div class="mt-2 flex flex-wrap gap-2">
+        ${kindSummary.map(([kind, count]) => `<span class="badge badge-slate">${count} ${_escapeHtml(_assistantArtifactKindLabel(kind))}</span>`).join('')}
+      </div>
+      ${previewTitles.length ? `<p class="mt-2 text-[12px] text-slate-500">Top matches: ${_escapeHtml(previewTitles.join(' • '))}</p>` : ''}
+    </div>`;
+}
+
 function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = false, remainingGuidanceCount = 0, bestRemainingGuidanceTitle = '', quickGuidanceItems = [] } = {}) {
   if (isFuture) {
     return `
@@ -844,9 +871,10 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
             ? `You already have ${remainingGuidanceCount} matching saved guidance item${remainingGuidanceCount === 1 ? '' : 's'} for this session. Import one first, or generate the write-up after confirming what was really covered in class.`
             : 'Generate the write-up after confirming what was really covered in class.'}
         </p>
+        ${remainingGuidanceCount > 0 ? _renderCalendarRemainingGuidanceSummary(quickGuidanceItems) : ''}
         <div class="mt-3 flex gap-2 flex-wrap">
           ${remainingGuidanceCount === 1 ? '<button id="btn-calendar-next-import-best" class="btn btn-primary btn-sm">Import Best Match</button>' : ''}
-          ${remainingGuidanceCount > 1 ? '<button id="btn-calendar-next-import-all" class="btn btn-primary btn-sm">Import All Guidance</button>' : ''}
+          ${remainingGuidanceCount > 1 ? `<button id="btn-calendar-next-import-all" class="btn btn-primary btn-sm">Import All Guidance (${remainingGuidanceCount})</button>` : ''}
           <button id="btn-calendar-next-generate" class="btn btn-primary btn-sm">Generate now</button>
           <button id="btn-calendar-next-guidance" class="btn btn-secondary btn-sm">${remainingGuidanceCount === 1 && bestRemainingGuidanceTitle ? 'Choose Other Guidance' : 'Use Saved Guidance'}</button>
         </div>
@@ -862,10 +890,11 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
             ? 'Review this draft, import any remaining saved guidance you still want, and approve it once it matches the actual lesson.'
             : 'Review this draft, edit it if needed, and approve it once it matches the actual lesson.'}
         </p>
+        ${remainingGuidanceCount > 0 ? _renderCalendarRemainingGuidanceSummary(quickGuidanceItems) : ''}
         <div class="mt-3 flex gap-2 flex-wrap">
           <button id="btn-calendar-next-edit" class="btn btn-primary btn-sm">Edit draft</button>
           ${remainingGuidanceCount === 1 ? '<button id="btn-calendar-next-import-best" class="btn btn-secondary btn-sm">Import Best Match</button>' : ''}
-          ${remainingGuidanceCount > 1 ? '<button id="btn-calendar-next-import-all" class="btn btn-secondary btn-sm">Import All Guidance</button>' : ''}
+          ${remainingGuidanceCount > 1 ? `<button id="btn-calendar-next-import-all" class="btn btn-secondary btn-sm">Import All Guidance (${remainingGuidanceCount})</button>` : ''}
           ${remainingGuidanceCount > 0 ? '<button id="btn-calendar-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>' : ''}
           <button id="btn-calendar-next-approve" class="btn btn-secondary btn-sm">Approve now</button>
         </div>

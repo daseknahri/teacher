@@ -1181,6 +1181,33 @@ function _buildSessionWriteupMarkdown(writeup, { unitTitle = '', sessionLabel = 
   return lines.join('\n').trim();
 }
 
+function _summarizeRemainingGuidanceKinds(items) {
+  const counts = new Map();
+  (Array.isArray(items) ? items : []).forEach(item => {
+    const kind = String(item?.artifact_kind || 'teacher_notes').trim().toLowerCase() || 'teacher_notes';
+    counts.set(kind, (counts.get(kind) || 0) + 1);
+  });
+  return Array.from(counts.entries());
+}
+
+function _renderRemainingGuidanceSummary(items) {
+  const normalized = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (!normalized.length) return '';
+  const kindSummary = _summarizeRemainingGuidanceKinds(normalized);
+  const previewTitles = normalized
+    .slice(0, 3)
+    .map(item => String(item?.title || item?.section_title || 'Saved guidance').trim())
+    .filter(Boolean);
+  return `
+    <div class="mt-3 rounded-lg border border-slate-200 bg-white/70 px-3 py-2">
+      <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Still available to import</p>
+      <div class="mt-2 flex flex-wrap gap-2">
+        ${kindSummary.map(([kind, count]) => `<span class="badge badge-slate">${count} ${_escapeHtml(_assistantArtifactKindLabel(kind))}</span>`).join('')}
+      </div>
+      ${previewTitles.length ? `<p class="mt-2 text-[12px] text-slate-500">Top matches: ${_escapeHtml(previewTitles.join(' • '))}</p>` : ''}
+    </div>`;
+}
+
 function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuidanceCount = 0, remainingGuidanceCount = 0, bestRemainingGuidanceTitle = '', quickGuidanceItems = [] } = {}) {
   if (!hasSession) return '';
   if (!writeup) {
@@ -1192,9 +1219,10 @@ function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuid
             ? `You already have ${remainingGuidanceCount} matching saved guidance item${remainingGuidanceCount === 1 ? '' : 's'} for this session. Import one first, or generate the write-up from scratch once you have checked what was actually covered in class.`
             : 'Generate the write-up once you have checked what was actually covered in class.'}
         </p>
+        ${remainingGuidanceCount > 0 ? _renderRemainingGuidanceSummary(quickGuidanceItems) : ''}
         <div class="mt-3 flex gap-2 flex-wrap">
           ${remainingGuidanceCount === 1 ? `<button id="btn-session-next-import-best" class="btn btn-primary btn-sm">Import Best Match</button>` : ''}
-          ${remainingGuidanceCount > 1 ? '<button id="btn-session-next-import-all" class="btn btn-primary btn-sm">Import All Guidance</button>' : ''}
+          ${remainingGuidanceCount > 1 ? `<button id="btn-session-next-import-all" class="btn btn-primary btn-sm">Import All Guidance (${remainingGuidanceCount})</button>` : ''}
           <button id="btn-session-next-generate" class="btn btn-primary btn-sm">Generate now</button>
           <button id="btn-session-next-guidance" class="btn btn-secondary btn-sm">${remainingGuidanceCount === 1 && bestRemainingGuidanceTitle ? `Choose Other Guidance` : 'Use Saved Guidance'}</button>
         </div>
@@ -1210,10 +1238,11 @@ function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuid
             ? `Review this draft, edit it if needed, and import any remaining saved guidance you still want before marking it approved.`
             : 'Review this draft, edit it if needed, then mark it approved when it matches the real lesson.'}
         </p>
+        ${remainingGuidanceCount > 0 ? _renderRemainingGuidanceSummary(quickGuidanceItems) : ''}
         <div class="mt-3 flex gap-2 flex-wrap">
           <button id="btn-session-next-edit" class="btn btn-primary btn-sm">Edit draft</button>
           ${remainingGuidanceCount === 1 ? '<button id="btn-session-next-import-best" class="btn btn-secondary btn-sm">Import Best Match</button>' : ''}
-          ${remainingGuidanceCount > 1 ? '<button id="btn-session-next-import-all" class="btn btn-secondary btn-sm">Import All Guidance</button>' : ''}
+          ${remainingGuidanceCount > 1 ? `<button id="btn-session-next-import-all" class="btn btn-secondary btn-sm">Import All Guidance (${remainingGuidanceCount})</button>` : ''}
           ${remainingGuidanceCount > 0 ? '<button id="btn-session-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>' : ''}
           <button id="btn-session-next-approve" class="btn btn-secondary btn-sm">Approve now</button>
         </div>
