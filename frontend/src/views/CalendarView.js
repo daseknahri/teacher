@@ -3281,6 +3281,11 @@ function _renderCalendar(el, classId) {
   const selectedImportedGuidanceIds = _getCalendarImportedAssistantArtifactIds(selectedWriteup);
   const selectedRemainingGuidance = selectedMatchedGuidance.filter(item => !selectedImportedGuidanceIds.has(Number(item?.id || 0)));
   const selectedRemainingGuidanceCount = selectedRemainingGuidance.length;
+  const selectedVisibleRemainingGuidance = selectedRemainingGuidance.filter(item => {
+    const itemKind = String(item?.artifact_kind || 'teacher_notes').trim().toLowerCase() || 'teacher_notes';
+    return _calendarSessionGuidanceKindFilter === 'all' || itemKind === _calendarSessionGuidanceKindFilter;
+  });
+  const selectedVisibleRemainingGuidanceCount = selectedVisibleRemainingGuidance.length;
   const selectedBestRemainingGuidance = selectedRemainingGuidanceCount === 1 ? selectedRemainingGuidance[0] : null;
   const plannedResumeSectionPlan = plannedResumeNode ? _findCalendarSectionPlanForTitle(selectedSectionPlans, plannedResumeNode.title) : null;
   const plannedResumePlaybookEntry = _findCalendarTeacherPlaybookEntry(selectedUnitMap, plannedResumeSectionPlan, plannedResumeNode?.title || '');
@@ -3712,8 +3717,8 @@ function _renderCalendar(el, classId) {
                   ${_renderCalendarSessionGuidanceKindFilters(selectedMatchedGuidance, _calendarSessionGuidanceKindFilter)}
                 </div>
                 <div class="flex items-center gap-2 flex-wrap">
-                  ${selectedEvent.unit_id != null && !selectedIsFuture && selectedRemainingGuidanceCount > 0
-                    ? `<button id="btn-calendar-session-guidance-import-remaining" class="btn btn-secondary btn-sm">Import Remaining (${selectedRemainingGuidanceCount})</button>`
+                  ${selectedEvent.unit_id != null && !selectedIsFuture && selectedVisibleRemainingGuidanceCount > 0
+                    ? `<button id="btn-calendar-session-guidance-import-remaining" class="btn btn-secondary btn-sm">${_calendarSessionGuidanceKindFilter === 'all' ? 'Import Remaining' : 'Import Visible'} (${selectedVisibleRemainingGuidanceCount})</button>`
                     : ''}
                   ${selectedImportedGuidanceIds.size > 0
                     ? `<button id="btn-calendar-session-guidance-hide-imported-toggle" class="btn btn-ghost btn-sm">${_calendarSessionGuidanceHideImported ? 'Show Imported' : 'Hide Imported'}</button>`
@@ -4534,10 +4539,10 @@ function _renderCalendar(el, classId) {
     _renderCalendar(el, classId);
   });
   el.querySelector('#btn-calendar-session-guidance-import-remaining')?.addEventListener('click', async () => {
-    if (!selectedEvent || selectedEvent.unit_id == null || !selectedRemainingGuidance.length) return;
+    if (!selectedEvent || selectedEvent.unit_id == null || !selectedVisibleRemainingGuidance.length) return;
     try {
       let updated = null;
-      for (const item of selectedRemainingGuidance) {
+      for (const item of selectedVisibleRemainingGuidance) {
         updated = await api(`/workflow/classes/${classId}/sessions/${selectedEvent.session_id}/writeup/import-assistant-artifact`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -4551,7 +4556,7 @@ function _renderCalendar(el, classId) {
         workflow_writeup_error: null,
       });
       _renderCalendar(el, classId);
-      showToast(`${selectedRemainingGuidance.length} remaining guidance item${selectedRemainingGuidance.length === 1 ? '' : 's'} imported.`, 'ok');
+      showToast(`${selectedVisibleRemainingGuidance.length} ${_calendarSessionGuidanceKindFilter === 'all' ? 'remaining' : 'visible'} guidance item${selectedVisibleRemainingGuidance.length === 1 ? '' : 's'} imported.`, 'ok');
     } catch (err) {
       showToast(String(err?.message || 'Failed to import remaining guidance.'), 'error');
     }

@@ -2902,6 +2902,11 @@ function _render(el, classId) {
   const activeSessionImportedGuidanceIds = _getImportedAssistantArtifactIds(sessionWriteupState.item);
   const activeSessionRemainingGuidance = activeSessionMatchedGuidance.filter(item => !activeSessionImportedGuidanceIds.has(Number(item?.id || 0)));
   const activeSessionRemainingGuidanceCount = activeSessionRemainingGuidance.length;
+  const activeSessionVisibleRemainingGuidance = activeSessionRemainingGuidance.filter(item => {
+    const itemKind = String(item?.artifact_kind || 'teacher_notes').trim().toLowerCase() || 'teacher_notes';
+    return _sessionGuidanceKindFilter === 'all' || itemKind === _sessionGuidanceKindFilter;
+  });
+  const activeSessionVisibleRemainingGuidanceCount = activeSessionVisibleRemainingGuidance.length;
   const activeSessionBestRemainingGuidance = activeSessionRemainingGuidanceCount === 1 ? activeSessionRemainingGuidance[0] : null;
 
   // Progress ring
@@ -3477,8 +3482,8 @@ function _render(el, classId) {
                     ${_renderSessionGuidanceKindFilters(activeSessionMatchedGuidance, _sessionGuidanceKindFilter)}
                   </div>
                   <div class="flex items-center gap-2 flex-wrap">
-                    ${Boolean(session) && activeSessionRemainingGuidanceCount > 0
-                      ? `<button id="btn-session-guidance-import-remaining" class="btn btn-secondary btn-sm">Import Remaining (${activeSessionRemainingGuidanceCount})</button>`
+                    ${Boolean(session) && activeSessionVisibleRemainingGuidanceCount > 0
+                      ? `<button id="btn-session-guidance-import-remaining" class="btn btn-secondary btn-sm">${_sessionGuidanceKindFilter === 'all' ? 'Import Remaining' : 'Import Visible'} (${activeSessionVisibleRemainingGuidanceCount})</button>`
                       : ''}
                     ${activeSessionImportedGuidanceIds.size > 0
                       ? `<button id="btn-session-guidance-hide-imported-toggle" class="btn btn-ghost btn-sm">${_sessionGuidanceHideImported ? 'Show Imported' : 'Hide Imported'}</button>`
@@ -5262,10 +5267,10 @@ function _bindWorkflowEvents(el, classId) {
   });
   el.querySelector('#btn-session-guidance-import-remaining')?.addEventListener('click', async () => {
     const session = getActiveSession();
-    if (!session || !activeSessionRemainingGuidance.length) return;
+    if (!session || !activeSessionVisibleRemainingGuidance.length) return;
     try {
       let updated = null;
-      for (const item of activeSessionRemainingGuidance) {
+      for (const item of activeSessionVisibleRemainingGuidance) {
         updated = await api(`/workflow/classes/${classId}/sessions/${session.id}/writeup/import-assistant-artifact`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -5279,7 +5284,7 @@ function _bindWorkflowEvents(el, classId) {
         item: updated || null,
       });
       _render(el, classId);
-      showToast(`${activeSessionRemainingGuidance.length} remaining guidance item${activeSessionRemainingGuidance.length === 1 ? '' : 's'} imported.`, 'ok');
+      showToast(`${activeSessionVisibleRemainingGuidance.length} ${_sessionGuidanceKindFilter === 'all' ? 'remaining' : 'visible'} guidance item${activeSessionVisibleRemainingGuidance.length === 1 ? '' : 's'} imported.`, 'ok');
     } catch (err) {
       showToast(String(err?.message || 'Failed to import remaining guidance.'), 'error');
     }
