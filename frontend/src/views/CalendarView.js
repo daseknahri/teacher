@@ -863,21 +863,57 @@ function _renderCalendarTeachingFlowGroups(groups, { hasPlannedRoute = false, re
   `;
 }
 
-function _renderCalendarFallbackRouteRows(items) {
-  const rows = Array.isArray(items) ? items.map(value => String(value || '').trim()).filter(Boolean) : [];
+function _renderCalendarFallbackRouteRows(items, { classId = null, unitId = null } = {}) {
+  const rows = Array.isArray(items)
+    ? items
+        .map(item => {
+          if (item && typeof item === 'object') {
+            const path = Array.isArray(item.path) ? item.path.map(value => String(value || '').trim()).filter(Boolean) : [];
+            const title = String(item.title || path[path.length - 1] || '').trim();
+            return title ? {
+              id: Number(item.id || 0) || null,
+              title,
+              path,
+              sectionPath: Array.isArray(item.sectionPath) ? item.sectionPath.map(value => String(value || '').trim()).filter(Boolean) : [],
+              isCompleted: item.is_completed !== false,
+            } : null;
+          }
+          const title = String(item || '').trim();
+          return title ? { id: null, title, path: [title], sectionPath: [], isCompleted: true } : null;
+        })
+        .filter(Boolean)
+    : [];
   if (!rows.length) {
     return '<p class="text-[12px] text-slate-500">No checked checklist items are recorded for this session yet.</p>';
   }
   return `
     <div class="flex flex-col gap-2">
-      ${rows.map(value => `
-        <div class="rounded-xl border border-slate-200 bg-white px-3 py-3">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="text-[12px] text-slate-700">${_escapeHtml(value)}</span>
-            <span class="badge badge-green">Checked</span>
+      ${rows.map(row => {
+        const rowItemId = Number(row?.id || 0);
+        const hasLeafId = rowItemId > 0 && classId && unitId;
+        const path = Array.isArray(row?.path) ? row.path : [];
+        const sectionPath = Array.isArray(row?.sectionPath) && row.sectionPath.length
+          ? row.sectionPath
+          : (path.length > 1 ? path.slice(0, -1) : []);
+        return `
+          <div class="flex items-stretch gap-1">
+            <div class="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-3">
+              <div class="flex items-start gap-2">
+                <span class="mt-0.5 inline-flex h-[18px] w-[18px] items-center justify-center rounded-[4px] border-2 border-green-600 bg-green-600 text-[10px] text-white">Y</span>
+                <div class="min-w-0 flex-1">
+                  <p class="text-[12px] text-slate-700">${_escapeHtml(String(row?.title || 'Checklist item'))}</p>
+                  <div class="mt-1 flex items-center gap-2 flex-wrap">
+                    <span class="badge badge-green">${row?.isCompleted === false ? 'In progress' : 'Checked'}</span>
+                    ${path.length > 1 ? `<span class="text-[11px] text-slate-400">${_escapeHtml(path.slice(0, -1).join(' > '))}</span>` : ''}
+                    ${hasLeafId ? renderLeafStatusBadge(rowItemId, classId, unitId) : ''}
+                  </div>
+                </div>
+              </div>
+            </div>
+            ${hasLeafId ? `<button type="button" class="btn btn-ghost btn-sm btn-calendar-leaf-lesson !text-blue-600 self-center flex-shrink-0" data-item-id="${rowItemId}" data-class-id="${Number(classId || 0)}" data-unit-id="${Number(unitId || 0)}" data-item-path="${_escapeHtmlAttr(JSON.stringify(path))}" data-section-path="${_escapeHtmlAttr(JSON.stringify(sectionPath))}" title="Open lesson card">Lesson</button>` : ''}
           </div>
-        </div>
-      `).join('')}
+        `;
+      }).join('')}
     </div>
   `;
 }
@@ -4343,7 +4379,7 @@ function _renderCalendar(el, classId) {
                         <div class="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-3">
                           <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                             <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">${plannedSessionTitles.length ? 'Full Planned Route' : 'Recorded Checklist Route'}</p>
-                            ${plannedSessionTitles.length ? _renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId, classId, unitId: selectedEvent?.unit_id ?? null, lineage: [] }) : _renderCalendarFallbackRouteRows(selectedCheckedItems)}
+                            ${plannedSessionTitles.length ? _renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId, classId, unitId: selectedEvent?.unit_id ?? null, lineage: [] }) : _renderCalendarFallbackRouteRows(selectedFallbackRouteItems, { classId, unitId: selectedEvent?.unit_id ?? null })}
                           </div>
                           <div class="flex flex-col gap-3">
                             ${plannedResumeNode ? _renderCalendarNextFocusActions(plannedResumeSectionPlan, plannedResumePlaybookEntry, plannedResumeNode.title, { classId, unitId: selectedEvent?.unit_id }) : ''}
