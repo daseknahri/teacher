@@ -355,6 +355,22 @@ function _renderSessionMatchedGuidance(items, { canImport = false, importedIds =
   `;
 }
 
+function _renderGuidanceQuickPickButtons(items, prefix) {
+  const visible = Array.isArray(items) ? items.slice(0, 2) : [];
+  if (!visible.length) return '';
+  return `
+    <div class="mt-3 flex flex-wrap gap-2">
+      ${visible.map(item => `
+        <button
+          id="${_escapeHtmlAttr(`${prefix}-${Number(item?.id || 0)}`)}"
+          class="btn btn-ghost btn-sm btn-guidance-quick-pick"
+          data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}"
+        >${_escapeHtml(_assistantArtifactKindLabel(item?.artifact_kind))}: ${_escapeHtml(String(item?.title || 'Saved guidance'))}</button>
+      `).join('')}
+    </div>
+  `;
+}
+
 function _getImportedAssistantArtifactIds(writeup) {
   const meta = _normalizeWriteupSourcePayload(writeup?.source_payload);
   return new Set((meta?.importedAssistantArtifacts || []).map(item => Number(item?.artifactId || 0)).filter(Boolean));
@@ -1146,7 +1162,7 @@ function _buildSessionWriteupMarkdown(writeup, { unitTitle = '', sessionLabel = 
   return lines.join('\n').trim();
 }
 
-function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuidanceCount = 0, remainingGuidanceCount = 0, bestRemainingGuidanceTitle = '' } = {}) {
+function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuidanceCount = 0, remainingGuidanceCount = 0, bestRemainingGuidanceTitle = '', quickGuidanceItems = [] } = {}) {
   if (!hasSession) return '';
   if (!writeup) {
     return `
@@ -1162,6 +1178,7 @@ function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuid
           <button id="btn-session-next-generate" class="btn btn-primary btn-sm">Generate now</button>
           <button id="btn-session-next-guidance" class="btn btn-secondary btn-sm">${remainingGuidanceCount === 1 && bestRemainingGuidanceTitle ? `Choose Other Guidance` : 'Use Saved Guidance'}</button>
         </div>
+        ${remainingGuidanceCount > 1 ? _renderGuidanceQuickPickButtons(quickGuidanceItems, 'session-next-guidance') : ''}
       </div>`;
   }
   if (writeup.approved === false) {
@@ -1179,6 +1196,7 @@ function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuid
           ${remainingGuidanceCount > 0 ? '<button id="btn-session-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>' : ''}
           <button id="btn-session-next-approve" class="btn btn-secondary btn-sm">Approve now</button>
         </div>
+        ${remainingGuidanceCount > 1 ? _renderGuidanceQuickPickButtons(quickGuidanceItems, 'session-draft-guidance') : ''}
       </div>`;
   }
   return `
@@ -3296,6 +3314,7 @@ function _render(el, classId) {
                 matchedGuidanceCount: activeSessionMatchedGuidance.length,
                 remainingGuidanceCount: activeSessionRemainingGuidanceCount,
                 bestRemainingGuidanceTitle: String(activeSessionBestRemainingGuidance?.title || '').trim(),
+                quickGuidanceItems: activeSessionRemainingGuidance,
               })}
               ${sessionWriteupState.loading
         ? '<p class="text-[12px] text-slate-500">Loading session write-up...</p>'
@@ -5064,6 +5083,31 @@ function _bindWorkflowEvents(el, classId) {
     } catch (err) {
       showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
     }
+  });
+  el.querySelectorAll('.btn-guidance-quick-pick').forEach(button => {
+    button.addEventListener('click', async () => {
+      const session = getActiveSession();
+      if (!session) return;
+      const artifactId = Number(button.dataset.artifactId || 0);
+      if (!artifactId) return;
+      try {
+        const updated = await api(`/workflow/classes/${classId}/sessions/${session.id}/writeup/import-assistant-artifact`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ artifact_id: artifactId }),
+        });
+        _setSessionWriteupState(session.id, {
+          loading: false,
+          loaded: true,
+          error: null,
+          item: updated || null,
+        });
+        _render(el, classId);
+        showToast('Saved guidance imported into the session write-up.', 'ok');
+      } catch (err) {
+        showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
+      }
+    });
   });
   el.querySelector('#btn-session-next-edit')?.addEventListener('click', () => {
     el.querySelector('#btn-edit-session-writeup')?.click();

@@ -795,7 +795,7 @@ function _buildSessionWriteupMarkdown(writeup, { unitTitle = '', sessionLabel = 
   return lines.join('\n').trim();
 }
 
-function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = false, remainingGuidanceCount = 0, bestRemainingGuidanceTitle = '' } = {}) {
+function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = false, remainingGuidanceCount = 0, bestRemainingGuidanceTitle = '', quickGuidanceItems = [] } = {}) {
   if (isFuture) {
     return `
       <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -830,6 +830,7 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
           <button id="btn-calendar-next-generate" class="btn btn-primary btn-sm">Generate now</button>
           <button id="btn-calendar-next-guidance" class="btn btn-secondary btn-sm">${remainingGuidanceCount === 1 && bestRemainingGuidanceTitle ? 'Choose Other Guidance' : 'Use Saved Guidance'}</button>
         </div>
+        ${remainingGuidanceCount > 1 ? _renderCalendarGuidanceQuickPickButtons(quickGuidanceItems, 'calendar-next-guidance') : ''}
       </div>`;
   }
   if (writeup.approved === false) {
@@ -847,6 +848,7 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
           ${remainingGuidanceCount > 0 ? '<button id="btn-calendar-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>' : ''}
           <button id="btn-calendar-next-approve" class="btn btn-secondary btn-sm">Approve now</button>
         </div>
+        ${remainingGuidanceCount > 1 ? _renderCalendarGuidanceQuickPickButtons(quickGuidanceItems, 'calendar-draft-guidance') : ''}
       </div>`;
   }
   return `
@@ -950,6 +952,22 @@ function _renderCalendarSessionMatchedGuidance(items, { canImport = false, impor
       ${Array.isArray(items) && items.length > visible.length
         ? `<p class="text-[11px] text-slate-500">Showing ${visible.length} of ${items.length} matching saved guidance items.</p>`
         : ''}
+    </div>
+  `;
+}
+
+function _renderCalendarGuidanceQuickPickButtons(items, prefix) {
+  const visible = Array.isArray(items) ? items.slice(0, 2) : [];
+  if (!visible.length) return '';
+  return `
+    <div class="mt-3 flex flex-wrap gap-2">
+      ${visible.map(item => `
+        <button
+          id="${_escapeHtmlAttr(`${prefix}-${Number(item?.id || 0)}`)}"
+          class="btn btn-ghost btn-sm btn-calendar-guidance-quick-pick"
+          data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}"
+        >${_escapeHtml(_assistantArtifactKindLabel(item?.artifact_kind))}: ${_escapeHtml(String(item?.title || 'Saved guidance'))}</button>
+      `).join('')}
     </div>
   `;
 }
@@ -3533,6 +3551,7 @@ function _renderCalendar(el, classId) {
               hasUnit: selectedEvent.unit_id != null,
               remainingGuidanceCount: selectedRemainingGuidanceCount,
               bestRemainingGuidanceTitle: String(selectedBestRemainingGuidance?.title || '').trim(),
+              quickGuidanceItems: selectedRemainingGuidance,
             })}
             ${_selectedSessionLoading
               ? '<p class="text-[12px] text-slate-500 mt-2">Loading workflow write-up...</p>'
@@ -4336,6 +4355,30 @@ function _renderCalendar(el, classId) {
     } catch (err) {
       showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
     }
+  });
+  el.querySelectorAll('.btn-calendar-guidance-quick-pick').forEach(button => {
+    button.addEventListener('click', async () => {
+      if (!selectedEvent || selectedEvent.unit_id == null) return;
+      const artifactId = Number(button.dataset.artifactId || 0);
+      if (!artifactId) return;
+      try {
+        const updated = await api(`/workflow/classes/${classId}/sessions/${selectedEvent.session_id}/writeup/import-assistant-artifact`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ artifact_id: artifactId }),
+        });
+        const current = _sessionDetailCache.get(Number(selectedEvent.session_id)) || {};
+        _sessionDetailCache.set(Number(selectedEvent.session_id), {
+          ...current,
+          workflow_writeup: updated || null,
+          workflow_writeup_error: null,
+        });
+        _renderCalendar(el, classId);
+        showToast('Saved guidance imported into the session write-up.', 'ok');
+      } catch (err) {
+        showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
+      }
+    });
   });
   el.querySelector('#btn-calendar-next-edit')?.addEventListener('click', () => {
     el.querySelector('#btn-edit-selected-writeup')?.click();
