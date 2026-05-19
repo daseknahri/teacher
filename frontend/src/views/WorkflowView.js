@@ -3477,6 +3477,9 @@ function _render(el, classId) {
                     ${_renderSessionGuidanceKindFilters(activeSessionMatchedGuidance, _sessionGuidanceKindFilter)}
                   </div>
                   <div class="flex items-center gap-2 flex-wrap">
+                    ${Boolean(session) && activeSessionRemainingGuidanceCount > 0
+                      ? `<button id="btn-session-guidance-import-remaining" class="btn btn-secondary btn-sm">Import Remaining (${activeSessionRemainingGuidanceCount})</button>`
+                      : ''}
                     ${activeSessionImportedGuidanceIds.size > 0
                       ? `<button id="btn-session-guidance-hide-imported-toggle" class="btn btn-ghost btn-sm">${_sessionGuidanceHideImported ? 'Show Imported' : 'Hide Imported'}</button>`
                       : ''}
@@ -5256,6 +5259,30 @@ function _bindWorkflowEvents(el, classId) {
     _sessionGuidanceKindFilter = 'all';
     _sessionGuidanceCollapseImported = false;
     _render(el, classId);
+  });
+  el.querySelector('#btn-session-guidance-import-remaining')?.addEventListener('click', async () => {
+    const session = getActiveSession();
+    if (!session || !activeSessionRemainingGuidance.length) return;
+    try {
+      let updated = null;
+      for (const item of activeSessionRemainingGuidance) {
+        updated = await api(`/workflow/classes/${classId}/sessions/${session.id}/writeup/import-assistant-artifact`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ artifact_id: Number(item.id) }),
+        });
+      }
+      _setSessionWriteupState(session.id, {
+        loading: false,
+        loaded: true,
+        error: null,
+        item: updated || null,
+      });
+      _render(el, classId);
+      showToast(`${activeSessionRemainingGuidance.length} remaining guidance item${activeSessionRemainingGuidance.length === 1 ? '' : 's'} imported.`, 'ok');
+    } catch (err) {
+      showToast(String(err?.message || 'Failed to import remaining guidance.'), 'error');
+    }
   });
   el.querySelector('#btn-session-guidance-collapse-imported-toggle')?.addEventListener('click', () => {
     _sessionGuidanceCollapseImported = !_sessionGuidanceCollapseImported;

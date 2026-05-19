@@ -3712,6 +3712,9 @@ function _renderCalendar(el, classId) {
                   ${_renderCalendarSessionGuidanceKindFilters(selectedMatchedGuidance, _calendarSessionGuidanceKindFilter)}
                 </div>
                 <div class="flex items-center gap-2 flex-wrap">
+                  ${selectedEvent.unit_id != null && !selectedIsFuture && selectedRemainingGuidanceCount > 0
+                    ? `<button id="btn-calendar-session-guidance-import-remaining" class="btn btn-secondary btn-sm">Import Remaining (${selectedRemainingGuidanceCount})</button>`
+                    : ''}
                   ${selectedImportedGuidanceIds.size > 0
                     ? `<button id="btn-calendar-session-guidance-hide-imported-toggle" class="btn btn-ghost btn-sm">${_calendarSessionGuidanceHideImported ? 'Show Imported' : 'Hide Imported'}</button>`
                     : ''}
@@ -4529,6 +4532,29 @@ function _renderCalendar(el, classId) {
     _calendarSessionGuidanceKindFilter = 'all';
     _calendarSessionGuidanceCollapseImported = false;
     _renderCalendar(el, classId);
+  });
+  el.querySelector('#btn-calendar-session-guidance-import-remaining')?.addEventListener('click', async () => {
+    if (!selectedEvent || selectedEvent.unit_id == null || !selectedRemainingGuidance.length) return;
+    try {
+      let updated = null;
+      for (const item of selectedRemainingGuidance) {
+        updated = await api(`/workflow/classes/${classId}/sessions/${selectedEvent.session_id}/writeup/import-assistant-artifact`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ artifact_id: Number(item.id) }),
+        });
+      }
+      const current = _sessionDetailCache.get(Number(selectedEvent.session_id)) || {};
+      _sessionDetailCache.set(Number(selectedEvent.session_id), {
+        ...current,
+        workflow_writeup: updated || null,
+        workflow_writeup_error: null,
+      });
+      _renderCalendar(el, classId);
+      showToast(`${selectedRemainingGuidance.length} remaining guidance item${selectedRemainingGuidance.length === 1 ? '' : 's'} imported.`, 'ok');
+    } catch (err) {
+      showToast(String(err?.message || 'Failed to import remaining guidance.'), 'error');
+    }
   });
   el.querySelector('#btn-calendar-session-guidance-collapse-imported-toggle')?.addEventListener('click', () => {
     _calendarSessionGuidanceCollapseImported = !_calendarSessionGuidanceCollapseImported;
