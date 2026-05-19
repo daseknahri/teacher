@@ -2651,6 +2651,10 @@ function _render(el, classId) {
                   <span class="font-bold">Hold handle to reorder.</span> Drop Top = Before, Middle = Nested Child, Bottom = After.
                 </p>
               </div>
+              ${previewSessionNumber && _workflowPreviewFocusOnly && _workflowPreviewHideDone && !displayChecklist.length ? `
+              <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">
+                All planned rows for this session are already completed. Use <span class="font-semibold">Show Completed Rows</span> if you want to review them.
+              </div>` : ''}
               ${displayChecklist.map(item => {
     const meta = moveMeta.get(item.id) || {};
     const itemId = Number(item.id);

@@ -3137,6 +3137,9 @@ function _renderCalendar(el, classId) {
                             ${plannedSessionSummary.map(label => `<span class="badge badge-gray">${_escapeHtml(label)}</span>`).join('')}
                           </div>` : ''}
                         ${_calendarPlannedHideDone && plannedSessionDoneCount > 0 ? '<p class="text-[11px] text-amber-700">Showing only remaining planned rows.</p>' : ''}
+                        ${_calendarPlannedHideDone && plannedSessionDoneCount > 0 && !visiblePlannedSessionTree.length
+                          ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">All planned rows for this session are already completed. Use <span class="font-semibold">Show Completed Rows</span> if you want to review them.</div>'
+                          : ''}
                         ${_renderCalendarBlueprintTree(visiblePlannedSessionTree)}
                         <div>
                           <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Matched Section Plans</p>
