@@ -377,13 +377,14 @@ function _renderSessionMatchedGuidance(items, { canImport = false, importedIds =
     const artifactId = Number(item?.id || 0);
     const imported = importedIds.has(artifactId);
     return `
-        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-          <div class="flex items-center justify-between gap-3 flex-wrap">
-            <div class="flex items-center gap-2 flex-wrap">
-              <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(item?.title || 'Saved guidance'))}</p>
-              <span class="badge badge-blue">${_escapeHtml(_assistantArtifactKindLabel(item?.artifact_kind))}</span>
-              ${item?.action ? `<span class="badge badge-gray">${_escapeHtml(_assistantActionLabel(item.action))}</span>` : ''}
-              ${imported ? '<span class="badge badge-green">Imported</span>' : ''}
+        <div class="rounded-2xl border border-slate-200 bg-white px-3 py-3">
+          <div class="flex items-start justify-between gap-3 flex-wrap">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <p class="text-[12px] font-semibold text-slate-800">${_escapeHtml(String(item?.title || 'Saved guidance'))}</p>
+                ${imported ? '<span class="badge badge-green">Imported</span>' : ''}
+              </div>
+              <p class="mt-1 text-[11px] text-slate-500">${_escapeHtml(_assistantArtifactKindLabel(item?.artifact_kind))}${item?.action ? ` - ${_escapeHtml(_assistantActionLabel(item.action))}` : ''}</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
               ${canImport ? `<button class="btn btn-primary btn-sm btn-session-matched-guidance-import" data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}" ${imported ? 'disabled' : ''}>${imported ? 'Already Imported' : 'Use in Write-Up'}</button>` : ''}
@@ -2691,8 +2692,20 @@ function _renderSessionPlaybookPreview(unitMap, plannedTitles) {
     return '<p class="text-[12px] text-slate-500">No specific teacher playbook suggestions matched this session yet.</p>';
   }
   return matched.map(entry => `
-    <div class="rounded-xl border border-slate-200 bg-white p-3">
-      <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(String(entry?.section_title || 'Section'))}</p>
+    <div class="rounded-2xl border border-slate-200 bg-white p-3">
+      <div class="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <p class="text-[12px] font-semibold text-slate-800">${_escapeHtml(String(entry?.section_title || 'Section'))}</p>
+          ${Array.isArray(entry?.available_actions) && entry.available_actions.length
+            ? `<p class="mt-1 text-[11px] text-slate-500">Best for: ${_escapeHtml(entry.available_actions.slice(0, 3).map(action => _teacherActionLabel(action)).join(' / '))}</p>`
+            : '<p class="mt-1 text-[11px] text-slate-500">NotebookLM can help prepare this teaching focus.</p>'}
+        </div>
+        ${Array.isArray(entry?.section_path) && entry.section_path.length
+          ? `<span class="text-[11px] text-slate-400">${_escapeHtml(entry.section_path.join(' > '))}</span>`
+          : ''}
+      </div>
+      ${Array.isArray(entry?.available_actions) && entry.available_actions.length ? `
+        <p class="mt-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Suggested prompts</p>` : ''}
       ${Array.isArray(entry?.suggested_requests) && entry.suggested_requests.length ? `
         <div class="mt-2 flex flex-wrap gap-2">
           ${entry.suggested_requests.slice(0, 3).map(row => `
