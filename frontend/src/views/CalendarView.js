@@ -1061,6 +1061,10 @@ function _renderCalendarSessionGuidanceSummary(totalCount, importedCount, hideIm
   `;
 }
 
+function _hasCalendarSessionGuidanceFilters(hideImported = false, kindFilter = 'all') {
+  return Boolean(hideImported) || (String(kindFilter || 'all').trim().toLowerCase() !== 'all');
+}
+
 function _renderCalendarSessionGuidanceKindFilters(items, activeKind = 'all') {
   const rows = Array.isArray(items) ? items : [];
   if (!rows.length) return '';
@@ -3682,11 +3686,17 @@ function _renderCalendar(el, classId) {
                   <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
                   <p class="text-[12px] text-slate-500 mt-1">Reusable unit help that matches this planned session route.</p>
                   ${_renderCalendarSessionGuidanceSummary(selectedMatchedGuidance.length, selectedImportedGuidanceIds.size, _calendarSessionGuidanceHideImported)}
+                  ${_calendarSessionGuidanceKindFilter !== 'all' ? `<div class="mt-2"><span class="badge badge-blue">Filtered: ${_escapeHtml(_assistantArtifactKindLabel(_calendarSessionGuidanceKindFilter))}</span></div>` : ''}
                   ${_renderCalendarSessionGuidanceKindFilters(selectedMatchedGuidance, _calendarSessionGuidanceKindFilter)}
                 </div>
-                ${selectedImportedGuidanceIds.size > 0
-                  ? `<button id="btn-calendar-session-guidance-hide-imported-toggle" class="btn btn-ghost btn-sm">${_calendarSessionGuidanceHideImported ? 'Show Imported' : 'Hide Imported'}</button>`
-                  : ''}
+                <div class="flex items-center gap-2 flex-wrap">
+                  ${selectedImportedGuidanceIds.size > 0
+                    ? `<button id="btn-calendar-session-guidance-hide-imported-toggle" class="btn btn-ghost btn-sm">${_calendarSessionGuidanceHideImported ? 'Show Imported' : 'Hide Imported'}</button>`
+                    : ''}
+                  ${_hasCalendarSessionGuidanceFilters(_calendarSessionGuidanceHideImported, _calendarSessionGuidanceKindFilter)
+                    ? '<button id="btn-calendar-session-guidance-reset-filters" class="btn btn-ghost btn-sm">Reset Filters</button>'
+                    : ''}
+                </div>
               </div>
               <div class="mt-3">
                 ${_renderCalendarSessionMatchedGuidance(selectedMatchedGuidance, {
@@ -4490,6 +4500,11 @@ function _renderCalendar(el, classId) {
   });
   el.querySelector('#btn-calendar-session-guidance-hide-imported-toggle')?.addEventListener('click', () => {
     _calendarSessionGuidanceHideImported = !_calendarSessionGuidanceHideImported;
+    _renderCalendar(el, classId);
+  });
+  el.querySelector('#btn-calendar-session-guidance-reset-filters')?.addEventListener('click', () => {
+    _calendarSessionGuidanceHideImported = false;
+    _calendarSessionGuidanceKindFilter = 'all';
     _renderCalendar(el, classId);
   });
   el.querySelectorAll('.btn-calendar-session-guidance-kind-toggle').forEach(button => {

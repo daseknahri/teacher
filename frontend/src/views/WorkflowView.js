@@ -405,6 +405,10 @@ function _renderSessionGuidanceSummary(totalCount, importedCount, hideImported =
   `;
 }
 
+function _hasSessionGuidanceFilters(hideImported = false, kindFilter = 'all') {
+  return Boolean(hideImported) || (String(kindFilter || 'all').trim().toLowerCase() !== 'all');
+}
+
 function _renderSessionGuidanceKindFilters(items, activeKind = 'all') {
   const rows = Array.isArray(items) ? items : [];
   if (!rows.length) return '';
@@ -3447,11 +3451,17 @@ function _render(el, classId) {
                     <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
                     <p class="text-[12px] text-slate-500 mt-1">Reusable section help that matches this planned session route.</p>
                     ${_renderSessionGuidanceSummary(activeSessionMatchedGuidance.length, activeSessionImportedGuidanceIds.size, _sessionGuidanceHideImported)}
+                    ${_sessionGuidanceKindFilter !== 'all' ? `<div class="mt-2"><span class="badge badge-blue">Filtered: ${_escapeHtml(_assistantArtifactKindLabel(_sessionGuidanceKindFilter))}</span></div>` : ''}
                     ${_renderSessionGuidanceKindFilters(activeSessionMatchedGuidance, _sessionGuidanceKindFilter)}
                   </div>
-                  ${activeSessionImportedGuidanceIds.size > 0
-                    ? `<button id="btn-session-guidance-hide-imported-toggle" class="btn btn-ghost btn-sm">${_sessionGuidanceHideImported ? 'Show Imported' : 'Hide Imported'}</button>`
-                    : ''}
+                  <div class="flex items-center gap-2 flex-wrap">
+                    ${activeSessionImportedGuidanceIds.size > 0
+                      ? `<button id="btn-session-guidance-hide-imported-toggle" class="btn btn-ghost btn-sm">${_sessionGuidanceHideImported ? 'Show Imported' : 'Hide Imported'}</button>`
+                      : ''}
+                    ${_hasSessionGuidanceFilters(_sessionGuidanceHideImported, _sessionGuidanceKindFilter)
+                      ? '<button id="btn-session-guidance-reset-filters" class="btn btn-ghost btn-sm">Reset Filters</button>'
+                      : ''}
+                  </div>
                 </div>
                 ${_renderSessionMatchedGuidance(activeSessionMatchedGuidance, {
                   canImport: Boolean(session),
@@ -5217,6 +5227,11 @@ function _bindWorkflowEvents(el, classId) {
   });
   el.querySelector('#btn-session-guidance-hide-imported-toggle')?.addEventListener('click', () => {
     _sessionGuidanceHideImported = !_sessionGuidanceHideImported;
+    _render(el, classId);
+  });
+  el.querySelector('#btn-session-guidance-reset-filters')?.addEventListener('click', () => {
+    _sessionGuidanceHideImported = false;
+    _sessionGuidanceKindFilter = 'all';
     _render(el, classId);
   });
   el.querySelectorAll('.btn-session-guidance-kind-toggle').forEach(button => {
