@@ -123,6 +123,7 @@ from ..services.timetable_import import (
 from ..services.workflow import extract_text_from_document, generate_unit_checklist
 from ..services.workflow_content import (
     _serialize_checked_item_contexts,
+    build_session_outline_rows,
     build_document_hash,
     generate_and_store_session_writeup,
     save_unit_blueprint,
@@ -6375,6 +6376,7 @@ def _build_calendar_events(db: Session, class_id: int) -> list[WorkflowCalendarE
             if session.unit_id is not None and sorted_checked_rows
             else []
         )
+        outline_rows = build_session_outline_rows(checked_item_contexts)
         unit = unit_by_id.get(session.unit_id)
         events.append(
             WorkflowCalendarEventOut(
@@ -6390,7 +6392,7 @@ def _build_calendar_events(db: Session, class_id: int) -> list[WorkflowCalendarE
                 absent_count=absent_count,
                 absent_student_ids=sorted(int(value) for value in absent_ids),
                 checked_items_count=len(checked_items),
-                checked_items=checked_items,
+                checked_items=outline_rows or checked_items,
                 checked_item_paths=[
                     [str(part).strip() for part in (row.get("item_path") or []) if str(part).strip()]
                     for row in checked_item_contexts

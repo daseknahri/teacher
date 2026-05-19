@@ -216,6 +216,33 @@ def _serialize_checked_item_contexts(
     return output
 
 
+def build_session_outline_rows(checked_item_contexts: list[dict] | None) -> list[str]:
+    contexts = checked_item_contexts if isinstance(checked_item_contexts, list) else []
+    if not contexts:
+        return []
+
+    output: list[str] = []
+    seen: set[str] = set()
+    for raw_context in contexts:
+        if not isinstance(raw_context, dict):
+            continue
+        item_path = [
+            str(value).strip()
+            for value in (raw_context.get("item_path") if isinstance(raw_context.get("item_path"), list) else [])
+            if str(value).strip()
+        ]
+        if not item_path:
+            continue
+        for idx, part in enumerate(item_path):
+            prefix = item_path[: idx + 1]
+            key = " > ".join(value.lower() for value in prefix if value)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            output.append(str(part).strip())
+    return output
+
+
 def generate_and_store_session_writeup(
     db: Session,
     *,

@@ -43,6 +43,7 @@ from ..models import (
     WorkflowSessionChecklistAction,
     WorkflowUnit,
 )
+from .workflow_content import _serialize_checked_item_contexts, build_session_outline_rows
 
 
 def _line(pdf: canvas.Canvas, text: str, x: int, y: int) -> int:
@@ -572,6 +573,7 @@ def build_class_pdf_report(db: Session, class_id: int, mask_personal_data: bool 
     students_count = int(db.scalar(select(func.count(Student.id)).where(Student.class_id == class_id)) or 0)
     units = db.scalars(select(WorkflowUnit).where(WorkflowUnit.id.in_(unit_ids))).all() if unit_ids else []
     unit_by_id = {int(row.id): row for row in units}
+    session_by_id = {int(row.id): row for row in sessions}
     derived_unit_session_numbers = _derive_unit_session_number_map(sessions)
 
     progress_by_session: dict[int, list[ProgressItem]] = defaultdict(list)
@@ -674,6 +676,15 @@ def build_class_pdf_report(db: Session, class_id: int, mask_personal_data: bool 
                 title = str(row.title or "").strip() or "Checklist item"
                 number = number_map.get(int(row.item_id))
                 labels.append(f"{number}) {title}" if number else title)
+            if unit_id is not None and sorted_rows:
+                contexts = _serialize_checked_item_contexts(
+                    db,
+                    unit_id=int(unit_id),
+                    checked_item_ids=[int(row.item_id) for row in sorted_rows],
+                )
+                outline_rows = build_session_outline_rows(contexts)
+                if outline_rows:
+                    labels = outline_rows
             checklist_labels_by_session[int(session_id)] = labels
 
     masked_labels_by_student_id: dict[int, str] = {}
@@ -894,6 +905,7 @@ def build_calendar_summary_pdf(
     unit_ids = sorted({int(row.unit_id) for row in sessions if row.unit_id is not None})
     units = db.scalars(select(WorkflowUnit).where(WorkflowUnit.id.in_(unit_ids))).all() if unit_ids else []
     unit_by_id = {int(row.id): row for row in units}
+    session_by_id = {int(row.id): row for row in sessions}
 
     checked_titles_by_session: dict[int, list[str]] = defaultdict(list)
     progress_titles_by_session: dict[int, list[str]] = defaultdict(list)
@@ -928,12 +940,26 @@ def build_calendar_summary_pdf(
             )
         ).all()
         filtered_checked_rows = _filter_actionable_report_check_rows(list(checked_rows))
+        checked_ids_by_session: dict[int, list[int]] = defaultdict(list)
         for row in filtered_checked_rows:
             session_key = int(row.session_id)
             title = str(row.title or "").strip()
             if title:
                 checked_titles_by_session[session_key].append(title)
+            checked_ids_by_session[session_key].append(int(row.item_id))
             checked_count_by_session[session_key] += 1
+        for session_key, item_ids in checked_ids_by_session.items():
+            session_row = session_by_id.get(int(session_key))
+            if session_row is None or session_row.unit_id is None:
+                continue
+            contexts = _serialize_checked_item_contexts(
+                db,
+                unit_id=int(session_row.unit_id),
+                checked_item_ids=[int(value) for value in item_ids if int(value) > 0],
+            )
+            outline_rows = build_session_outline_rows(contexts)
+            if outline_rows:
+                checked_titles_by_session[session_key] = outline_rows
 
         progress_rows = db.scalars(
             select(ProgressItem)
