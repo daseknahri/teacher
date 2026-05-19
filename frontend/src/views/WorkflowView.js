@@ -2983,6 +2983,40 @@ function _render(el, classId) {
     previewKindCounts.definition ? `${previewKindCounts.definition} definitions` : '',
     previewKindCounts.property ? `${previewKindCounts.property} properties` : '',
   ].filter(Boolean);
+  const activeSessionTitleKeys = new Set(activeSessionPlanTitles.map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+  const activeMatchedChecklist = session
+    ? checklist.filter(item => activeSessionTitleKeys.has(String(item?.title || '').trim().toLowerCase()))
+    : [];
+  const activeMatchedDone = activeMatchedChecklist.filter(item => Boolean(item?.is_completed || item?.done)).length;
+  const activeMatchedRemaining = Math.max(0, activeMatchedChecklist.length - activeMatchedDone);
+  const activeCompletionPct = activeMatchedChecklist.length ? Math.round((activeMatchedDone / activeMatchedChecklist.length) * 100) : 0;
+  const activeRouteStatus = !activeMatchedChecklist.length
+    ? { label: 'No route saved', className: 'badge-gray', hint: 'No planned checklist route is saved for this live session yet.' }
+    : activeMatchedDone === 0
+      ? { label: 'Not started', className: 'badge-blue', hint: 'This planned route has not been covered yet.' }
+      : activeMatchedRemaining === 0
+        ? { label: 'Fully covered', className: 'badge-green', hint: 'All planned rows for this session are already completed.' }
+        : { label: 'Partly covered', className: 'badge-amber', hint: `${activeMatchedRemaining} planned row${activeMatchedRemaining === 1 ? '' : 's'} still remain.` };
+  const activeProgressCount = sessionProgressState.loaded ? Number(sessionProgressState.items?.length || 0) : 0;
+  const activeWriteupStateLabel = !sessionWriteupState.item
+    ? 'Not saved'
+    : sessionWriteupState.item.approved === false
+      ? 'Draft ready'
+      : 'Approved';
+  const activeWriteupStateClass = !sessionWriteupState.item
+    ? 'badge-gray'
+    : sessionWriteupState.item.approved === false
+      ? 'badge-amber'
+      : 'badge-green';
+  const activeSessionNextMoveText = !sessionWriteupState.item
+    ? activeSessionRemainingGuidanceCount
+      ? 'Import the saved guidance you already prepared, then generate the session write-up once you have checked what was really covered.'
+      : 'Check what was really covered in class, then generate the session write-up to capture the lesson clearly.'
+    : sessionWriteupState.item.approved === false
+      ? activeSessionRemainingGuidanceCount
+        ? 'Review the draft, import any remaining saved guidance, then approve it when it matches the lesson.'
+        : 'Review the draft write-up and approve it when it matches what happened in class.'
+      : 'The write-up is approved. Keep teaching from the planned route and reopen it only if the lesson changes.';
   const previewBaseChecklist = previewSessionNumber && _workflowPreviewFocusOnly && previewFocusIds.size
     ? visibleChecklist.filter(item => previewFocusIds.has(Number(item?.id || 0)))
     : visibleChecklist;
@@ -3435,19 +3469,77 @@ function _render(el, classId) {
         <div class="${_activeTab === 2 ? 'block' : 'hidden'}">
           <div class="p-5 flex flex-col gap-4">
             ${session ? `
-            <div class="flex items-center gap-4 p-4 bg-amber-50 rounded-2xl border border-amber-200">
-              <div class="text-[12px] font-black tracking-wide">LIVE</div>
-              <div>
-                <p class="font-semibold text-amber-800">Session Active</p>
-                <p class="text-[12px] text-amber-600">Started at ${fmtTime(session.start_time)} | ${fmtDate(session.session_date || session.date)}</p>
+            <div class="rounded-2xl border border-amber-200 bg-[linear-gradient(180deg,rgba(255,247,237,0.96),rgba(255,255,255,0.98))] p-4 sm:p-5 shadow-sm">
+              <div class="flex flex-col gap-4">
+                <div class="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-5">
+                  <div class="min-w-0 xl:flex-1">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Session Active</p>
+                    <p class="mt-1 text-[21px] font-semibold tracking-tight text-slate-900">${_escapeHtml(unit?.title || session?.unit_title || 'Active session')}</p>
+                    <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500">
+                      <span>${_escapeHtml(fmtDate(session.session_date || session.date))}</span>
+                      <span class="text-slate-300">&middot;</span>
+                      <span>${_escapeHtml(`Started at ${fmtTime(session.start_time)}`)}</span>
+                      ${session?.unit_session_number ? `<span class="text-slate-300">&middot;</span><span>Unit Session ${Number(session.unit_session_number)}</span>` : ''}
+                    </div>
+                    <div class="mt-3 flex gap-2 flex-wrap">
+                      <span class="badge badge-amber">Live now</span>
+                      <span class="badge ${activeRouteStatus.className}">${_escapeHtml(activeRouteStatus.label)}</span>
+                      <span class="badge ${activeWriteupStateClass}">${_escapeHtml(activeWriteupStateLabel)}</span>
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2 xl:min-w-[360px] xl:max-w-[420px]">
+                    <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
+                      <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Route</p>
+                      <p class="mt-1 text-[19px] font-semibold text-slate-900">${activeMatchedChecklist.length}</p>
+                      <p class="text-[11px] text-slate-500">${activeCompletionPct}% covered</p>
+                    </div>
+                    <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
+                      <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Progress</p>
+                      <p class="mt-1 text-[19px] font-semibold text-slate-900">${activeProgressCount}</p>
+                      <p class="text-[11px] text-slate-500">${sessionProgressState.loaded ? 'Confirmed rows saved' : 'Load to review saved rows'}</p>
+                    </div>
+                    <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
+                      <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Guidance</p>
+                      <p class="mt-1 text-[19px] font-semibold text-slate-900">${activeSessionRemainingGuidanceCount}</p>
+                      <p class="text-[11px] text-slate-500">${activeSessionRemainingGuidanceCount === 0 ? 'No reusable saved guidance left' : activeSessionRemainingGuidanceCount === 1 ? 'Saved item still reusable' : 'Saved items still reusable'}</p>
+                    </div>
+                    <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
+                      <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Write-Up</p>
+                      <p class="mt-1 text-[15px] font-semibold text-slate-900">${_escapeHtml(activeWriteupStateLabel)}</p>
+                      <p class="text-[11px] text-slate-500">${sessionWriteupState.item ? 'Lesson summary available below' : 'No lesson summary saved yet'}</p>
+                    </div>
+                  </div>
+                </div>
+                <div class="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-3">
+                  <div class="rounded-2xl border border-amber-100 bg-white/92 px-4 py-4 shadow-sm">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Next Move</p>
+                    <p class="mt-2 text-[15px] font-semibold text-slate-800">What the teacher should do now</p>
+                    <p class="mt-2 text-[13px] leading-relaxed text-slate-600">${_escapeHtml(activeSessionNextMoveText)}</p>
+                  </div>
+                  <div class="rounded-2xl border border-white/80 bg-white/92 px-4 py-4 shadow-sm">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Live Tools</p>
+                    <div class="mt-3 flex flex-col gap-3">
+                      <div class="flex gap-2 flex-wrap">
+                        <label class="btn btn-secondary cursor-pointer">
+                          Extract Session Image
+                          <input id="session-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.bmp" class="hidden" />
+                        </label>
+                        <button id="btn-resume-extraction" class="btn btn-ghost btn-sm">Resume Last Extraction</button>
+                      </div>
+                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[12px] text-slate-600">
+                        <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3">
+                          <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Route coverage</p>
+                          <p class="mt-1 text-[13px] font-medium text-slate-800">${_escapeHtml(activeRouteStatus.hint)}</p>
+                        </div>
+                        <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3">
+                          <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Saved guidance</p>
+                          <p class="mt-1 text-[13px] font-medium text-slate-800">${activeSessionRemainingGuidanceCount ? `${activeSessionRemainingGuidanceCount} reusable item${activeSessionRemainingGuidanceCount === 1 ? '' : 's'} ready` : 'No reusable saved guidance left'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div class="flex gap-2 flex-wrap">
-              <label class="btn btn-secondary cursor-pointer">
-                Extract Session Image
-                <input id="session-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.bmp" class="hidden" />
-              </label>
-              <button id="btn-resume-extraction" class="btn btn-ghost btn-sm">Resume Last Extraction</button>
             </div>
             <div class="bg-slate-50 rounded-2xl border border-slate-200 p-4 flex flex-col gap-3">
               <div class="flex items-center justify-between gap-2 flex-wrap">
