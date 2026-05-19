@@ -6796,6 +6796,43 @@ def test_leaf_content_generate_rejects_non_leaf(client, monkeypatch):
     assert "leaf" in resp.json()["detail"].lower()
 
 
+def test_leaf_content_list_by_unit(client):
+    headers = _auth_headers(client)
+    class_id, unit_id, item_id = _setup_unit_with_leaf(client, headers)
+
+    # Initially empty
+    resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content",
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+    # Create a leaf content record via PUT
+    client.put(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}",
+        headers=headers,
+        json={"teaching_goal_md": "Understand the concept.", "status": "ready"},
+    )
+
+    # List should now return one summary row with safe fields only
+    resp2 = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content",
+        headers=headers,
+    )
+    assert resp2.status_code == 200
+    rows = resp2.json()
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["checklist_item_id"] == item_id
+    assert row["status"] == "ready"
+    assert "provider" in row
+    assert "reviewed" in row
+    assert "updated_at" in row
+    # Summary should NOT expose content fields
+    assert "teaching_goal_md" not in row
+
+
 def test_leaf_content_generate_requires_blueprint(client):
     headers = _auth_headers(client)
     class_resp = client.post(

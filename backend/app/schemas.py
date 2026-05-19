@@ -896,6 +896,17 @@ class WorkflowCalendarAutoPlanOut(BaseModel):
 WorkflowChecklistItemOut.model_rebuild()
 
 
+class WorkflowLeafContentSummaryOut(BaseModel):
+    id: int
+    checklist_item_id: int
+    status: str
+    reviewed: bool = False
+    updated_at: datetime
+    provider: str
+
+    model_config = {"from_attributes": True}
+
+
 class WorkflowLeafContentOut(BaseModel):
     id: int
     unit_id: int

@@ -1992,3 +1992,15 @@ code {
 .btn-leaf-lesson {
     color: #2563eb !important;
 }
+
+/* Leaf content status dot */
+.leaf-status-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    vertical-align: middle;
+}
+.leaf-status-dot--ready { background-color: #3b82f6; }
+.leaf-status-dot--draft { background-color: #94a3b8; }

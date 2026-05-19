@@ -107,6 +107,7 @@ from ..schemas import (
     WorkflowLeafContentGenerateIn,
     WorkflowLeafContentGenerateOut,
     WorkflowLeafContentOut,
+    WorkflowLeafContentSummaryOut,
     WorkflowLeafContentUpsertIn,
 )
 from ..security import ensure_class_access, ensure_class_writable, get_current_user, require_owner, require_teacher
@@ -6591,6 +6592,25 @@ def download_workflow_unit_document(
         raise HTTPException(status_code=404, detail="Document file not found on server.")
     filename = unit.document_name or file_path.name
     return FileResponse(path=str(file_path), filename=filename)
+
+
+@router.get("/classes/{class_id}/units/{unit_id}/leaf-content", response_model=list[WorkflowLeafContentSummaryOut])
+def list_leaf_content_summaries(
+    class_id: int,
+    unit_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[WorkflowLeafContent]:
+    _ = ensure_class_access(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    rows = db.scalars(
+        select(WorkflowLeafContent)
+        .where(WorkflowLeafContent.unit_id == int(unit_id))
+        .order_by(WorkflowLeafContent.updated_at.desc(), WorkflowLeafContent.id.desc())
+    ).all()
+    return list(rows)
 
 
 @router.get("/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}", response_model=WorkflowLeafContentOut)

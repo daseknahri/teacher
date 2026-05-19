@@ -40,7 +40,7 @@ Keep entries short and factual.
 
 ### 2026-05-19 23:05 - Claude
 
-- Status: planned
+- Status: done
 - Goal: make saved/generated leaf content visible across Workflow and Calendar, and open the same lesson card from Calendar
 - Files expected:
   - `backend/app/schemas.py`
@@ -59,7 +59,23 @@ Keep entries short and factual.
   - task prompt lives in `docs/roadmap/CLAUDE-TASK-LEAF-CONTENT-VISIBILITY.md`
   - this task should not change session semantics, checklist semantics, or partial regeneration
 - Result:
+  - added `WorkflowLeafContentSummaryOut` schema and `GET /workflow/classes/{class_id}/units/{unit_id}/leaf-content` summary endpoint
+  - added backend test coverage for the summary endpoint (`test_leaf_content_list_by_unit`)
+  - added unit-level leaf-content summary caching in `frontend/src/utils/leafContent.js`
+  - summary cache now updates immediately after generate/save in the lesson card
+  - Workflow now shows a quiet lesson-content status dot on leaf rows in:
+    - Unit Setup checklist
+    - Active Session Teaching Flow View
+    - Active Session Full Unit Checklist
+  - Calendar now shows the same status cue on supported route leaves
+  - Calendar can now open the same lesson card from:
+    - grouped Teaching Flow View
+    - planned route tree leaf rows
+  - lesson-card open actions now pass checklist path context where available
+  - page rerenders after lesson-card generate/save so status cues refresh without a manual reload
 - Follow-up:
+  - consider a clearer visual distinction between `draft` and `ready` if teachers need more than a dot
+  - recorded fallback routes in Calendar still cannot open a leaf card when only flat checked titles exist and no checklist item id was preserved
 
 ### 2026-05-19 22:45 - Claude
 

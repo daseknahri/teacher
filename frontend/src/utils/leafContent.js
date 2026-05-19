@@ -12,6 +12,8 @@ import 'katex/dist/katex.min.css';
 import { api } from '../api/client.js';
 import { showToast } from './toast.js';
 
+const _summaryCache = new Map(); // key: `${classId}:${unitId}` -> Map<checklist_item_id, summary>
+
 const CONTENT_FIELDS = [
   { key: 'teaching_goal_md', label: 'Teaching Goal' },
   { key: 'launch_activity_md', label: 'Launch Activity' },
@@ -124,9 +126,38 @@ export function renderMarkdownLatex(text) {
   return html;
 }
 
-export async function openLeafContentModal(classId, unitId, item) {
+function _summaryCacheKey(classId, unitId) {
+  const cid = Number(classId || 0);
+  const uid = Number(unitId || 0);
+  return cid > 0 && uid > 0 ? `${cid}:${uid}` : '';
+}
+
+function _upsertUnitLeafContentSummary(classId, unitId, leafContent) {
+  const cacheKey = _summaryCacheKey(classId, unitId);
+  const checklistItemId = Number(leafContent?.checklist_item_id || 0);
+  if (!cacheKey || checklistItemId <= 0) return;
+  const summaryMap = _summaryCache.get(cacheKey) || new Map();
+  summaryMap.set(checklistItemId, {
+    id: Number(leafContent?.id || 0) || null,
+    checklist_item_id: checklistItemId,
+    status: String(leafContent?.status || 'draft').trim() || 'draft',
+    reviewed: Boolean(leafContent?.reviewed),
+    updated_at: leafContent?.updated_at || new Date().toISOString(),
+    provider: String(leafContent?.provider || 'manual').trim() || 'manual',
+  });
+  _summaryCache.set(cacheKey, summaryMap);
+}
+
+export function invalidateUnitLeafContentSummaries(classId, unitId) {
+  const cacheKey = _summaryCacheKey(classId, unitId);
+  if (!cacheKey) return;
+  _summaryCache.delete(cacheKey);
+}
+
+export async function openLeafContentModal(classId, unitId, item, options = {}) {
   const itemId = Number(item?.id || 0);
   if (!itemId || !classId || !unitId) return;
+  const onChange = typeof options?.onChange === 'function' ? options.onChange : null;
 
   document.getElementById('leaf-content-modal-overlay')?.remove();
 
@@ -335,8 +366,10 @@ export async function openLeafContentModal(classId, unitId, item) {
         },
       );
       content = result?.leaf_content ?? null;
+      if (content) _upsertUnitLeafContentSummary(classId, unitId, content);
       updateStatusBadge();
       setMode('rendered');
+      onChange?.(content);
       showToast('Lesson content generated', 'ok');
     } catch (err) {
       showToast(err.message || 'Generation failed', 'error');
@@ -358,7 +391,9 @@ export async function openLeafContentModal(classId, unitId, item) {
           body: JSON.stringify(fields),
         },
       );
+      if (content) _upsertUnitLeafContentSummary(classId, unitId, content);
       updateStatusBadge();
+      onChange?.(content);
       showToast('Lesson card saved', 'ok');
     } catch (err) {
       showToast(err.message || 'Save failed', 'error');
@@ -368,4 +403,36 @@ export async function openLeafContentModal(classId, unitId, item) {
   });
 
   await loadContent();
+}
+
+export async function fetchUnitLeafContentSummaries(classId, unitId) {
+  const cid = Number(classId || 0);
+  const uid = Number(unitId || 0);
+  const cacheKey = _summaryCacheKey(cid, uid);
+  if (!cacheKey) return [];
+  if (_summaryCache.has(cacheKey)) return Array.from(_summaryCache.get(cacheKey).values());
+  try {
+    const rows = await api(`/workflow/classes/${cid}/units/${uid}/leaf-content`);
+    const safe = Array.isArray(rows) ? rows : [];
+    const byItemId = new Map(safe.map(r => [Number(r.checklist_item_id), r]));
+    _summaryCache.set(cacheKey, byItemId);
+    return safe;
+  } catch {
+    return [];
+  }
+}
+
+export function getLeafSummaryMap(classId, unitId) {
+  const cacheKey = _summaryCacheKey(classId, unitId);
+  return _summaryCache.get(cacheKey) || new Map();
+}
+
+export function renderLeafStatusBadge(itemId, classId, unitId) {
+  const summary = getLeafSummaryMap(classId, unitId).get(Number(itemId || 0));
+  if (!summary) return '';
+  const status = String(summary.status || 'draft');
+  const isReady = status === 'ok' || status === 'ready';
+  const dotClass = isReady ? 'leaf-status-dot--ready' : 'leaf-status-dot--draft';
+  const label = isReady ? 'Lesson content ready' : 'Lesson content draft';
+  return `<span class="leaf-status-dot ${dotClass}" title="${label}"></span>`;
 }
