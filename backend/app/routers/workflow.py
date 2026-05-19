@@ -2343,29 +2343,31 @@ def _create_unit_with_generated_checklist(
 
     extracted_text = source_text or ""
     document_hash: str | None = build_document_hash(extracted_text) if extracted_text else None
-    if file is not None:
-        UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-        workflow_dir = UPLOADS_DIR / "workflow"
-        workflow_dir.mkdir(parents=True, exist_ok=True)
-        content, extension = read_validated_upload(
-            file,
-            max_bytes=max(MAX_SCREENSHOT_UPLOAD_BYTES, app_config.MAX_EXCEL_UPLOAD_BYTES),
-            allowed_extensions=ALLOWED_WORKFLOW_DOC_EXTENSIONS,
-            allowed_mime_types=ALLOWED_WORKFLOW_DOC_MIME_TYPES,
-            purpose="document",
-        )
-        file_name = f"{uuid.uuid4().hex}{extension}"
-        target = workflow_dir / file_name
-        with target.open("wb") as handle:
-            handle.write(content)
-        unit.document_name = file.filename
-        unit.document_path = str(target)
-        document_hash = build_document_hash(content)
-        extracted_text = extract_text_from_document(str(target), source_text)
-        if not document_hash:
-            document_hash = build_document_hash(extracted_text)
-
+    uploaded_document_path: Path | None = None
     try:
+        if file is not None:
+            UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+            workflow_dir = UPLOADS_DIR / "workflow"
+            workflow_dir.mkdir(parents=True, exist_ok=True)
+            content, extension = read_validated_upload(
+                file,
+                max_bytes=max(MAX_SCREENSHOT_UPLOAD_BYTES, app_config.MAX_EXCEL_UPLOAD_BYTES),
+                allowed_extensions=ALLOWED_WORKFLOW_DOC_EXTENSIONS,
+                allowed_mime_types=ALLOWED_WORKFLOW_DOC_MIME_TYPES,
+                purpose="document",
+            )
+            file_name = f"{uuid.uuid4().hex}{extension}"
+            target = workflow_dir / file_name
+            with target.open("wb") as handle:
+                handle.write(content)
+            uploaded_document_path = target
+            unit.document_name = file.filename
+            unit.document_path = str(target)
+            document_hash = build_document_hash(content)
+            extracted_text = extract_text_from_document(str(target), source_text)
+            if not document_hash:
+                document_hash = build_document_hash(extracted_text)
+
         generated = generate_unit_checklist(
             unit_type=unit_type,
             title=unit.title,
@@ -2374,7 +2376,33 @@ def _create_unit_with_generated_checklist(
             document_path=unit.document_path,
         )
     except NotebookLMGenerationUnavailableError as exc:
+        if uploaded_document_path is not None:
+            try:
+                uploaded_document_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+        db.rollback()
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        if uploaded_document_path is not None:
+            try:
+                uploaded_document_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+        db.rollback()
+        logger.exception(
+            "workflow.unit.start_failed",
+            extra={
+                "class_id": int(class_id),
+                "unit_type": str(unit_type.value),
+                "title": str(unit.title or "").strip(),
+                "has_file": bool(file is not None),
+            },
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Unit start failed while processing the source content ({exc.__class__.__name__}).",
+        ) from exc
     _store_generated_checklist_on_unit(
         db,
         unit=unit,

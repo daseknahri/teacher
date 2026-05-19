@@ -1875,6 +1875,36 @@ def test_workflow_blueprint_records_requested_provider_when_falling_back(client,
     assert blueprint["raw_provider_response"]["error_message"] == "notebooklm_client_unavailable"
 
 
+def test_workflow_unit_start_cleans_up_after_processing_failure(client, monkeypatch):
+    from app.routers import workflow as workflow_router
+
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Start Failure Class", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("provider exploded")
+
+    monkeypatch.setattr(workflow_router, "generate_unit_checklist", _boom)
+
+    start_unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Failure chapter",
+            "source_text": "1. Introduction\n2. Practice",
+        },
+    )
+    assert start_unit_resp.status_code == 500
+    assert "Unit start failed while processing the source content (RuntimeError)." == start_unit_resp.json()["detail"]
+
+    workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_resp.status_code == 200
+    assert workspace_resp.json().get("active_unit") is None
+
+
 def test_workflow_unit_reextract_updates_checklist_and_blueprint(client, monkeypatch):
     from app.routers import workflow as workflow_router
 
