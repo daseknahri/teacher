@@ -3790,20 +3790,21 @@ function _renderCalendar(el, classId) {
               <div>
                 <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Classroom Snapshot</p>
                 <p class="mt-1 text-[15px] font-semibold text-slate-800">Attendance, delivered structure, and session note</p>
-                <p class="mt-1 text-[12px] text-slate-500">A quick record of who was absent, what structure was captured, and any session note.</p>
+                <p class="mt-1 text-[12px] text-slate-500">A compact classroom record for this lesson.</p>
               </div>
               <div class="flex gap-2 flex-wrap text-[11px]">
+                <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600">${selectedPresentCount} present</span>
                 <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600">${selectedAbsentCount} absent</span>
                 <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600">${selectedHeadlineCount} headlines</span>
                 <span class="badge ${selectedSessionNotePreview ? 'badge-blue' : 'badge-gray'}">${selectedSessionNotePreview ? 'Note saved' : 'No note yet'}</span>
               </div>
             </div>
-            <div class="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
+            <div class="mt-4 grid grid-cols-1 xl:grid-cols-[0.95fr_1.05fr_0.9fr] gap-3">
               <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                 <div class="flex items-center justify-between gap-2">
                   <div>
                     <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Absent Students</h4>
-                    <p class="mt-1 text-[12px] text-slate-500">Students marked absent for this session.</p>
+                    <p class="mt-1 text-[12px] text-slate-500">Who missed this lesson.</p>
                   </div>
                   <button id="btn-edit-selected-attendance" class="btn btn-ghost btn-sm" ${selectedCanAttendanceEdit ? '' : 'disabled'} title="${_escapeHtml(selectedAttendanceTitle)}">Edit Attendance</button>
                 </div>
@@ -3815,40 +3816,42 @@ function _renderCalendar(el, classId) {
              <button id="btn-retry-session-detail" class="btn btn-ghost btn-sm self-start">Retry details</button>
            </div>`
         : absentRows.length
-          ? `<div class="mt-3 flex flex-col gap-2">
+          ? `<div class="mt-3 flex flex-col gap-2 max-h-[220px] overflow-auto pr-1">
                   ${absentRows.map(row => `
                   <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-700">
                     ${_escapeHtml(row.name)}
                     ${row.code ? `<span class="text-[11px] text-slate-400">(${_escapeHtml(row.code)})</span>` : ''}
                   </div>`).join('')}
                </div>`
-          : '<p class="text-[12px] text-slate-500 mt-2">No absent students for this session.</p>'}
+          : '<div class="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3 text-[12px] text-emerald-700">No absent students were recorded for this session.</div>'}
               </div>
 
               <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                 <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Headlines Structure</h4>
-                <p class="mt-1 text-[12px] text-slate-500">The recorded structure captured for the delivered lesson.</p>
+                <p class="mt-1 text-[12px] text-slate-500">The captured structure of what was taught.</p>
                 ${_selectedSessionLoading
       ? '<p class="text-[12px] text-slate-500 mt-2">Loading session progress...</p>'
       : _selectedSessionError
         ? '<p class="text-[12px] text-slate-500 mt-2">Unable to load detailed progress. Showing available calendar data only.</p>'
         : ''}
                 ${headlineBlocks.length
-      ? `<div class="mt-3 flex flex-col gap-3">
+      ? `<div class="mt-3 flex flex-col gap-2 max-h-[220px] overflow-auto pr-1">
                  ${headlineBlocks.map(block => `
                  <div class="rounded-xl border border-slate-200 bg-white px-3 py-3">
-                   <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(block.label)}</p>
+                   <div class="flex items-center justify-between gap-2">
+                     <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(block.label)}</p>
+                     <span class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">${Array.isArray(block.items) ? block.items.length : 0} item${Array.isArray(block.items) && block.items.length === 1 ? '' : 's'}</span>
+                   </div>
                    <ul class="mt-2 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
                      ${block.items.map(item => `<li>${_escapeHtml(item)}</li>`).join('')}
                    </ul>
                  </div>`).join('')}
                </div>`
-      : '<p class="text-[12px] text-slate-500 mt-2">No headlines recorded for this session.</p>'}
+      : '<div class="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-3 text-[12px] text-slate-500">No headlines were recorded for this session.</div>'}
               </div>
-            </div>
-            <div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+            <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
               <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Session Note</h4>
-              <p class="mt-1 text-[12px] text-slate-500">Teacher note saved for this lesson.</p>
+              <p class="mt-1 text-[12px] text-slate-500">Teacher note captured for this lesson.</p>
               ${selectedSessionNotePreview
       ? `<p class="mt-2 text-[13px] text-slate-700 whitespace-pre-wrap leading-relaxed">${_escapeHtml(selectedSessionNotePreview)}</p>${selectedSessionNote.length > selectedSessionNotePreview.length ? '<p class="mt-2 text-[11px] text-slate-400">The note is longer in full edit view.</p>' : ''}`
       : '<p class="text-[12px] text-slate-500 mt-2">No note for this session.</p>'}
@@ -3880,31 +3883,41 @@ function _renderCalendar(el, classId) {
                   ? '<p class="text-[12px] text-slate-500 mt-2">This workflow session has no saved unit-session number yet.</p>'
                     : `
                       <div class="mt-3 flex flex-col gap-3">
-                        <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                          <p class="text-[12px] font-semibold text-slate-700">Unit Session ${Number(selectedSessionNumber)}</p>
-                          <div class="mt-2 flex items-center gap-2 flex-wrap">
-                            <span class="badge ${plannedSessionStatus.className}">${_escapeHtml(plannedSessionStatus.label)}</span>
-                            ${plannedSessionFlat.length ? `<span class="text-[11px] text-slate-500">${_escapeHtml(plannedSessionStatus.hint)}</span>` : ''}
+                        <div class="grid grid-cols-1 lg:grid-cols-[0.85fr_1.15fr] gap-3">
+                          <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                            <p class="text-[12px] font-semibold text-slate-700">Unit Session ${Number(selectedSessionNumber)}</p>
+                            <div class="mt-2 flex items-center gap-2 flex-wrap">
+                              <span class="badge ${plannedSessionStatus.className}">${_escapeHtml(plannedSessionStatus.label)}</span>
+                            </div>
+                            <p class="mt-2 text-[12px] text-slate-600 leading-relaxed">${_escapeHtml(plannedSessionStatus.hint)}</p>
+                            <p class="mt-2 text-[11px] text-slate-400">Planned checklist path for this saved unit session.</p>
                           </div>
-                          <p class="mt-2 text-[12px] text-slate-500">Planned checklist path for this saved unit session.</p>
+                          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                            <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">Session Route Brief</p>
+                            ${plannedSessionSummary.length
+                              ? `<div class="flex flex-wrap gap-2">
+                                  ${plannedSessionSummary.map(label => `<span class="badge badge-gray">${_escapeHtml(label)}</span>`).join('')}
+                                </div>`
+                              : '<p class="text-[12px] text-slate-500">No saved route summary for this session yet.</p>'}
+                          </div>
                         </div>
-                        ${plannedSessionSummary.length ? `
-                          <div class="flex flex-wrap gap-2">
-                            ${plannedSessionSummary.map(label => `<span class="badge badge-gray">${_escapeHtml(label)}</span>`).join('')}
-                          </div>` : ''}
                         ${plannedResumeNodeId != null ? '<p class="text-[11px] text-amber-700">The first unfinished planned row is marked below as <span class="font-semibold">Resume here</span>.</p>' : ''}
                         ${_calendarPlannedHideDone && plannedSessionDoneCount > 0 ? '<p class="text-[11px] text-amber-700">Showing only remaining planned rows.</p>' : ''}
                         ${_calendarPlannedHideDone && plannedSessionDoneCount > 0 && !visiblePlannedSessionTree.length
                           ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">All planned rows for this session are already completed. Use <span class="font-semibold">Show Completed Rows</span> if you want to review them.</div>'
                           : ''}
-                        <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                          <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">Planned Route</p>
-                          ${_renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId })}
-                        </div>
-                        ${plannedResumeNode ? _renderCalendarNextFocusActions(plannedResumeSectionPlan, plannedResumePlaybookEntry, plannedResumeNode.title, { classId, unitId: selectedEvent?.unit_id }) : ''}
-                        <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                          <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Matched Section Plans</p>
-                          ${_renderCalendarSectionPlans(selectedSectionPlans, plannedSessionTitles)}
+                        <div class="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-3">
+                          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                            <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">Planned Route</p>
+                            ${_renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId })}
+                          </div>
+                          <div class="flex flex-col gap-3">
+                            ${plannedResumeNode ? _renderCalendarNextFocusActions(plannedResumeSectionPlan, plannedResumePlaybookEntry, plannedResumeNode.title, { classId, unitId: selectedEvent?.unit_id }) : ''}
+                            <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                              <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Matched Section Plans</p>
+                              ${_renderCalendarSectionPlans(selectedSectionPlans, plannedSessionTitles)}
+                            </div>
+                          </div>
                         </div>
                       </div>`}
           </div>
