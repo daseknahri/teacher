@@ -1036,6 +1036,21 @@ function _renderCalendarSessionMatchedGuidance(items, { canImport = false, impor
   `;
 }
 
+function _renderCalendarSessionGuidanceSummary(totalCount, importedCount, hideImported = false) {
+  const total = Number(totalCount || 0);
+  const imported = Number(importedCount || 0);
+  const remaining = Math.max(0, total - imported);
+  if (!total) return '';
+  return `
+    <div class="mt-2 flex flex-wrap gap-2">
+      <span class="badge badge-gray">${remaining} remaining</span>
+      <span class="badge badge-gray">${imported} imported</span>
+      <span class="badge badge-gray">${total} total</span>
+      ${hideImported ? '<span class="badge badge-amber">Remaining only</span>' : ''}
+    </div>
+  `;
+}
+
 function _renderCalendarGuidanceQuickPickButtons(items, prefix) {
   const visible = Array.isArray(items) ? items.slice(0, 2) : [];
   if (!visible.length) return '';
@@ -3638,6 +3653,7 @@ function _renderCalendar(el, classId) {
                 <div>
                   <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
                   <p class="text-[12px] text-slate-500 mt-1">Reusable unit help that matches this planned session route.</p>
+                  ${_renderCalendarSessionGuidanceSummary(selectedMatchedGuidance.length, selectedImportedGuidanceIds.size, _calendarSessionGuidanceHideImported)}
                 </div>
                 ${selectedImportedGuidanceIds.size > 0
                   ? `<button id="btn-calendar-session-guidance-hide-imported-toggle" class="btn btn-ghost btn-sm">${_calendarSessionGuidanceHideImported ? 'Show Imported' : 'Hide Imported'}</button>`
