@@ -3722,9 +3722,13 @@ function _renderCalendar(el, classId) {
       : '<p class="text-[12px] text-slate-500 mt-2">No note for this session.</p>'}
             </div>
           </div>
-          <div class="p-3 rounded-xl border border-slate-200">
-            <div class="flex items-center justify-between gap-2 flex-wrap">
-              <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Planned Teaching Flow</h4>
+          <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Teaching Plan</p>
+                <h4 class="mt-1 text-[15px] font-semibold text-slate-800">Planned Teaching Flow</h4>
+                <p class="mt-1 text-[12px] text-slate-500">What this unit session was supposed to cover, in teaching order.</p>
+              </div>
               ${plannedSessionDoneCount > 0
                 ? `<button id="btn-calendar-planned-hide-done-toggle" class="btn btn-ghost btn-sm !text-amber-700">${_calendarPlannedHideDone ? 'Show Completed Rows' : 'Hide Completed Rows'}</button>`
                 : ''}
@@ -3738,11 +3742,14 @@ function _renderCalendar(el, classId) {
                 : !selectedSessionNumber
                   ? '<p class="text-[12px] text-slate-500 mt-2">This workflow session has no saved unit-session number yet.</p>'
                     : `
-                      <div class="mt-2 flex flex-col gap-3">
-                        <p class="text-[12px] text-slate-500">Planned checklist path for unit session ${Number(selectedSessionNumber)}.</p>
-                        <div class="flex items-center gap-2 flex-wrap">
-                          <span class="badge ${plannedSessionStatus.className}">${_escapeHtml(plannedSessionStatus.label)}</span>
-                          ${plannedSessionFlat.length ? `<span class="text-[11px] text-slate-500">${_escapeHtml(plannedSessionStatus.hint)}</span>` : ''}
+                      <div class="mt-3 flex flex-col gap-3">
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-3">
+                          <p class="text-[12px] font-semibold text-slate-700">Unit Session ${Number(selectedSessionNumber)}</p>
+                          <div class="mt-2 flex items-center gap-2 flex-wrap">
+                            <span class="badge ${plannedSessionStatus.className}">${_escapeHtml(plannedSessionStatus.label)}</span>
+                            ${plannedSessionFlat.length ? `<span class="text-[11px] text-slate-500">${_escapeHtml(plannedSessionStatus.hint)}</span>` : ''}
+                          </div>
+                          <p class="mt-2 text-[12px] text-slate-500">Planned checklist path for this saved unit session.</p>
                         </div>
                         ${plannedSessionSummary.length ? `
                           <div class="flex flex-wrap gap-2">
@@ -3753,18 +3760,24 @@ function _renderCalendar(el, classId) {
                         ${_calendarPlannedHideDone && plannedSessionDoneCount > 0 && !visiblePlannedSessionTree.length
                           ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">All planned rows for this session are already completed. Use <span class="font-semibold">Show Completed Rows</span> if you want to review them.</div>'
                           : ''}
-                        ${_renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId })}
+                        <div class="rounded-2xl border border-slate-200 bg-white px-3 py-3">
+                          ${_renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId })}
+                        </div>
                         ${plannedResumeNode ? _renderCalendarNextFocusActions(plannedResumeSectionPlan, plannedResumePlaybookEntry, plannedResumeNode.title, { classId, unitId: selectedEvent?.unit_id }) : ''}
-                        <div>
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-3">
                           <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Matched Section Plans</p>
                           ${_renderCalendarSectionPlans(selectedSectionPlans, plannedSessionTitles)}
                         </div>
                       </div>`}
           </div>
 
-          <div class="p-3 rounded-xl border border-slate-200">
-            <div class="flex items-center justify-between gap-2 flex-wrap">
-              <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Teacher Prep Suggestions</h4>
+          <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Teacher Support</p>
+                <h4 class="mt-1 text-[15px] font-semibold text-slate-800">Teacher Prep Suggestions</h4>
+                <p class="mt-1 text-[12px] text-slate-500">NotebookLM-backed help for preparing this exact session route.</p>
+              </div>
               ${canShortcutToWorkflowTools
                 ? `<div class="flex items-center gap-2 flex-wrap">
                     <button id="btn-open-selected-unit-assistant" class="btn btn-ghost btn-sm">Ask This Unit</button>
@@ -3782,9 +3795,13 @@ function _renderCalendar(el, classId) {
                   : _renderCalendarTeacherPrep(selectedUnitMap, plannedSessionTitles)}
           </div>
 
-          <div class="p-3 rounded-xl border border-slate-200">
-            <div class="flex items-center justify-between gap-2 flex-wrap">
-              <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Textbook Write-Up</h4>
+          <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Session Record</p>
+                <h4 class="mt-1 text-[15px] font-semibold text-slate-800">Textbook Write-Up</h4>
+                <p class="mt-1 text-[12px] text-slate-500">The saved teaching summary for what really happened in class.</p>
+              </div>
               <div class="flex items-center gap-2 flex-wrap">
                 ${selectedWriteup
                   ? `<span class="badge ${selectedWriteup.approved === false ? 'badge-amber' : 'badge-green'}">${selectedWriteup.approved === false ? 'Draft' : 'Approved'}</span>`
@@ -3809,7 +3826,7 @@ function _renderCalendar(el, classId) {
                   : ''}
               </div>
             </div>
-            <div class="rounded-xl border border-slate-200 bg-slate-50 p-3 mt-2">
+            <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 mt-3">
               <div class="flex items-start justify-between gap-3 flex-wrap">
                 <div>
                   <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
@@ -3850,7 +3867,7 @@ function _renderCalendar(el, classId) {
               ? '<p class="text-[12px] text-slate-500 mt-2">Loading workflow write-up...</p>'
               : selectedWriteup
                 ? `
-                  <div class="mt-2 flex flex-col gap-3">
+                  <div class="mt-3 flex flex-col gap-3">
                     <p class="text-[13px] font-semibold text-slate-700">${_escapeHtml(selectedWriteup.title || 'Session write-up')}</p>
                     ${_renderCalendarImportedGuidanceSummary(selectedWriteup.source_payload)}
                     ${Array.isArray(selectedWriteup.learning_focus) && selectedWriteup.learning_focus.length ? `
