@@ -390,6 +390,7 @@ function _collectSessionBlueprintNodes(nodes, sessionNumber) {
       title: String(rawNode.title || '').trim(),
       kind: String(rawNode.kind || '').trim(),
       session_number: ownSession > 0 ? ownSession : null,
+      is_completed: Boolean(rawNode.is_completed || rawNode.done),
       children: childMatches,
     });
     return acc;
@@ -430,6 +431,39 @@ function _flattenCalendarBlueprintTitles(nodes, output = []) {
     _flattenCalendarBlueprintTitles(node.children || [], output);
   });
   return output;
+}
+
+function _flattenCalendarBlueprintNodes(nodes, output = []) {
+  const rows = Array.isArray(nodes) ? nodes : [];
+  rows.forEach(node => {
+    if (!node || typeof node !== 'object') return;
+    output.push(node);
+    _flattenCalendarBlueprintNodes(node.children || [], output);
+  });
+  return output;
+}
+
+function _buildCalendarPlannedSessionSummary(nodes) {
+  const flat = _flattenCalendarBlueprintNodes(nodes, []);
+  if (!flat.length) return [];
+  const done = flat.filter(node => Boolean(node?.is_completed)).length;
+  const remaining = Math.max(0, flat.length - done);
+  const kindCounts = flat.reduce((acc, node) => {
+    const kind = String(node?.kind || '').trim().toLowerCase();
+    if (!kind || kind === 'other') return acc;
+    acc[kind] = Number(acc[kind] || 0) + 1;
+    return acc;
+  }, {});
+  return [
+    `${flat.length} planned items`,
+    `${done}/${flat.length} done`,
+    `${remaining} remaining`,
+    kindCounts.activity ? `${kindCounts.activity} activities` : '',
+    kindCounts.example ? `${kindCounts.example} examples` : '',
+    kindCounts.exercise ? `${kindCounts.exercise} exercises` : '',
+    kindCounts.definition ? `${kindCounts.definition} definitions` : '',
+    kindCounts.property ? `${kindCounts.property} properties` : '',
+  ].filter(Boolean);
 }
 
 function _renderCalendarSectionPlans(sectionPlans, plannedTitles) {
@@ -2719,6 +2753,7 @@ function _renderCalendar(el, classId) {
     : [];
   const plannedSessionTree = selectedSessionNumber ? _collectSessionBlueprintNodes(selectedBlueprintTree, selectedSessionNumber) : [];
   const plannedSessionTitles = _flattenCalendarBlueprintTitles(plannedSessionTree, []);
+  const plannedSessionSummary = _buildCalendarPlannedSessionSummary(plannedSessionTree);
   const selectedUnitMap = selectedBlueprint?.unit_map_json && typeof selectedBlueprint.unit_map_json === 'object'
     ? selectedBlueprint.unit_map_json
     : {};
@@ -3062,11 +3097,15 @@ function _renderCalendar(el, classId) {
                 ? '<p class="text-[12px] text-slate-500 mt-2">This session is not linked to a workflow unit.</p>'
                 : selectedBlueprintError
                   ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedBlueprintError)}</p>`
-                  : !selectedSessionNumber
-                    ? '<p class="text-[12px] text-slate-500 mt-2">This workflow session has no saved unit-session number yet.</p>'
-                    : `
+                : !selectedSessionNumber
+                  ? '<p class="text-[12px] text-slate-500 mt-2">This workflow session has no saved unit-session number yet.</p>'
+                  : `
                       <div class="mt-2 flex flex-col gap-3">
                         <p class="text-[12px] text-slate-500">Planned checklist path for unit session ${Number(selectedSessionNumber)}.</p>
+                        ${plannedSessionSummary.length ? `
+                          <div class="flex flex-wrap gap-2">
+                            ${plannedSessionSummary.map(label => `<span class="badge badge-gray">${_escapeHtml(label)}</span>`).join('')}
+                          </div>` : ''}
                         ${_renderCalendarBlueprintTree(plannedSessionTree)}
                         <div>
                           <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Matched Section Plans</p>
