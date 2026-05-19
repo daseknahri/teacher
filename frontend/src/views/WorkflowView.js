@@ -39,6 +39,9 @@ let _sessionGuidanceHideImported = false;
 let _sessionGuidanceKindFilter = 'all';
 let _sessionGuidanceCollapseImported = false;
 let _sessionGuidanceStateSessionId = null;
+let _workflowCollapsePlannedRoute = false;
+let _workflowCollapseSessionProgress = false;
+let _workflowCollapseSessionWriteup = false;
 const _collapsedChecklistIds = new Set();
 const _inFlightActions = new Set();
 const _sessionProgressCache = new Map();
@@ -2904,6 +2907,9 @@ function _render(el, classId) {
     _sessionGuidanceHideImported = false;
     _sessionGuidanceKindFilter = 'all';
     _sessionGuidanceCollapseImported = false;
+    _workflowCollapsePlannedRoute = false;
+    _workflowCollapseSessionProgress = false;
+    _workflowCollapseSessionWriteup = false;
   }
   const sessionProgressState = session ? _getSessionProgressState(session.id) : _emptySessionProgressState();
   const sessionWriteupState = session ? _getSessionWriteupState(session.id) : _emptySessionWriteupState();
@@ -3449,9 +3455,14 @@ function _render(el, classId) {
                   <h4 class="text-[13px] font-semibold text-slate-700">Planned Session Route</h4>
                   <p class="text-[12px] text-slate-500">What this unit session was planned to cover before live teaching started.</p>
                 </div>
-                ${session?.unit_session_number ? `<span class="badge badge-blue">Unit Session ${session.unit_session_number}</span>` : ''}
+                <div class="flex items-center gap-2 flex-wrap">
+                  ${session?.unit_session_number ? `<span class="badge badge-blue">Unit Session ${session.unit_session_number}</span>` : ''}
+                  <button id="btn-toggle-session-planned-route" class="btn btn-ghost btn-sm">${_workflowCollapsePlannedRoute ? 'Expand' : 'Collapse'}</button>
+                </div>
               </div>
-              ${unitBlueprintState.loading && !activeBlueprint ? '<p class="text-[12px] text-slate-500">Loading planned route...</p>'
+              ${_workflowCollapsePlannedRoute
+                ? '<p class="text-[12px] text-slate-500">Planned session route is collapsed. Expand it when you want to review the saved route and teacher prep for this lesson.</p>'
+                : unitBlueprintState.loading && !activeBlueprint ? '<p class="text-[12px] text-slate-500">Loading planned route...</p>'
                 : unitBlueprintState.error ? `<p class="text-[12px] text-red-600">${_escapeHtml(unitBlueprintState.error)}</p>`
                   : !session?.unit_session_number ? '<p class="text-[12px] text-slate-500">This session has no saved unit-session number yet.</p>'
                     : `
@@ -3469,12 +3480,15 @@ function _render(el, classId) {
                   <h4 class="text-[13px] font-semibold text-slate-700">Session Progress</h4>
                   <p class="text-[12px] text-slate-500">Confirmed extraction items saved in this session.</p>
                 </div>
-                <div class="flex gap-2">
+                <div class="flex gap-2 flex-wrap">
                   ${!sessionProgressState.loaded ? '<button id="btn-load-session-progress" class="btn btn-ghost btn-sm">Load</button>' : ''}
                   <button id="btn-refresh-session-progress" class="btn btn-ghost btn-sm">Refresh</button>
+                  <button id="btn-toggle-session-progress" class="btn btn-ghost btn-sm">${_workflowCollapseSessionProgress ? 'Expand' : 'Collapse'}</button>
                 </div>
               </div>
-              ${sessionProgressState.loading
+              ${_workflowCollapseSessionProgress
+        ? '<p class="text-[12px] text-slate-500">Session progress is collapsed. Expand it when you want to review confirmed progress rows from this lesson.</p>'
+        : sessionProgressState.loading
         ? '<p class="text-[12px] text-slate-500">Loading session progress...</p>'
         : sessionProgressState.error
           ? `<p class="text-[12px] text-red-600">${_escapeHtml(sessionProgressState.error)}</p>`
@@ -3497,6 +3511,8 @@ function _render(el, classId) {
                   <h4 class="text-[13px] font-semibold text-slate-700">Session Write-Up</h4>
                   <p class="text-[12px] text-slate-500">Generate and review the textbook text for this session.</p>
                 </div>
+                <div class="flex flex-col items-start sm:items-end gap-2">
+                  <button id="btn-toggle-session-writeup" class="btn btn-ghost btn-sm">${_workflowCollapseSessionWriteup ? 'Expand' : 'Collapse'}</button>
                 <div class="rounded-2xl border border-slate-200 bg-white px-3 py-3 flex flex-col gap-2 min-w-[250px]">
                   <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Main actions</p>
@@ -3513,6 +3529,9 @@ function _render(el, classId) {
                   </div>
                 </div>
               </div>
+              ${_workflowCollapseSessionWriteup
+                ? '<p class="text-[12px] text-slate-500">Session write-up is collapsed. Expand it when you want to review, edit, or reuse the saved lesson summary.</p>'
+                : `
               <div class="rounded-xl border border-slate-200 bg-white p-3 flex flex-col gap-2">
                 <div class="flex items-start justify-between gap-3 flex-wrap">
                   <div>
@@ -3607,6 +3626,7 @@ function _render(el, classId) {
                 ${_renderWriteupSourcePayload(sessionWriteupState.item.source_payload, { compact: false })}
               </div>`
             : '<p class="text-[12px] text-slate-500">No saved write-up yet. Generate one after checking the completed items.</p>'}
+              `}
             </div>
             ${checklist.length ? `
             <div class="flex flex-col gap-1">
@@ -5116,6 +5136,18 @@ function _bindWorkflowEvents(el, classId) {
     await _withActionLock(`workflow:session-progress:${classId}`, async () => {
       await loadActiveSessionProgress({ force: false, notify: true });
     });
+  });
+  el.querySelector('#btn-toggle-session-planned-route')?.addEventListener('click', () => {
+    _workflowCollapsePlannedRoute = !_workflowCollapsePlannedRoute;
+    _render(el, classId);
+  });
+  el.querySelector('#btn-toggle-session-progress')?.addEventListener('click', () => {
+    _workflowCollapseSessionProgress = !_workflowCollapseSessionProgress;
+    _render(el, classId);
+  });
+  el.querySelector('#btn-toggle-session-writeup')?.addEventListener('click', () => {
+    _workflowCollapseSessionWriteup = !_workflowCollapseSessionWriteup;
+    _render(el, classId);
   });
 
   el.querySelector('#btn-refresh-session-progress')?.addEventListener('click', async () => {

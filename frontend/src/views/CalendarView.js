@@ -22,6 +22,9 @@ let _calendarSessionGuidanceHideImported = false;
 let _calendarSessionGuidanceKindFilter = 'all';
 let _calendarSessionGuidanceCollapseImported = false;
 let _calendarSessionGuidanceStateSessionId = null;
+let _calendarCollapsePlannedFlow = false;
+let _calendarCollapseTeacherPrep = false;
+let _calendarCollapseWriteup = false;
 let _holidayByDate = new Map();
 const _timetableRulesByClass = new Map();
 const _timetableExceptionsByClass = new Map();
@@ -3408,6 +3411,15 @@ function _renderCalendar(el, classId) {
   const selectedAttendanceTitle = selectedCanAttendanceEdit
     ? 'Update absent/present students for this session.'
     : 'Future sessions cannot take attendance yet.';
+  if (_calendarSessionGuidanceStateSessionId !== Number(selectedEvent?.session_id || 0)) {
+    _calendarSessionGuidanceStateSessionId = Number(selectedEvent?.session_id || 0) || null;
+    _calendarSessionGuidanceHideImported = false;
+    _calendarSessionGuidanceKindFilter = 'all';
+    _calendarSessionGuidanceCollapseImported = false;
+    _calendarCollapsePlannedFlow = false;
+    _calendarCollapseTeacherPrep = false;
+    _calendarCollapseWriteup = false;
+  }
 
   const weekStartKey = weekDays[0]?.key || _dateKey(_weekStart);
   const weekEndKey = weekDays[6]?.key || weekStartKey;
@@ -3763,11 +3775,16 @@ function _renderCalendar(el, classId) {
                 <h4 class="mt-1 text-[15px] font-semibold text-slate-800">Planned Teaching Flow</h4>
                 <p class="mt-1 text-[12px] text-slate-500">What this unit session was supposed to cover, in teaching order.</p>
               </div>
-              ${plannedSessionDoneCount > 0
-                ? `<button id="btn-calendar-planned-hide-done-toggle" class="btn btn-ghost btn-sm !text-amber-700">${_calendarPlannedHideDone ? 'Show Completed Rows' : 'Hide Completed Rows'}</button>`
-                : ''}
+              <div class="flex items-center gap-2 flex-wrap">
+                ${plannedSessionDoneCount > 0
+                  ? `<button id="btn-calendar-planned-hide-done-toggle" class="btn btn-ghost btn-sm !text-amber-700">${_calendarPlannedHideDone ? 'Show Completed Rows' : 'Hide Completed Rows'}</button>`
+                  : ''}
+                <button id="btn-calendar-toggle-planned-flow" class="btn btn-ghost btn-sm">${_calendarCollapsePlannedFlow ? 'Expand' : 'Collapse'}</button>
+              </div>
             </div>
-            ${_selectedSessionLoading
+            ${_calendarCollapsePlannedFlow
+              ? '<p class="text-[12px] text-slate-500 mt-3">Planned teaching flow is collapsed. Expand it when you want to review the saved route for this session.</p>'
+              : _selectedSessionLoading
               ? '<p class="text-[12px] text-slate-500 mt-2">Loading planned unit flow...</p>'
               : selectedEvent.unit_id == null
                 ? '<p class="text-[12px] text-slate-500 mt-2">This session is not linked to a workflow unit.</p>'
@@ -3812,15 +3829,20 @@ function _renderCalendar(el, classId) {
                 <h4 class="mt-1 text-[15px] font-semibold text-slate-800">Teacher Prep Suggestions</h4>
                 <p class="mt-1 text-[12px] text-slate-500">NotebookLM-backed help for preparing this exact session route.</p>
               </div>
-              ${canShortcutToWorkflowTools
-                ? `<div class="flex items-center gap-2 flex-wrap">
+              <div class="flex items-center gap-2 flex-wrap">
+                ${canShortcutToWorkflowTools
+                  ? `<div class="flex items-center gap-2 flex-wrap">
                     <button id="btn-open-selected-unit-assistant" class="btn btn-ghost btn-sm">Ask This Unit</button>
                     <button id="btn-open-selected-material-studio" class="btn btn-ghost btn-sm">Material Studio</button>
                     <button id="btn-open-selected-ai-details" class="btn btn-ghost btn-sm">AI Details</button>
                   </div>`
-                : ''}
+                  : ''}
+                <button id="btn-calendar-toggle-teacher-prep" class="btn btn-ghost btn-sm">${_calendarCollapseTeacherPrep ? 'Expand' : 'Collapse'}</button>
+              </div>
             </div>
-            ${_selectedSessionLoading
+            ${_calendarCollapseTeacherPrep
+              ? '<p class="text-[12px] text-slate-500 mt-3">Teacher prep suggestions are collapsed. Expand this section when you want notebook-backed preparation ideas for the session.</p>'
+              : _selectedSessionLoading
               ? '<p class="text-[12px] text-slate-500 mt-2">Loading prep suggestions...</p>'
               : selectedEvent.unit_id == null
                 ? '<p class="text-[12px] text-slate-500 mt-2">This session is not linked to a workflow unit.</p>'
@@ -3840,6 +3862,7 @@ function _renderCalendar(el, classId) {
                 ${selectedWriteup
                   ? `<span class="badge ${selectedWriteup.approved === false ? 'badge-amber' : 'badge-green'}">${selectedWriteup.approved === false ? 'Draft' : 'Approved'}</span>`
                   : ''}
+                <button id="btn-calendar-toggle-writeup" class="btn btn-ghost btn-sm">${_calendarCollapseWriteup ? 'Expand' : 'Collapse'}</button>
                 <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3 flex flex-col gap-2 min-w-[260px]">
                   <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Main actions</p>
@@ -3868,6 +3891,9 @@ function _renderCalendar(el, classId) {
                 </div>
               </div>
             </div>
+            ${_calendarCollapseWriteup
+              ? '<p class="text-[12px] text-slate-500 mt-3">The textbook write-up is collapsed. Expand it when you want to review, edit, or reuse the lesson summary.</p>'
+              : `
             <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 mt-3">
               <div class="flex items-start justify-between gap-3 flex-wrap">
                 <div>
@@ -3954,7 +3980,7 @@ function _renderCalendar(el, classId) {
                   ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedWriteupError)}</p>`
                   : selectedEvent.unit_id == null
                     ? '<p class="text-[12px] text-slate-500 mt-2">This session is not linked to a workflow unit.</p>'
-                    : '<p class="text-[12px] text-slate-500 mt-2">No saved textbook write-up for this session yet.</p>'}
+                    : '<p class="text-[12px] text-slate-500 mt-2">No saved textbook write-up for this session yet.</p>'}`}
           </div>
         </div>
       </div>` : `
@@ -4210,6 +4236,9 @@ function _renderCalendar(el, classId) {
     _selectedSessionError = null;
     _selectedSessionLoading = false;
     _calendarPlannedHideDone = false;
+    _calendarCollapsePlannedFlow = false;
+    _calendarCollapseTeacherPrep = false;
+    _calendarCollapseWriteup = false;
     const nextWeekDays = _buildWeekDays(_weekStart);
     await Promise.all([
       _loadWeekHolidays(_weekStart).catch(() => {}),
@@ -4224,6 +4253,9 @@ function _renderCalendar(el, classId) {
     _selectedSessionError = null;
     _selectedSessionLoading = false;
     _calendarPlannedHideDone = false;
+    _calendarCollapsePlannedFlow = false;
+    _calendarCollapseTeacherPrep = false;
+    _calendarCollapseWriteup = false;
     const nextWeekDays = _buildWeekDays(_weekStart);
     await Promise.all([
       _loadWeekHolidays(_weekStart).catch(() => {}),
@@ -4238,6 +4270,9 @@ function _renderCalendar(el, classId) {
     _selectedSessionError = null;
     _selectedSessionLoading = false;
     _calendarPlannedHideDone = false;
+    _calendarCollapsePlannedFlow = false;
+    _calendarCollapseTeacherPrep = false;
+    _calendarCollapseWriteup = false;
     const nextWeekDays = _buildWeekDays(_weekStart);
     await Promise.all([
       _loadWeekHolidays(_weekStart).catch(() => {}),
@@ -4251,6 +4286,9 @@ function _renderCalendar(el, classId) {
     _selectedSessionError = null;
     _selectedSessionLoading = false;
     _calendarPlannedHideDone = false;
+    _calendarCollapsePlannedFlow = false;
+    _calendarCollapseTeacherPrep = false;
+    _calendarCollapseWriteup = false;
     _renderCalendar(el, classId);
   });
 
@@ -4708,6 +4746,18 @@ function _renderCalendar(el, classId) {
   });
   el.querySelector('#btn-calendar-session-guidance-hide-imported-toggle')?.addEventListener('click', () => {
     _calendarSessionGuidanceHideImported = !_calendarSessionGuidanceHideImported;
+    _renderCalendar(el, classId);
+  });
+  el.querySelector('#btn-calendar-toggle-planned-flow')?.addEventListener('click', () => {
+    _calendarCollapsePlannedFlow = !_calendarCollapsePlannedFlow;
+    _renderCalendar(el, classId);
+  });
+  el.querySelector('#btn-calendar-toggle-teacher-prep')?.addEventListener('click', () => {
+    _calendarCollapseTeacherPrep = !_calendarCollapseTeacherPrep;
+    _renderCalendar(el, classId);
+  });
+  el.querySelector('#btn-calendar-toggle-writeup')?.addEventListener('click', () => {
+    _calendarCollapseWriteup = !_calendarCollapseWriteup;
     _renderCalendar(el, classId);
   });
   el.querySelector('#btn-calendar-session-guidance-reset-filters')?.addEventListener('click', () => {
