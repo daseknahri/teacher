@@ -181,6 +181,7 @@ function _consumeCalendarViewIntent() {
     return {
       session_id: Number(parsed.session_id || 0) || null,
       session_date: String(parsed.session_date || '').trim(),
+      preview_hide_done: Boolean(parsed.preview_hide_done),
     };
   } catch {
     try { sessionStorage.removeItem(CALENDAR_VIEW_INTENT_KEY); } catch {}
@@ -2670,6 +2671,7 @@ export async function renderCalendarView() {
     _selectedSessionId = Number(pendingCalendarIntent.session_id);
     _selectedSessionError = null;
     _selectedSessionLoading = false;
+    _calendarPlannedHideDone = Boolean(pendingCalendarIntent.preview_hide_done);
   }
 
   if (!classId) {

@@ -5029,6 +5029,7 @@ function _bindWorkflowEvents(el, classId) {
       _setCalendarViewIntent({
         session_id: _workflowEntryContext.session_id,
         session_date: _workflowEntryContext.session_date,
+        preview_hide_done: _workflowPreviewHideDone,
       });
     }
     navigate('calendar');
