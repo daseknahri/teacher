@@ -513,6 +513,18 @@ function _renderCalendarSectionPlans(sectionPlans, plannedTitles) {
   `).join('');
 }
 
+function _findCalendarSectionPlanForTitle(sectionPlans, title) {
+  const target = String(title || '').trim().toLowerCase();
+  if (!target) return null;
+  const plans = Array.isArray(sectionPlans) ? sectionPlans.filter(Boolean) : [];
+  return plans.find(plan => {
+    const sectionTitle = String(plan?.section_title || '').trim().toLowerCase();
+    if (sectionTitle && sectionTitle === target) return true;
+    const delivery = Array.isArray(plan?.delivery_sequence) ? plan.delivery_sequence : [];
+    return delivery.some(value => String(value || '').trim().toLowerCase() === target);
+  }) || null;
+}
+
 function _teacherActionLabel(action) {
   const normalized = String(action || '').trim().toLowerCase();
   const labels = {
@@ -2785,6 +2797,9 @@ function _renderCalendar(el, classId) {
   const plannedSessionRemainingCount = Math.max(0, plannedSessionFlat.length - plannedSessionDoneCount);
   const plannedSessionCoveragePct = plannedSessionFlat.length ? Math.round((plannedSessionDoneCount / plannedSessionFlat.length) * 100) : 0;
   const plannedResumeNodeId = Number(plannedSessionFlat.find(node => !Boolean(node?.is_completed))?.id || 0) || null;
+  const plannedResumeNode = plannedResumeNodeId != null
+    ? plannedSessionFlat.find(node => Number(node?.id || 0) === plannedResumeNodeId) || null
+    : null;
   const plannedSessionStatus = !plannedSessionFlat.length
     ? { label: 'No route saved', className: 'badge-gray', hint: 'No planned checklist route is saved for this session yet.' }
     : plannedSessionDoneCount === 0
@@ -2797,6 +2812,7 @@ function _renderCalendar(el, classId) {
     ? selectedBlueprint.unit_map_json
     : {};
   const selectedSectionPlans = Array.isArray(selectedUnitMap?.section_plans) ? selectedUnitMap.section_plans : [];
+  const plannedResumeSectionPlan = plannedResumeNode ? _findCalendarSectionPlanForTitle(selectedSectionPlans, plannedResumeNode.title) : null;
   const studentsById = new Map((getStudents() || []).map(student => [Number(student.id), student]));
   const absentRows = selectedEvent ? _absentRowsFromDetail(selectedDetail, selectedEvent, studentsById) : [];
   const headlineBlocks = selectedEvent ? _headlineBlocksFromDetail(selectedDetail, selectedEvent) : [];
@@ -3562,6 +3578,10 @@ function _renderCalendar(el, classId) {
 
   el.querySelector('#btn-open-selected-unit-assistant')?.addEventListener('click', () => {
     const intent = _buildCalendarWorkflowIntent(selectedEvent, 'assistant', {
+      section_title: String(plannedResumeSectionPlan?.section_title || plannedResumeNode?.title || '').trim(),
+      section_path: Array.isArray(plannedResumeSectionPlan?.section_path) ? plannedResumeSectionPlan.section_path : [],
+      teacher_request: plannedResumeNode?.title ? `Help me prepare the next unfinished part of this session: ${plannedResumeNode.title}.` : '',
+      assistant_action: 'explain_section',
       preview_hide_done: _calendarPlannedHideDone,
     });
     if (!intent) return;

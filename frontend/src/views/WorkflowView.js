@@ -2319,6 +2319,18 @@ function _renderSessionPlaybookPreview(unitMap, plannedTitles) {
   `).join('');
 }
 
+function _findSectionPlanForPlannedTitle(unitMap, title) {
+  const target = String(title || '').trim().toLowerCase();
+  if (!target) return null;
+  const plans = Array.isArray(unitMap?.section_plans) ? unitMap.section_plans.filter(Boolean) : [];
+  return plans.find(plan => {
+    const sectionTitle = String(plan?.section_title || '').trim().toLowerCase();
+    if (sectionTitle && sectionTitle === target) return true;
+    const delivery = Array.isArray(plan?.delivery_sequence) ? plan.delivery_sequence : [];
+    return delivery.some(value => String(value || '').trim().toLowerCase() === target);
+  }) || null;
+}
+
 function _openSessionWriteupModal(writeup) {
   return new Promise(resolve => {
     const item = writeup && typeof writeup === 'object' ? writeup : {};
@@ -2484,6 +2496,10 @@ function _render(el, classId) {
       })?.id || 0
     ) || null
     : null;
+  const previewResumeItem = previewResumeTargetId != null
+    ? previewBaseChecklist.find(item => Number(item?.id || 0) === previewResumeTargetId) || null
+    : null;
+  const previewResumeSectionPlan = previewResumeItem ? _findSectionPlanForPlannedTitle(activeUnitMap, previewResumeItem.title) : null;
   const moveMeta = _buildChecklistMoveMeta(checklist);
   const done = checklist.filter(i => Boolean(i?.is_completed || i?.done)).length;
   const total = checklist.length;
@@ -4924,7 +4940,43 @@ function _bindWorkflowEvents(el, classId) {
   });
 
   el.querySelector('#btn-preview-session-assistant')?.addEventListener('click', () => {
-    el.querySelector('#btn-ask-unit-assistant')?.click();
+    const unit = getActiveUnit();
+    if (!unit?.id) {
+      el.querySelector('#btn-ask-unit-assistant')?.click();
+      return;
+    }
+    _withActionLock(`workflow:unit-assistant-preview:${classId}`, async () => {
+      try {
+        const state = await _loadUnitBlueprint(classId, unit.id, { force: false });
+        if (state?.error) {
+          showToast(state.error, 'error');
+          return;
+        }
+        if (!state?.item) {
+          showToast('No saved unit intelligence is available for this unit yet.', 'warning');
+          return;
+        }
+        const fallbackTitle = String(previewResumeItem?.title || '').trim();
+        const initialSectionTitle = String(previewResumeSectionPlan?.section_title || fallbackTitle).trim();
+        const initialSectionPath = Array.isArray(previewResumeSectionPlan?.section_path) ? previewResumeSectionPlan.section_path : [];
+        const initialTeacherRequest = fallbackTitle
+          ? `Help me prepare the next unfinished part of this session: ${fallbackTitle}.`
+          : '';
+        _openUnitAssistantModal({
+          classId,
+          unit,
+          blueprint: state.item,
+          initial: {
+            sectionTitle: initialSectionTitle,
+            sectionPath: initialSectionPath,
+            teacherRequest: initialTeacherRequest,
+            assistantAction: 'explain_section',
+          },
+        });
+      } catch (err) {
+        showToast(String(err?.message || 'Failed to open unit guidance.'), 'error');
+      }
+    });
   });
 
   el.querySelector('#btn-preview-session-materials')?.addEventListener('click', () => {
