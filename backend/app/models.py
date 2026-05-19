@@ -606,3 +606,36 @@ class ExamArchiveState(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     exam: Mapped["Exam"] = relationship(back_populates="archive_state")
+
+
+class WorkflowLeafContent(Base):
+    __tablename__ = "workflow_leaf_content"
+    __table_args__ = (UniqueConstraint("unit_id", "checklist_item_id", name="uq_workflow_leaf_content_unit_item"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    unit_id: Mapped[int] = mapped_column(ForeignKey("workflow_units.id", ondelete="CASCADE"), index=True)
+    checklist_item_id: Mapped[int] = mapped_column(ForeignKey("workflow_checklist_items.id", ondelete="CASCADE"), index=True)
+    item_path_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    section_path_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    provider: Mapped[str] = mapped_column(String(64), default="manual")
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="draft", index=True)
+    reviewed: Mapped[bool] = mapped_column(Boolean, default=False)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    reviewed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    source_payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    raw_provider_response_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    teaching_goal_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    launch_activity_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    explanation_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    worked_example_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    practice_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    solution_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    assessment_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    teacher_notes_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_excerpt_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    unit: Mapped["WorkflowUnit"] = relationship()
+    checklist_item: Mapped["WorkflowChecklistItem"] = relationship()

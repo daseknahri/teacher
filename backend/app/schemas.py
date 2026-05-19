@@ -896,3 +896,51 @@ class WorkflowCalendarAutoPlanOut(BaseModel):
 WorkflowChecklistItemOut.model_rebuild()
 
 
+class WorkflowLeafContentOut(BaseModel):
+    id: int
+    unit_id: int
+    checklist_item_id: int
+    item_path_json: list | None = None
+    section_path_json: list | None = None
+    provider: str
+    model: str | None = None
+    status: str
+    reviewed: bool = False
+    reviewed_at: datetime | None = None
+    reviewed_by_user_id: int | None = None
+    teaching_goal_md: str | None = None
+    launch_activity_md: str | None = None
+    explanation_md: str | None = None
+    worked_example_md: str | None = None
+    practice_md: str | None = None
+    solution_md: str | None = None
+    assessment_md: str | None = None
+    teacher_notes_md: str | None = None
+    source_excerpt_md: str | None = None
+    source_payload_json: dict | None = None
+    raw_provider_response_json: dict | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class WorkflowLeafContentUpsertIn(BaseModel):
+    item_path: list[str] | None = None
+    section_path: list[str] | None = None
+    provider: str | None = None
+    model: str | None = None
+    status: str | None = None
+    teaching_goal_md: str | None = None
+    launch_activity_md: str | None = None
+    explanation_md: str | None = None
+    worked_example_md: str | None = None
+    practice_md: str | None = None
+    solution_md: str | None = None
+    assessment_md: str | None = None
+    teacher_notes_md: str | None = None
+    source_excerpt_md: str | None = None
+    source_payload: dict | None = None
+    raw_provider_response: dict | None = None
+
+
