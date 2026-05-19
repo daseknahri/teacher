@@ -35,6 +35,7 @@ let _workflowEntryContext = null;
 let _workflowPreviewScrollKey = null;
 let _workflowPreviewFocusOnly = true;
 let _workflowPreviewHideDone = false;
+let _sessionGuidanceHideImported = false;
 const _collapsedChecklistIds = new Set();
 const _inFlightActions = new Set();
 const _sessionProgressCache = new Map();
@@ -339,9 +340,14 @@ function _renderSavedGuidancePreviewRows(items, fallbackTitle = '') {
   `;
 }
 
-function _renderSessionMatchedGuidance(items, { canImport = false, importedIds = new Set() } = {}) {
-  const visible = Array.isArray(items) ? items.slice(0, 4) : [];
+function _renderSessionMatchedGuidance(items, { canImport = false, importedIds = new Set(), hideImported = false } = {}) {
+  const source = Array.isArray(items) ? items : [];
+  const filtered = hideImported ? source.filter(item => !importedIds.has(Number(item?.id || 0))) : source;
+  const visible = filtered.slice(0, 4);
   if (!visible.length) {
+    if (hideImported && source.length) {
+      return '<p class="text-[12px] text-slate-500">All matching saved guidance has already been imported. Use <span class="font-semibold">Show Imported</span> if you want to review it again.</p>';
+    }
     return '<p class="text-[12px] text-slate-500">No saved guidance matches this session route yet. Save a good result from Ask This Unit to reuse it here.</p>';
   }
   return `
@@ -367,8 +373,8 @@ function _renderSessionMatchedGuidance(items, { canImport = false, importedIds =
           ${item?.content_markdown ? `<p class="text-[12px] text-slate-600 leading-6 mt-2">${_escapeHtml(String(item.content_markdown).split('\n').slice(0, 3).join(' '))}</p>` : ''}
         </div>
       `;}).join('')}
-      ${Array.isArray(items) && items.length > visible.length
-        ? `<p class="text-[11px] text-slate-500">Showing ${visible.length} of ${items.length} matching saved guidance items.</p>`
+      ${filtered.length > visible.length
+        ? `<p class="text-[11px] text-slate-500">Showing ${visible.length} of ${filtered.length} matching saved guidance items${hideImported ? ' still available to import' : ''}.</p>`
         : ''}
     </div>
   `;
@@ -3393,11 +3399,20 @@ function _render(el, classId) {
                 </div>
               </div>
               <div class="rounded-xl border border-slate-200 bg-white p-3 flex flex-col gap-2">
-                <div>
-                  <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
-                  <p class="text-[12px] text-slate-500 mt-1">Reusable section help that matches this planned session route.</p>
+                <div class="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
+                    <p class="text-[12px] text-slate-500 mt-1">Reusable section help that matches this planned session route.</p>
+                  </div>
+                  ${activeSessionImportedGuidanceIds.size > 0
+                    ? `<button id="btn-session-guidance-hide-imported-toggle" class="btn btn-ghost btn-sm">${_sessionGuidanceHideImported ? 'Show Imported' : 'Hide Imported'}</button>`
+                    : ''}
                 </div>
-                ${_renderSessionMatchedGuidance(activeSessionMatchedGuidance, { canImport: Boolean(session), importedIds: activeSessionImportedGuidanceIds })}
+                ${_renderSessionMatchedGuidance(activeSessionMatchedGuidance, {
+                  canImport: Boolean(session),
+                  importedIds: activeSessionImportedGuidanceIds,
+                  hideImported: _sessionGuidanceHideImported,
+                })}
               </div>
               ${_renderSessionWriteupNextStep(sessionWriteupState.item, {
                 hasSession: Boolean(session),
@@ -5153,6 +5168,10 @@ function _bindWorkflowEvents(el, classId) {
   });
   el.querySelector('#btn-session-next-guidance')?.addEventListener('click', () => {
     el.querySelector('#btn-import-session-guidance')?.click();
+  });
+  el.querySelector('#btn-session-guidance-hide-imported-toggle')?.addEventListener('click', () => {
+    _sessionGuidanceHideImported = !_sessionGuidanceHideImported;
+    _render(el, classId);
   });
   el.querySelector('#btn-session-next-import-best')?.addEventListener('click', async () => {
     const session = getActiveSession();
