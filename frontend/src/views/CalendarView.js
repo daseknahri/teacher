@@ -3927,14 +3927,17 @@ function _renderCalendar(el, classId) {
               <div>
                 <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Teacher Support</p>
                 <h4 class="mt-1 text-[15px] font-semibold text-slate-800">Teacher Prep Suggestions</h4>
-                <p class="mt-1 text-[12px] text-slate-500">NotebookLM-backed help for preparing this exact session route.</p>
+                <p class="mt-1 text-[12px] text-slate-500">NotebookLM-backed support for preparing this exact session route.</p>
               </div>
               <div class="flex items-center gap-2 flex-wrap w-full lg:w-auto">
                 ${canShortcutToWorkflowTools
-                  ? `<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full lg:w-auto">
-                    <button id="btn-open-selected-unit-assistant" class="btn btn-ghost btn-sm w-full sm:w-auto">Ask This Unit</button>
-                    <button id="btn-open-selected-material-studio" class="btn btn-ghost btn-sm w-full sm:w-auto">Material Studio</button>
-                    <button id="btn-open-selected-ai-details" class="btn btn-ghost btn-sm w-full sm:w-auto">AI Details</button>
+                  ? `<div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3 w-full lg:w-auto">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Tools</p>
+                    <div class="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 w-full lg:w-auto">
+                      <button id="btn-open-selected-unit-assistant" class="btn btn-ghost btn-sm w-full sm:w-auto">Ask This Unit</button>
+                      <button id="btn-open-selected-material-studio" class="btn btn-ghost btn-sm w-full sm:w-auto">Material Studio</button>
+                      <button id="btn-open-selected-ai-details" class="btn btn-ghost btn-sm w-full sm:w-auto">AI Details</button>
+                    </div>
                   </div>`
                   : ''}
                 <button id="btn-calendar-toggle-teacher-prep" class="btn btn-ghost btn-sm w-full sm:w-auto">${_calendarCollapseTeacherPrep ? 'Expand' : 'Collapse'}</button>
@@ -3948,7 +3951,9 @@ function _renderCalendar(el, classId) {
                 ? '<p class="text-[12px] text-slate-500 mt-2">This session is not linked to a workflow unit.</p>'
                 : selectedBlueprintError
                   ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedBlueprintError)}</p>`
-                  : _renderCalendarTeacherPrep(selectedUnitMap, plannedSessionTitles)}
+                  : `<div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                      ${_renderCalendarTeacherPrep(selectedUnitMap, plannedSessionTitles)}
+                    </div>`}
           </div>
 
           <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -3956,7 +3961,7 @@ function _renderCalendar(el, classId) {
               <div>
                 <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Session Record</p>
                 <h4 class="mt-1 text-[15px] font-semibold text-slate-800">Textbook Write-Up</h4>
-                <p class="mt-1 text-[12px] text-slate-500">The saved teaching summary for what really happened in class.</p>
+                <p class="mt-1 text-[12px] text-slate-500">The saved lesson brief for what really happened in class.</p>
               </div>
               <div class="flex flex-col items-stretch sm:items-end gap-2 w-full lg:w-auto">
                 ${selectedWriteup
@@ -4037,43 +4042,56 @@ function _renderCalendar(el, classId) {
                 ? `
                   <div class="mt-3 flex flex-col gap-3">
                     <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                      <div class="flex items-start justify-between gap-3 flex-wrap">
+                      <div class="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-3 items-start">
                         <div>
                           <p class="text-[15px] font-semibold text-slate-800">${_escapeHtml(selectedWriteup.title || 'Session write-up')}</p>
-                          <p class="mt-1 text-[12px] text-slate-500">A classroom-facing summary of what was taught, reinforced, and practiced.</p>
+                          <p class="mt-1 text-[12px] text-slate-500">A classroom-facing lesson brief covering what was taught, reinforced, and practiced.</p>
                         </div>
-                        <div class="flex flex-wrap gap-2">
-                          <span class="badge badge-gray">${selectedWriteupFocusCount} focus</span>
-                          <span class="badge badge-gray">${selectedWriteupContentCount} content</span>
-                          <span class="badge badge-gray">${selectedWriteupPracticeCount} practice</span>
+                        <div class="grid grid-cols-3 gap-2">
+                          <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center">
+                            <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Focus</p>
+                            <p class="mt-1 text-[15px] font-semibold text-slate-900">${selectedWriteupFocusCount}</p>
+                          </div>
+                          <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center">
+                            <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Content</p>
+                            <p class="mt-1 text-[15px] font-semibold text-slate-900">${selectedWriteupContentCount}</p>
+                          </div>
+                          <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center">
+                            <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Practice</p>
+                            <p class="mt-1 text-[15px] font-semibold text-slate-900">${selectedWriteupPracticeCount}</p>
+                          </div>
                         </div>
                       </div>
                     </div>
                     ${_renderCalendarImportedGuidanceSummary(selectedWriteup.source_payload)}
-                    ${Array.isArray(selectedWriteup.learning_focus) && selectedWriteup.learning_focus.length ? `
-                      <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Learning Focus</p>
-                        <p class="mt-1 text-[12px] text-slate-500">The main ideas or objectives that shaped the lesson.</p>
-                        <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
-                          ${selectedWriteup.learning_focus.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
-                        </ul>
-                      </div>` : ''}
-                    ${Array.isArray(selectedWriteup.teaching_content) && selectedWriteup.teaching_content.length ? `
-                      <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4 flex flex-col gap-2">
-                        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Teaching Content</p>
-                        <p class="text-[12px] text-slate-500">What was explained, modeled, or discussed with students.</p>
-                        <div class="flex flex-col gap-3">
-                          ${selectedWriteup.teaching_content.map(row => `<div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3"><p class="text-[13px] text-slate-700 leading-relaxed">${_escapeHtml(row)}</p></div>`).join('')}
-                        </div>
-                      </div>` : ''}
-                    ${Array.isArray(selectedWriteup.practice_items) && selectedWriteup.practice_items.length ? `
-                      <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Practice</p>
-                        <p class="mt-1 text-[12px] text-slate-500">Exercises, reinforcement, or checks for understanding used in class.</p>
-                        <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
-                          ${selectedWriteup.practice_items.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
-                        </ul>
-                      </div>` : ''}
+                    <div class="grid grid-cols-1 xl:grid-cols-[0.9fr_1.1fr] gap-3">
+                      <div class="flex flex-col gap-3">
+                        ${Array.isArray(selectedWriteup.learning_focus) && selectedWriteup.learning_focus.length ? `
+                          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Learning Focus</p>
+                            <p class="mt-1 text-[12px] text-slate-500">The main ideas that shaped the lesson.</p>
+                            <ul class="mt-2 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+                              ${selectedWriteup.learning_focus.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
+                            </ul>
+                          </div>` : ''}
+                        ${Array.isArray(selectedWriteup.practice_items) && selectedWriteup.practice_items.length ? `
+                          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Practice</p>
+                            <p class="mt-1 text-[12px] text-slate-500">Exercises or checks for understanding used in class.</p>
+                            <ul class="mt-2 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+                              ${selectedWriteup.practice_items.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
+                            </ul>
+                          </div>` : ''}
+                      </div>
+                      ${Array.isArray(selectedWriteup.teaching_content) && selectedWriteup.teaching_content.length ? `
+                        <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4 flex flex-col gap-2">
+                          <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Teaching Content</p>
+                          <p class="text-[12px] text-slate-500">What was explained, modeled, or discussed with students.</p>
+                          <div class="flex flex-col gap-2">
+                            ${selectedWriteup.teaching_content.map(row => `<div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3"><p class="text-[13px] text-slate-700 leading-relaxed">${_escapeHtml(row)}</p></div>`).join('')}
+                          </div>
+                        </div>` : ''}
+                    </div>
                     ${_renderCalendarWriteupSourcePayload(selectedWriteup.source_payload)}
                   </div>`
                 : selectedWriteupError
