@@ -36,6 +36,7 @@ let _workflowPreviewScrollKey = null;
 let _workflowPreviewFocusOnly = true;
 let _workflowPreviewHideDone = false;
 let _sessionGuidanceHideImported = false;
+let _sessionGuidanceKindFilter = 'all';
 const _collapsedChecklistIds = new Set();
 const _inFlightActions = new Set();
 const _sessionProgressCache = new Map();
@@ -340,13 +341,22 @@ function _renderSavedGuidancePreviewRows(items, fallbackTitle = '') {
   `;
 }
 
-function _renderSessionMatchedGuidance(items, { canImport = false, importedIds = new Set(), hideImported = false } = {}) {
+function _renderSessionMatchedGuidance(items, { canImport = false, importedIds = new Set(), hideImported = false, kindFilter = 'all' } = {}) {
   const source = Array.isArray(items) ? items : [];
-  const filtered = hideImported ? source.filter(item => !importedIds.has(Number(item?.id || 0))) : source;
+  const filtered = source.filter(item => {
+    const imported = importedIds.has(Number(item?.id || 0));
+    if (hideImported && imported) return false;
+    const itemKind = String(item?.artifact_kind || 'teacher_notes').trim().toLowerCase() || 'teacher_notes';
+    if (kindFilter && kindFilter !== 'all' && itemKind !== kindFilter) return false;
+    return true;
+  });
   const visible = filtered.slice(0, 4);
   if (!visible.length) {
     if (hideImported && source.length) {
       return '<p class="text-[12px] text-slate-500">All matching saved guidance has already been imported. Use <span class="font-semibold">Show Imported</span> if you want to review it again.</p>';
+    }
+    if (kindFilter && kindFilter !== 'all' && source.length) {
+      return '<p class="text-[12px] text-slate-500">No matching saved guidance is available for this type filter right now. Switch back to <span class="font-semibold">All</span> to review everything.</p>';
     }
     return '<p class="text-[12px] text-slate-500">No saved guidance matches this session route yet. Save a good result from Ask This Unit to reuse it here.</p>';
   }
@@ -391,6 +401,24 @@ function _renderSessionGuidanceSummary(totalCount, importedCount, hideImported =
       <span class="badge badge-gray">${imported} imported</span>
       <span class="badge badge-gray">${total} total</span>
       ${hideImported ? '<span class="badge badge-amber">Remaining only</span>' : ''}
+    </div>
+  `;
+}
+
+function _renderSessionGuidanceKindFilters(items, activeKind = 'all') {
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) return '';
+  const summary = _summarizeRemainingGuidanceKinds(rows);
+  if (summary.length <= 1) return '';
+  return `
+    <div class="mt-2 flex flex-wrap gap-2">
+      <button class="btn btn-ghost btn-sm btn-session-guidance-kind-toggle ${activeKind === 'all' ? 'btn-primary' : ''}" data-guidance-kind="all">All</button>
+      ${summary.map(([kind, count]) => `
+        <button
+          class="btn btn-ghost btn-sm btn-session-guidance-kind-toggle ${activeKind === kind ? 'btn-primary' : ''}"
+          data-guidance-kind="${_escapeHtmlAttr(kind)}"
+        >${_escapeHtml(_assistantArtifactKindLabel(kind))} (${count})</button>
+      `).join('')}
     </div>
   `;
 }
@@ -3419,6 +3447,7 @@ function _render(el, classId) {
                     <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
                     <p class="text-[12px] text-slate-500 mt-1">Reusable section help that matches this planned session route.</p>
                     ${_renderSessionGuidanceSummary(activeSessionMatchedGuidance.length, activeSessionImportedGuidanceIds.size, _sessionGuidanceHideImported)}
+                    ${_renderSessionGuidanceKindFilters(activeSessionMatchedGuidance, _sessionGuidanceKindFilter)}
                   </div>
                   ${activeSessionImportedGuidanceIds.size > 0
                     ? `<button id="btn-session-guidance-hide-imported-toggle" class="btn btn-ghost btn-sm">${_sessionGuidanceHideImported ? 'Show Imported' : 'Hide Imported'}</button>`
@@ -3428,6 +3457,7 @@ function _render(el, classId) {
                   canImport: Boolean(session),
                   importedIds: activeSessionImportedGuidanceIds,
                   hideImported: _sessionGuidanceHideImported,
+                  kindFilter: _sessionGuidanceKindFilter,
                 })}
               </div>
               ${_renderSessionWriteupNextStep(sessionWriteupState.item, {
@@ -5188,6 +5218,12 @@ function _bindWorkflowEvents(el, classId) {
   el.querySelector('#btn-session-guidance-hide-imported-toggle')?.addEventListener('click', () => {
     _sessionGuidanceHideImported = !_sessionGuidanceHideImported;
     _render(el, classId);
+  });
+  el.querySelectorAll('.btn-session-guidance-kind-toggle').forEach(button => {
+    button.addEventListener('click', () => {
+      _sessionGuidanceKindFilter = String(button.dataset.guidanceKind || 'all').trim().toLowerCase() || 'all';
+      _render(el, classId);
+    });
   });
   el.querySelector('#btn-session-next-import-best')?.addEventListener('click', async () => {
     const session = getActiveSession();

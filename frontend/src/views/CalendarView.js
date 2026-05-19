@@ -19,6 +19,7 @@ let _selectedSessionError = null;
 let _mutationInFlight = false;
 let _calendarPlannedHideDone = false;
 let _calendarSessionGuidanceHideImported = false;
+let _calendarSessionGuidanceKindFilter = 'all';
 let _holidayByDate = new Map();
 const _timetableRulesByClass = new Map();
 const _timetableExceptionsByClass = new Map();
@@ -996,13 +997,22 @@ function _renderCalendarSavedGuidancePreviewRows(items, fallbackTitle = '') {
   `;
 }
 
-function _renderCalendarSessionMatchedGuidance(items, { canImport = false, importedIds = new Set(), hideImported = false } = {}) {
+function _renderCalendarSessionMatchedGuidance(items, { canImport = false, importedIds = new Set(), hideImported = false, kindFilter = 'all' } = {}) {
   const source = Array.isArray(items) ? items : [];
-  const filtered = hideImported ? source.filter(item => !importedIds.has(Number(item?.id || 0))) : source;
+  const filtered = source.filter(item => {
+    const imported = importedIds.has(Number(item?.id || 0));
+    if (hideImported && imported) return false;
+    const itemKind = String(item?.artifact_kind || 'teacher_notes').trim().toLowerCase() || 'teacher_notes';
+    if (kindFilter && kindFilter !== 'all' && itemKind !== kindFilter) return false;
+    return true;
+  });
   const visible = filtered.slice(0, 4);
   if (!visible.length) {
     if (hideImported && source.length) {
       return '<p class="text-[12px] text-slate-500">All matching saved guidance has already been imported. Use <span class="font-semibold">Show Imported</span> if you want to review it again.</p>';
+    }
+    if (kindFilter && kindFilter !== 'all' && source.length) {
+      return '<p class="text-[12px] text-slate-500">No matching saved guidance is available for this type filter right now. Switch back to <span class="font-semibold">All</span> to review everything.</p>';
     }
     return '<p class="text-[12px] text-slate-500">No saved guidance matches this session route yet. Save a good result from Ask This Unit to reuse it here.</p>';
   }
@@ -1047,6 +1057,24 @@ function _renderCalendarSessionGuidanceSummary(totalCount, importedCount, hideIm
       <span class="badge badge-gray">${imported} imported</span>
       <span class="badge badge-gray">${total} total</span>
       ${hideImported ? '<span class="badge badge-amber">Remaining only</span>' : ''}
+    </div>
+  `;
+}
+
+function _renderCalendarSessionGuidanceKindFilters(items, activeKind = 'all') {
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) return '';
+  const summary = _summarizeCalendarRemainingGuidanceKinds(rows);
+  if (summary.length <= 1) return '';
+  return `
+    <div class="mt-2 flex flex-wrap gap-2">
+      <button class="btn btn-ghost btn-sm btn-calendar-session-guidance-kind-toggle ${activeKind === 'all' ? 'btn-primary' : ''}" data-guidance-kind="all">All</button>
+      ${summary.map(([kind, count]) => `
+        <button
+          class="btn btn-ghost btn-sm btn-calendar-session-guidance-kind-toggle ${activeKind === kind ? 'btn-primary' : ''}"
+          data-guidance-kind="${_escapeHtmlAttr(kind)}"
+        >${_escapeHtml(_assistantArtifactKindLabel(kind))} (${count})</button>
+      `).join('')}
     </div>
   `;
 }
@@ -3654,6 +3682,7 @@ function _renderCalendar(el, classId) {
                   <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
                   <p class="text-[12px] text-slate-500 mt-1">Reusable unit help that matches this planned session route.</p>
                   ${_renderCalendarSessionGuidanceSummary(selectedMatchedGuidance.length, selectedImportedGuidanceIds.size, _calendarSessionGuidanceHideImported)}
+                  ${_renderCalendarSessionGuidanceKindFilters(selectedMatchedGuidance, _calendarSessionGuidanceKindFilter)}
                 </div>
                 ${selectedImportedGuidanceIds.size > 0
                   ? `<button id="btn-calendar-session-guidance-hide-imported-toggle" class="btn btn-ghost btn-sm">${_calendarSessionGuidanceHideImported ? 'Show Imported' : 'Hide Imported'}</button>`
@@ -3664,6 +3693,7 @@ function _renderCalendar(el, classId) {
                   canImport: selectedEvent.unit_id != null && !selectedIsFuture,
                   importedIds: selectedImportedGuidanceIds,
                   hideImported: _calendarSessionGuidanceHideImported,
+                  kindFilter: _calendarSessionGuidanceKindFilter,
                 })}
               </div>
             </div>
@@ -4461,6 +4491,12 @@ function _renderCalendar(el, classId) {
   el.querySelector('#btn-calendar-session-guidance-hide-imported-toggle')?.addEventListener('click', () => {
     _calendarSessionGuidanceHideImported = !_calendarSessionGuidanceHideImported;
     _renderCalendar(el, classId);
+  });
+  el.querySelectorAll('.btn-calendar-session-guidance-kind-toggle').forEach(button => {
+    button.addEventListener('click', () => {
+      _calendarSessionGuidanceKindFilter = String(button.dataset.guidanceKind || 'all').trim().toLowerCase() || 'all';
+      _renderCalendar(el, classId);
+    });
   });
   el.querySelector('#btn-calendar-next-import-best')?.addEventListener('click', async () => {
     if (!selectedEvent || selectedEvent.unit_id == null || !selectedBestRemainingGuidance) return;
