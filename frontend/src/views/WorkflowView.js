@@ -5208,13 +5208,15 @@ function _bindWorkflowEvents(el, classId) {
     });
   });
 
-  if (session && unit?.id && activeSessionPlanTitles.length) {
-    const artifactCacheKey = `${Number(classId || 0)}:${Number(unit.id || 0)}`;
+  const currentSessionForArtifacts = getActiveSession();
+  const currentUnitForArtifacts = getActiveUnit();
+  if (currentSessionForArtifacts && currentUnitForArtifacts?.id && activeSessionPlanTitles.length) {
+    const artifactCacheKey = `${Number(classId || 0)}:${Number(currentUnitForArtifacts.id || 0)}`;
     if (!_unitAssistantArtifactCache.has(artifactCacheKey)) {
-      _loadUnitAssistantArtifacts(classId, unit.id).then(() => {
+      _loadUnitAssistantArtifacts(classId, currentUnitForArtifacts.id).then(() => {
         const latestSession = getActiveSession();
         const latestUnit = getActiveUnit();
-        if (latestSession && latestUnit && Number(latestSession.id) === Number(session.id) && Number(latestUnit.id) === Number(unit.id)) {
+        if (latestSession && latestUnit && Number(latestSession.id) === Number(currentSessionForArtifacts.id) && Number(latestUnit.id) === Number(currentUnitForArtifacts.id)) {
           _render(el, classId);
         }
       }).catch(() => {});
