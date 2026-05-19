@@ -38,6 +38,28 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-19 19:35 - Claude
+
+- Status: planned
+- Goal: implement the first backend leaf content persistence slice without changing existing workflow/session behavior
+- Files expected:
+  - `backend/app/models.py`
+  - `backend/app/database.py`
+  - `backend/app/schemas.py`
+  - `backend/app/routers/workflow.py`
+  - `backend/tests/test_app_flows.py`
+  - `docs/roadmap/AI-WORKLOG.md`
+- Assumptions:
+  - the safest first implementation is persistence plus read/write only
+  - generation and frontend reader should wait until storage is stable
+- Notes:
+  - task prompt lives in `docs/roadmap/CLAUDE-TASK-LEAF-CONTENT-PERSISTENCE.md`
+  - this task should not modify checklist completion semantics or session matching logic
+- Result:
+  - pending
+- Follow-up:
+  - after this lands, the next step is one leaf content generation endpoint or one minimal frontend reader
+
 ### 2026-05-19 19:10 - Codex
 
 - Status: done
