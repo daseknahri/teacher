@@ -2312,7 +2312,7 @@ function _renderSessionPlaybookPreview(unitMap, plannedTitles) {
               data-section-title="${_escapeHtmlAttr(String(entry?.section_title || ''))}"
               data-section-path="${_escapeHtmlAttr(JSON.stringify(Array.isArray(entry?.section_path) ? entry.section_path : []))}"
               data-teacher-request="${_escapeHtmlAttr(String(row || ''))}"
-              data-assistant-action="explain_section"
+              data-assistant-action="${_escapeHtmlAttr(String(Array.isArray(entry?.available_actions) && entry.available_actions.length ? entry.available_actions[0] : 'explain_section'))}"
             >${_escapeHtml(String(row || ''))}</button>`).join('')}
         </div>` : ''}
     </div>
@@ -2328,6 +2328,21 @@ function _findSectionPlanForPlannedTitle(unitMap, title) {
     if (sectionTitle && sectionTitle === target) return true;
     const delivery = Array.isArray(plan?.delivery_sequence) ? plan.delivery_sequence : [];
     return delivery.some(value => String(value || '').trim().toLowerCase() === target);
+  }) || null;
+}
+
+function _findTeacherPlaybookEntryForSection(unitMap, sectionPlan, fallbackTitle = '') {
+  const playbook = Array.isArray(unitMap?.teacher_playbook) ? unitMap.teacher_playbook.filter(Boolean) : [];
+  const targetTitle = String(sectionPlan?.section_title || fallbackTitle || '').trim().toLowerCase();
+  const targetPath = Array.isArray(sectionPlan?.section_path) ? sectionPlan.section_path.map(value => String(value || '').trim().toLowerCase()) : [];
+  return playbook.find(entry => {
+    const entryTitle = String(entry?.section_title || '').trim().toLowerCase();
+    if (targetTitle && entryTitle === targetTitle) return true;
+    const entryPath = Array.isArray(entry?.section_path) ? entry.section_path.map(value => String(value || '').trim().toLowerCase()) : [];
+    if (targetPath.length && entryPath.length === targetPath.length) {
+      return entryPath.every((value, index) => value === targetPath[index]);
+    }
+    return false;
   }) || null;
 }
 
@@ -2500,6 +2515,7 @@ function _render(el, classId) {
     ? previewBaseChecklist.find(item => Number(item?.id || 0) === previewResumeTargetId) || null
     : null;
   const previewResumeSectionPlan = previewResumeItem ? _findSectionPlanForPlannedTitle(activeUnitMap, previewResumeItem.title) : null;
+  const previewResumePlaybookEntry = _findTeacherPlaybookEntryForSection(activeUnitMap, previewResumeSectionPlan, previewResumeItem?.title || '');
   const moveMeta = _buildChecklistMoveMeta(checklist);
   const done = checklist.filter(i => Boolean(i?.is_completed || i?.done)).length;
   const total = checklist.length;
@@ -4959,9 +4975,15 @@ function _bindWorkflowEvents(el, classId) {
         const fallbackTitle = String(previewResumeItem?.title || '').trim();
         const initialSectionTitle = String(previewResumeSectionPlan?.section_title || fallbackTitle).trim();
         const initialSectionPath = Array.isArray(previewResumeSectionPlan?.section_path) ? previewResumeSectionPlan.section_path : [];
-        const initialTeacherRequest = fallbackTitle
-          ? `Help me prepare the next unfinished part of this session: ${fallbackTitle}.`
+        const suggestedRequest = Array.isArray(previewResumePlaybookEntry?.suggested_requests) && previewResumePlaybookEntry.suggested_requests.length
+          ? String(previewResumePlaybookEntry.suggested_requests[0] || '').trim()
           : '';
+        const suggestedAction = Array.isArray(previewResumePlaybookEntry?.available_actions) && previewResumePlaybookEntry.available_actions.length
+          ? String(previewResumePlaybookEntry.available_actions[0] || '').trim().toLowerCase()
+          : 'explain_section';
+        const initialTeacherRequest = suggestedRequest || (fallbackTitle
+          ? `Help me prepare the next unfinished part of this session: ${fallbackTitle}.`
+          : '');
         _openUnitAssistantModal({
           classId,
           unit,
@@ -4970,7 +4992,7 @@ function _bindWorkflowEvents(el, classId) {
             sectionTitle: initialSectionTitle,
             sectionPath: initialSectionPath,
             teacherRequest: initialTeacherRequest,
-            assistantAction: 'explain_section',
+            assistantAction: suggestedAction,
           },
         });
       } catch (err) {

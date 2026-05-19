@@ -525,6 +525,21 @@ function _findCalendarSectionPlanForTitle(sectionPlans, title) {
   }) || null;
 }
 
+function _findCalendarTeacherPlaybookEntry(unitMap, sectionPlan, fallbackTitle = '') {
+  const playbook = Array.isArray(unitMap?.teacher_playbook) ? unitMap.teacher_playbook.filter(Boolean) : [];
+  const targetTitle = String(sectionPlan?.section_title || fallbackTitle || '').trim().toLowerCase();
+  const targetPath = Array.isArray(sectionPlan?.section_path) ? sectionPlan.section_path.map(value => String(value || '').trim().toLowerCase()) : [];
+  return playbook.find(entry => {
+    const entryTitle = String(entry?.section_title || '').trim().toLowerCase();
+    if (targetTitle && entryTitle === targetTitle) return true;
+    const entryPath = Array.isArray(entry?.section_path) ? entry.section_path.map(value => String(value || '').trim().toLowerCase()) : [];
+    if (targetPath.length && entryPath.length === targetPath.length) {
+      return entryPath.every((value, index) => value === targetPath[index]);
+    }
+    return false;
+  }) || null;
+}
+
 function _teacherActionLabel(action) {
   const normalized = String(action || '').trim().toLowerCase();
   const labels = {
@@ -575,7 +590,7 @@ function _renderCalendarTeacherPrep(unitMap, plannedTitles) {
                   data-section-title="${_escapeHtmlAttr(String(entry?.section_title || ''))}"
                   data-section-path="${_escapeHtmlAttr(JSON.stringify(Array.isArray(entry?.section_path) ? entry.section_path : []))}"
                   data-teacher-request="${_escapeHtmlAttr(String(row || ''))}"
-                  data-assistant-action="explain_section"
+                  data-assistant-action="${_escapeHtmlAttr(String(Array.isArray(entry?.available_actions) && entry.available_actions.length ? entry.available_actions[0] : 'explain_section'))}"
                 >${_escapeHtml(String(row || ''))}</button>`).join('')}
             </div>` : ''}
         </div>
@@ -2813,6 +2828,7 @@ function _renderCalendar(el, classId) {
     : {};
   const selectedSectionPlans = Array.isArray(selectedUnitMap?.section_plans) ? selectedUnitMap.section_plans : [];
   const plannedResumeSectionPlan = plannedResumeNode ? _findCalendarSectionPlanForTitle(selectedSectionPlans, plannedResumeNode.title) : null;
+  const plannedResumePlaybookEntry = _findCalendarTeacherPlaybookEntry(selectedUnitMap, plannedResumeSectionPlan, plannedResumeNode?.title || '');
   const studentsById = new Map((getStudents() || []).map(student => [Number(student.id), student]));
   const absentRows = selectedEvent ? _absentRowsFromDetail(selectedDetail, selectedEvent, studentsById) : [];
   const headlineBlocks = selectedEvent ? _headlineBlocksFromDetail(selectedDetail, selectedEvent) : [];
@@ -3577,11 +3593,17 @@ function _renderCalendar(el, classId) {
   });
 
   el.querySelector('#btn-open-selected-unit-assistant')?.addEventListener('click', () => {
+    const suggestedRequest = Array.isArray(plannedResumePlaybookEntry?.suggested_requests) && plannedResumePlaybookEntry.suggested_requests.length
+      ? String(plannedResumePlaybookEntry.suggested_requests[0] || '').trim()
+      : '';
+    const suggestedAction = Array.isArray(plannedResumePlaybookEntry?.available_actions) && plannedResumePlaybookEntry.available_actions.length
+      ? String(plannedResumePlaybookEntry.available_actions[0] || '').trim().toLowerCase()
+      : 'explain_section';
     const intent = _buildCalendarWorkflowIntent(selectedEvent, 'assistant', {
       section_title: String(plannedResumeSectionPlan?.section_title || plannedResumeNode?.title || '').trim(),
       section_path: Array.isArray(plannedResumeSectionPlan?.section_path) ? plannedResumeSectionPlan.section_path : [],
-      teacher_request: plannedResumeNode?.title ? `Help me prepare the next unfinished part of this session: ${plannedResumeNode.title}.` : '',
-      assistant_action: 'explain_section',
+      teacher_request: suggestedRequest || (plannedResumeNode?.title ? `Help me prepare the next unfinished part of this session: ${plannedResumeNode.title}.` : ''),
+      assistant_action: suggestedAction,
       preview_hide_done: _calendarPlannedHideDone,
     });
     if (!intent) return;
