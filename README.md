@@ -108,6 +108,10 @@ Excel formats supported:
 - `docs/roadmap/FUTURE-TODO.md` prioritized next backlog + ready-to-test checklist
 - `docs/roadmap/PROD-ENV-CHECKLIST.md` production env and secret rotation checklist
 - `docs/roadmap/INTEGRATION-AUTH-PATTERNS.md` reusable guide for choosing between API, OAuth, restored-session, and browser-automation integrations
+- `docs/roadmap/AI-CONTENT-BANK-HANDOFF.md` fastest handoff for the NotebookLM unit-brain and leaf-content direction
+- `docs/roadmap/NOTEBOOKLM-UNIT-BRAIN-ARCHITECTURE.md` target architecture for moving from PDF extraction to a reusable unit brain
+- `docs/roadmap/LEAF-CONTENT-BANK-SPEC.md` proposed per-leaf content storage contract using Markdown + LaTeX
+- `docs/roadmap/LEAF-CONTENT-READER-ROADMAP.md` phased implementation plan for leaf content generation, reader UI, and session integration
 - `docs/deployment/COOLIFY_APP_SETUP.md` exact Coolify deployment steps for this repo/domain
 - `docs/deployment/COOLIFY_NOTEBOOKLM.md` NotebookLM persistence and auth upload flow
 - `backend/README.md` backend setup and full endpoint list
