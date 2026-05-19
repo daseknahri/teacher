@@ -24,6 +24,7 @@ import { askConfirm } from '../utils/modal.js';
 import { mountRetryCard } from '../utils/retryView.js';
 import { fmtDate, fmtTime } from '../utils/format.js';
 import { copyText } from '../utils/password.js';
+import { openLeafContentModal } from '../utils/leafContent.js';
 
 let _activeTab = 0;
 let _recentWindow = 'month';
@@ -2955,25 +2956,28 @@ function _renderSessionTeachingChecklistGroups(groups, { hasPlannedRoute = false
                         const item = entry.row || {};
                         const isDone = Boolean(item?.is_completed || item?.done);
                         return `
-                          <button
-                            type="button"
-                            class="w-full text-left rounded-xl border px-3 py-2 transition ${isDone ? 'border-green-200 bg-green-50/80' : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/50'}"
-                            data-session-flow-check-item-id="${Number(item.id || 0)}"
-                            aria-pressed="${isDone ? 'true' : 'false'}"
-                          >
-                            <div class="flex items-start gap-2">
-                              <span class="mt-0.5 inline-flex h-[18px] w-[18px] items-center justify-center rounded-[4px] border-2 text-[10px] ${isDone ? 'border-green-600 bg-green-600 text-white' : 'border-slate-300 bg-white text-transparent'}">${isDone ? 'Y' : 'Y'}</span>
-                              <div class="min-w-0 flex-1">
-                                <p class="text-[13px] leading-snug ${isDone ? 'text-slate-500 line-through' : 'text-slate-700'}">${_escapeHtml(String(item.title || 'Checklist item'))}</p>
-                                <div class="mt-1 flex items-center gap-2 flex-wrap">
-                                  ${item?.item_kind ? `<span class="badge badge-gray">${_escapeHtml(String(item.item_kind))}</span>` : ''}
-                                  ${Array.isArray(entry?.context?.itemPath) && entry.context.itemPath.length > 1
-                                    ? `<span class="text-[11px] text-slate-400">${_escapeHtml(entry.context.itemPath.slice(0, -1).join(' > '))}</span>`
-                                    : ''}
+                          <div class="flex items-stretch gap-1">
+                            <button
+                              type="button"
+                              class="flex-1 text-left rounded-xl border px-3 py-2 transition ${isDone ? 'border-green-200 bg-green-50/80' : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/50'}"
+                              data-session-flow-check-item-id="${Number(item.id || 0)}"
+                              aria-pressed="${isDone ? 'true' : 'false'}"
+                            >
+                              <div class="flex items-start gap-2">
+                                <span class="mt-0.5 inline-flex h-[18px] w-[18px] items-center justify-center rounded-[4px] border-2 text-[10px] ${isDone ? 'border-green-600 bg-green-600 text-white' : 'border-slate-300 bg-white text-transparent'}">${isDone ? 'Y' : 'Y'}</span>
+                                <div class="min-w-0 flex-1">
+                                  <p class="text-[13px] leading-snug ${isDone ? 'text-slate-500 line-through' : 'text-slate-700'}">${_escapeHtml(String(item.title || 'Checklist item'))}</p>
+                                  <div class="mt-1 flex items-center gap-2 flex-wrap">
+                                    ${item?.item_kind ? `<span class="badge badge-gray">${_escapeHtml(String(item.item_kind))}</span>` : ''}
+                                    ${Array.isArray(entry?.context?.itemPath) && entry.context.itemPath.length > 1
+                                      ? `<span class="text-[11px] text-slate-400">${_escapeHtml(entry.context.itemPath.slice(0, -1).join(' > '))}</span>`
+                                      : ''}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </button>
+                            </button>
+                            <button type="button" class="btn btn-ghost btn-sm btn-leaf-lesson !text-blue-600 self-center" data-item-id="${Number(item.id || 0)}" title="Open lesson card">Lesson</button>
+                          </div>
                         `;
                       }).join('')}
                     </div>
@@ -3695,6 +3699,7 @@ function _render(el, classId) {
                   <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-add-child" data-item-id="${item.id}" title="Add child">Child</button>
                   <button class="btn btn-ghost btn-sm !text-blue-600 btn-item-edit" data-item-id="${item.id}" data-item-kind="${item.item_kind || 'other'}" data-item-title="${_escapeHtmlAttr(item.title)}" title="Edit item">Edit</button>
                   <button class="btn btn-ghost btn-sm !text-red-600 btn-item-delete" data-item-id="${item.id}" title="Delete item">Delete</button>
+                  ${!hasChildren ? `<button class="btn btn-ghost btn-sm btn-leaf-lesson !text-blue-600" data-item-id="${item.id}" title="Open lesson card">Lesson</button>` : ''}
                 </div>
               </div>`;
   }).join('')}
@@ -4287,6 +4292,7 @@ function _render(el, classId) {
                 <span class="todo-title text-[13px] leading-snug flex-1">${item.title}</span>
                 ${isStructural ? '<span class="text-[10px] text-slate-400 whitespace-nowrap">Auto-completes when all child rows are done</span>' : ''}
                 ${hasChildren ? `<button class="btn btn-ghost btn-sm !text-sky-600 btn-checklist-group-complete" data-item-id="${item.id}" title="Mark all unfinished lesson steps under this heading">Check group</button>` : ''}
+                ${!isStructural && !hasChildren ? `<button class="btn btn-ghost btn-sm btn-leaf-lesson !text-blue-600" data-item-id="${item.id}" title="Open lesson card">Lesson</button>` : ''}
               </div>`;
     }).join('')}
               </div>
@@ -5118,6 +5124,31 @@ function _bindWorkflowEvents(el, classId) {
       event.preventDefault();
       event.stopPropagation();
       await applyChecklistCheck(btn.dataset.itemId, { showNoSessionWarning: true });
+    });
+  });
+
+  /*  leaf lesson card  */
+  el.querySelectorAll('.btn-leaf-lesson').forEach(btn => {
+    btn.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const itemId = Number(btn.dataset.itemId);
+      const unit = getActiveUnit();
+      if (!unit || !classId || !itemId) return;
+      const checklistRows = _checklist(unit);
+      const item = checklistRows.find(i => Number(i.id) === itemId);
+      if (!item) return;
+      const contextMap = _buildChecklistContextMap(checklistRows);
+      const context = contextMap.get(itemId);
+      openLeafContentModal(classId, Number(unit.id), {
+        ...item,
+        item_path_json: Array.isArray(item?.item_path_json) && item.item_path_json.length
+          ? item.item_path_json
+          : (Array.isArray(context?.itemPath) ? context.itemPath : []),
+        section_path_json: Array.isArray(item?.section_path_json) && item.section_path_json.length
+          ? item.section_path_json
+          : (Array.isArray(context?.sectionPath) ? context.sectionPath : []),
+      });
     });
   });
 

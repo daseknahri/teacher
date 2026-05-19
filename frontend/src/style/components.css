@@ -1887,3 +1887,108 @@ code {
     color: var(--text-muted);
     margin-bottom: var(--s-3);
 }
+
+/* ── LEAF CONTENT MODAL ───────────────────────────────── */
+
+.leaf-content-modal {
+    width: min(96vw, 680px);
+    max-height: calc(100dvh - 2rem);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.lcm-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #f1f5f9;
+    flex-shrink: 0;
+}
+
+.lcm-body {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 1rem 1.25rem;
+    min-height: 0;
+}
+
+.lcm-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.875rem 1.25rem;
+    border-top: 1px solid #f1f5f9;
+    flex-shrink: 0;
+}
+
+/* Prose inside rendered mode */
+.lcm-prose {
+    font-size: 13px;
+    line-height: 1.65;
+    color: #334155;
+}
+
+.lcm-prose p {
+    margin: 0 0 0.6em;
+}
+
+.lcm-prose p:last-child {
+    margin-bottom: 0;
+}
+
+.lcm-prose ul,
+.lcm-prose ol {
+    margin: 0.4em 0 0.6em 1.2em;
+}
+
+.lcm-prose li {
+    margin-bottom: 0.2em;
+}
+
+.lcm-prose h1,
+.lcm-prose h2,
+.lcm-prose h3,
+.lcm-prose h4 {
+    font-weight: 700;
+    margin: 0.75em 0 0.3em;
+    color: #1e293b;
+}
+
+.lcm-prose h1 { font-size: 16px; }
+.lcm-prose h2 { font-size: 15px; }
+.lcm-prose h3 { font-size: 14px; }
+.lcm-prose h4 { font-size: 13px; }
+
+.lcm-prose code {
+    font-size: 11px;
+}
+
+.lcm-prose blockquote {
+    border-left: 3px solid #cbd5e1;
+    padding-left: 0.75rem;
+    margin: 0.5em 0;
+    color: #64748b;
+    font-style: italic;
+}
+
+.lcm-prose .katex-display {
+    overflow-x: auto;
+    padding: 0.4em 0;
+}
+
+.lcm-math-err {
+    font-size: 11px;
+    color: #dc2626;
+    background: #fef2f2;
+    border-radius: 3px;
+    padding: 1px 4px;
+}
+
+/* Lesson button on checklist rows */
+.btn-leaf-lesson {
+    color: #2563eb !important;
+}
