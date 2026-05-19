@@ -3003,7 +3003,7 @@ function _renderSessionPlaybookPreview(unitMap, plannedTitles, routeSectionPaths
         <div>
           <p class="text-[12px] font-semibold text-slate-800">${_escapeHtml(String(entry?.section_title || 'Section'))}</p>
           ${Array.isArray(entry?.available_actions) && entry.available_actions.length
-            ? `<p class="mt-1 text-[11px] text-slate-500">Best for: ${_escapeHtml(entry.available_actions.slice(0, 3).map(action => _teacherActionLabel(action)).join(' / '))}</p>`
+            ? `<p class="mt-1 text-[11px] text-slate-500">Best for: ${_escapeHtml(entry.available_actions.slice(0, 3).map(action => _assistantActionLabel(action)).join(' / '))}</p>`
             : '<p class="mt-1 text-[11px] text-slate-500">NotebookLM can help prepare this teaching focus.</p>'}
         </div>
         ${Array.isArray(entry?.section_path) && entry.section_path.length
