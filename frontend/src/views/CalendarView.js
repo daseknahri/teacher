@@ -1024,6 +1024,8 @@ function _renderCalendarSessionMatchedGuidance(items, { canImport = false, impor
   }
   const visibleRemaining = visible.filter(item => !importedIds.has(Number(item?.id || 0)));
   const visibleImported = visible.filter(item => importedIds.has(Number(item?.id || 0)));
+  const remainingCount = sorted.filter(item => !importedIds.has(Number(item?.id || 0))).length;
+  const importedCount = sorted.filter(item => importedIds.has(Number(item?.id || 0))).length;
   const renderRows = rows => rows.map(item => {
     const artifactId = Number(item?.id || 0);
     const imported = importedIds.has(artifactId);
@@ -1048,9 +1050,9 @@ function _renderCalendarSessionMatchedGuidance(items, { canImport = false, impor
   }).join('');
   return `
     <div class="flex flex-col gap-2">
-      ${visibleRemaining.length && visibleImported.length && !hideImported ? '<p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Ready to reuse</p>' : ''}
+      ${visibleRemaining.length && visibleImported.length && !hideImported ? `<p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Ready to reuse (${remainingCount})</p>` : ''}
       ${renderRows(visibleRemaining.length && visibleImported.length && !hideImported ? visibleRemaining : visible)}
-      ${visibleRemaining.length && visibleImported.length && !hideImported ? `<p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 pt-1">Already imported</p>${renderRows(visibleImported)}` : ''}
+      ${visibleRemaining.length && visibleImported.length && !hideImported ? `<p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 pt-1">Already imported (${importedCount})</p>${renderRows(visibleImported)}` : ''}
       ${sorted.length > visible.length
         ? `<p class="text-[11px] text-slate-500">Showing ${visible.length} of ${sorted.length} matching saved guidance items${hideImported ? ' still available to import' : ''}.</p>`
         : ''}
