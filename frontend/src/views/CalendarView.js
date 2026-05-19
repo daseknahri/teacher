@@ -406,8 +406,8 @@ function _renderCalendarWriteupSourcePayload(payload) {
           ${normalized.importedAssistantArtifacts.map(item => `
             <li>
               ${_escapeHtml(item.sectionTitle || 'Saved guidance')}
-              ${item.artifactKind ? ` • ${_escapeHtml(_assistantArtifactKindLabel(item.artifactKind))}` : ''}
-              ${item.action ? ` • ${_escapeHtml(_assistantActionLabel(item.action))}` : ''}
+              ${item.artifactKind ? ` - ${_escapeHtml(_assistantArtifactKindLabel(item.artifactKind))}` : ''}
+              ${item.action ? ` - ${_escapeHtml(_assistantActionLabel(item.action))}` : ''}
             </li>
           `).join('')}
         </ul>
@@ -444,7 +444,7 @@ function _renderCalendarImportedGuidanceSummary(payload) {
         ${items.map(item => `
           <span class="badge badge-white border border-emerald-200 !text-emerald-800">
             ${_escapeHtml(item.sectionTitle || 'Saved guidance')}
-            ${item.artifactKind ? ` • ${_escapeHtml(_assistantArtifactKindLabel(item.artifactKind))}` : ''}
+            ${item.artifactKind ? ` - ${_escapeHtml(_assistantArtifactKindLabel(item.artifactKind))}` : ''}
           </span>
         `).join('')}
       </div>
@@ -778,7 +778,7 @@ function _renderCalendarTeacherPrep(unitMap, plannedTitles) {
             <div>
               <p class="text-[12px] font-semibold text-slate-800">${_escapeHtml(String(entry?.section_title || 'Section'))}</p>
               ${Array.isArray(entry?.available_actions) && entry.available_actions.length
-                ? `<p class="mt-1 text-[11px] text-slate-500">Best for: ${_escapeHtml(entry.available_actions.slice(0, 3).map(action => _teacherActionLabel(action)).join(' • '))}</p>`
+                ? `<p class="mt-1 text-[11px] text-slate-500">Best for: ${_escapeHtml(entry.available_actions.slice(0, 3).map(action => _teacherActionLabel(action)).join(' - '))}</p>`
                 : '<p class="mt-1 text-[11px] text-slate-500">NotebookLM can help prepare this teaching focus.</p>'}
             </div>
             ${Array.isArray(entry?.section_path) && entry.section_path.length
@@ -882,7 +882,7 @@ function _renderCalendarRemainingGuidanceSummary(items) {
       <div class="mt-2 flex flex-wrap gap-2">
         ${kindSummary.map(([kind, count]) => `<span class="badge badge-slate">${count} ${_escapeHtml(_assistantArtifactKindLabel(kind))}</span>`).join('')}
       </div>
-      ${previewTitles.length ? `<p class="mt-2 text-[12px] text-slate-500">Top matches: ${_escapeHtml(previewTitles.join(' • '))}</p>` : ''}
+      ${previewTitles.length ? `<p class="mt-2 text-[12px] text-slate-500">Top matches: ${_escapeHtml(previewTitles.join(' - '))}</p>` : ''}
     </div>`;
 }
 
@@ -1073,7 +1073,7 @@ function _renderCalendarSessionMatchedGuidance(items, { canImport = false, impor
                 <p class="text-[12px] font-semibold text-slate-800">${_escapeHtml(String(item?.title || 'Saved guidance'))}</p>
                 ${imported ? '<span class="badge badge-green">Imported</span>' : ''}
               </div>
-              <p class="mt-1 text-[11px] text-slate-500">${_escapeHtml(_assistantArtifactKindLabel(item?.artifact_kind))}${item?.action ? ` • ${_escapeHtml(_assistantActionLabel(item.action))}` : ''}</p>
+              <p class="mt-1 text-[11px] text-slate-500">${_escapeHtml(_assistantArtifactKindLabel(item?.artifact_kind))}${item?.action ? ` - ${_escapeHtml(_assistantActionLabel(item.action))}` : ''}</p>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
               ${canImport ? `<button class="btn btn-primary btn-sm btn-calendar-session-guidance-import" data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}" ${imported ? 'disabled' : ''}>${imported ? 'Already Imported' : 'Use in Write-Up'}</button>` : ''}
@@ -2004,7 +2004,7 @@ function _buildWeekAutofillPlan({ plannedSlotsByCell, weekHolidayMap, occupiedSt
         start_time: _minutesToPayloadTime(startMinutes),
         end_time: _minutesToPayloadTime(endMinutes),
         note: detailParts.length
-          ? `Auto-planned from timetable: ${detailParts.join(' â€¢ ')}`
+          ? `Auto-planned from timetable: ${detailParts.join(' - ')}`
           : 'Auto-planned from timetable',
       });
     });
@@ -3494,7 +3494,7 @@ function _renderCalendar(el, classId) {
           <div class="cal-week-nav w-full sm:w-auto justify-between sm:justify-start">
             <button id="btn-prev-week" class="btn btn-ghost btn-sm" title="Previous Week">Prev</button>
             <div class="week-label ${weekStartKey === _dateKey(_startOfWeek(new Date())) ? 'is-current-week' : ''}">
-              <span class="block text-[10px] uppercase tracking-wide opacity-70">Week ${weekNumber}${weekMonthLabel ? ` â€¢ ${_escapeHtml(weekMonthLabel)}` : ''}</span>
+              <span class="block text-[10px] uppercase tracking-wide opacity-70">Week ${weekNumber}${weekMonthLabel ? ` - ${_escapeHtml(weekMonthLabel)}` : ''}</span>
               <span>${fmtDate(weekStartKey)} - ${fmtDate(weekEndKey)}</span>
             </div>
             <button id="btn-next-week" class="btn btn-ghost btn-sm" title="Next Week">Next</button>
@@ -3581,7 +3581,7 @@ function _renderCalendar(el, classId) {
         : fmtTime(rule.start_time).slice(0, 5);
       const title = rule.subject || 'Planned session';
       const metaParts = [rule.room, rule.group].filter(Boolean);
-      const metaText = metaParts.join(' â€¢ ');
+      const metaText = metaParts.join(' - ');
       const isSkipped = Boolean(rule?.skipped);
       const isMoved = Boolean(rule?.moved);
       const exceptionType = String(rule?.exception_type || '').toLowerCase();
@@ -5216,5 +5216,4 @@ function _showChrome() {
   if (main) main.style.cssText = '';
   if (app) app.style.cssText = '';
 }
-
 
