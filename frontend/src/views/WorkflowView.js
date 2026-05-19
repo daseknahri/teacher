@@ -2475,6 +2475,15 @@ function _render(el, classId) {
       return previewFocusIds.has(itemId) ? !isDone : true;
     })
     : previewBaseChecklist;
+  const previewResumeTargetId = previewSessionNumber
+    ? Number(
+      previewBaseChecklist.find(item => {
+        const itemId = Number(item?.id || 0);
+        if (!previewFocusIds.has(itemId)) return false;
+        return !Boolean(item?.is_completed || item?.done);
+      })?.id || 0
+    ) || null
+    : null;
   const moveMeta = _buildChecklistMoveMeta(checklist);
   const done = checklist.filter(i => Boolean(i?.is_completed || i?.done)).length;
   const total = checklist.length;
@@ -2680,9 +2689,10 @@ function _render(el, classId) {
     const isCollapsed = hasChildren && _collapsedChecklistIds.has(itemId);
     const depthPad = _checklistDepthPadding(item.depth);
     const previewMatch = previewSessionTitleKeys.has(String(item?.title || '').trim().toLowerCase());
+    const previewResumeTarget = previewResumeTargetId != null && itemId === previewResumeTargetId;
     return `
               <div class="todo-node group checklist-draggable-node ${isDone ? 'done' : ''} ${previewMatch ? '!bg-blue-50/70 !border-blue-200' : ''}"
-                   data-item-id="${item.id}" data-dnd-target-id="${item.id}" ${previewMatch ? 'data-preview-match="1"' : ''}
+                   data-item-id="${item.id}" data-dnd-target-id="${item.id}" ${previewMatch ? 'data-preview-match="1"' : ''} ${previewResumeTarget ? 'data-preview-scroll-target="1"' : ''}
                    style="padding-left:${depthPad}px">
                 ${hasChildren
       ? `<button class="btn btn-ghost btn-sm !text-slate-500 btn-checklist-toggle" data-item-id="${item.id}" title="${isCollapsed ? 'Expand branch' : 'Collapse branch'}">${isCollapsed ? '+' : '-'}</button>`
@@ -2696,7 +2706,7 @@ function _render(el, classId) {
                   ${isDone ? 'Y' : ''}
                 </button>
                 <span class="todo-title text-[13px] leading-snug flex-1">${item.title}</span>
-                ${previewMatch ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 flex-shrink-0">Planned now</span>` : ''}
+                ${previewResumeTarget ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex-shrink-0">Resume here</span>` : previewMatch ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 flex-shrink-0">Planned now</span>` : ''}
                 ${item.item_kind && item.item_kind !== 'other' ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 flex-shrink-0">${item.item_kind}</span>` : ''}
                 <div class="row-hover-actions flex items-center gap-1 ml-auto flex-wrap">
                   <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-up ${meta.canUp ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Move up">Up</button>
@@ -3065,7 +3075,7 @@ function _render(el, classId) {
     if (_workflowPreviewScrollKey !== previewScrollKey) {
       _workflowPreviewScrollKey = previewScrollKey;
       queueMicrotask(() => {
-        const target = el.querySelector('[data-preview-match="1"]');
+        const target = el.querySelector('[data-preview-scroll-target="1"]') || el.querySelector('[data-preview-match="1"]');
         target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       });
     }
