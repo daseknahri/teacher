@@ -148,6 +148,10 @@ function _escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function _escapeHtmlAttr(value) {
+  return _escapeHtml(value).replace(/`/g, '&#96;');
+}
+
 function _setWorkflowViewIntent(intent) {
   try {
     sessionStorage.setItem(WORKFLOW_VIEW_INTENT_KEY, JSON.stringify({
@@ -538,6 +542,59 @@ function _findCalendarTeacherPlaybookEntry(unitMap, sectionPlan, fallbackTitle =
     }
     return false;
   }) || null;
+}
+
+function _buildCalendarAssistantPrefill(entry, sectionPlan, fallbackTitle = '', preferredAction = '') {
+  const availableActions = Array.isArray(entry?.available_actions) ? entry.available_actions.map(value => String(value || '').trim().toLowerCase()).filter(Boolean) : [];
+  const suggestedRequests = Array.isArray(entry?.suggested_requests) ? entry.suggested_requests.map(value => String(value || '').trim()).filter(Boolean) : [];
+  const normalizedPreferredAction = String(preferredAction || '').trim().toLowerCase();
+  const action = (normalizedPreferredAction && availableActions.includes(normalizedPreferredAction))
+    ? normalizedPreferredAction
+    : String(availableActions[0] || normalizedPreferredAction || 'explain_section').trim().toLowerCase();
+  const actionIndex = availableActions.indexOf(action);
+  const sectionTitle = String(sectionPlan?.section_title || fallbackTitle || '').trim();
+  const sectionPath = Array.isArray(sectionPlan?.section_path) ? sectionPlan.section_path : [];
+  const genericRequestByAction = {
+    explain_section: `Help me explain ${sectionTitle}.`,
+    simplify_explanation: `Simplify the explanation for ${sectionTitle}.`,
+    generate_guided_examples: `Create guided examples for ${sectionTitle}.`,
+    generate_easier_practice: `Create easier practice for ${sectionTitle}.`,
+    generate_harder_practice: `Create harder practice for ${sectionTitle}.`,
+    generate_quick_quiz: `Create a quick quiz for ${sectionTitle}.`,
+    generate_teacher_notes: `Create teacher notes for ${sectionTitle}.`,
+    generate_slides: `Outline slides for ${sectionTitle}.`,
+    generate_remediation: `Create remediation support for ${sectionTitle}.`,
+  };
+  const teacherRequest = (actionIndex >= 0 ? String(suggestedRequests[actionIndex] || '').trim() : '')
+    || String(suggestedRequests[0] || '').trim()
+    || genericRequestByAction[action]
+    || (sectionTitle ? `Help me prepare ${sectionTitle}.` : '');
+  return {
+    section_title: sectionTitle,
+    section_path: sectionPath,
+    teacher_request: teacherRequest,
+    assistant_action: action || 'explain_section',
+  };
+}
+
+function _renderCalendarNextFocusActions(sectionPlan, playbookEntry, fallbackTitle = '') {
+  const sectionTitle = String(sectionPlan?.section_title || fallbackTitle || '').trim();
+  if (!sectionTitle) return '';
+  const availableActions = Array.isArray(playbookEntry?.available_actions) ? playbookEntry.available_actions.map(value => String(value || '').trim().toLowerCase()).filter(Boolean) : [];
+  const actions = (availableActions.length ? availableActions : ['explain_section']).slice(0, 3);
+  return `
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-3">
+      <p class="text-[12px] font-semibold text-amber-800">Next Teaching Focus</p>
+      <p class="text-[12px] text-amber-700 mt-1">${_escapeHtml(sectionTitle)}</p>
+      <div class="mt-3 flex flex-wrap gap-2">
+        ${actions.map(action => `
+          <button
+            class="btn btn-secondary btn-sm btn-calendar-next-focus-action"
+            data-assistant-action="${_escapeHtmlAttr(action)}"
+          >${_escapeHtml(_teacherActionLabel(action))}</button>`).join('')}
+      </div>
+    </div>
+  `;
 }
 
 function _teacherActionLabel(action) {
@@ -3192,6 +3249,7 @@ function _renderCalendar(el, classId) {
                           ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">All planned rows for this session are already completed. Use <span class="font-semibold">Show Completed Rows</span> if you want to review them.</div>'
                           : ''}
                         ${_renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId })}
+                        ${plannedResumeNode ? _renderCalendarNextFocusActions(plannedResumeSectionPlan, plannedResumePlaybookEntry, plannedResumeNode.title) : ''}
                         <div>
                           <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Matched Section Plans</p>
                           ${_renderCalendarSectionPlans(selectedSectionPlans, plannedSessionTitles)}
@@ -3593,22 +3651,43 @@ function _renderCalendar(el, classId) {
   });
 
   el.querySelector('#btn-open-selected-unit-assistant')?.addEventListener('click', () => {
-    const suggestedRequest = Array.isArray(plannedResumePlaybookEntry?.suggested_requests) && plannedResumePlaybookEntry.suggested_requests.length
-      ? String(plannedResumePlaybookEntry.suggested_requests[0] || '').trim()
-      : '';
-    const suggestedAction = Array.isArray(plannedResumePlaybookEntry?.available_actions) && plannedResumePlaybookEntry.available_actions.length
-      ? String(plannedResumePlaybookEntry.available_actions[0] || '').trim().toLowerCase()
-      : 'explain_section';
+    const prefill = _buildCalendarAssistantPrefill(
+      plannedResumePlaybookEntry,
+      plannedResumeSectionPlan,
+      plannedResumeNode?.title || '',
+      'explain_section',
+    );
     const intent = _buildCalendarWorkflowIntent(selectedEvent, 'assistant', {
-      section_title: String(plannedResumeSectionPlan?.section_title || plannedResumeNode?.title || '').trim(),
-      section_path: Array.isArray(plannedResumeSectionPlan?.section_path) ? plannedResumeSectionPlan.section_path : [],
-      teacher_request: suggestedRequest || (plannedResumeNode?.title ? `Help me prepare the next unfinished part of this session: ${plannedResumeNode.title}.` : ''),
-      assistant_action: suggestedAction,
+      section_title: prefill.section_title,
+      section_path: prefill.section_path,
+      teacher_request: prefill.teacher_request,
+      assistant_action: prefill.assistant_action,
       preview_hide_done: _calendarPlannedHideDone,
     });
     if (!intent) return;
     _setWorkflowViewIntent(intent);
     navigate('workflow');
+  });
+
+  el.querySelectorAll('.btn-calendar-next-focus-action').forEach(button => {
+    button.addEventListener('click', () => {
+      const prefill = _buildCalendarAssistantPrefill(
+        plannedResumePlaybookEntry,
+        plannedResumeSectionPlan,
+        plannedResumeNode?.title || '',
+        String(button.dataset.assistantAction || 'explain_section').trim().toLowerCase(),
+      );
+      const intent = _buildCalendarWorkflowIntent(selectedEvent, 'assistant', {
+        section_title: prefill.section_title,
+        section_path: prefill.section_path,
+        teacher_request: prefill.teacher_request,
+        assistant_action: prefill.assistant_action,
+        preview_hide_done: _calendarPlannedHideDone,
+      });
+      if (!intent) return;
+      _setWorkflowViewIntent(intent);
+      navigate('workflow');
+    });
   });
 
   el.querySelectorAll('.btn-calendar-prep-request').forEach(button => {

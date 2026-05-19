@@ -2346,6 +2346,59 @@ function _findTeacherPlaybookEntryForSection(unitMap, sectionPlan, fallbackTitle
   }) || null;
 }
 
+function _buildAssistantPrefillFromPlaybook(entry, sectionPlan, fallbackTitle = '', preferredAction = '') {
+  const availableActions = Array.isArray(entry?.available_actions) ? entry.available_actions.map(value => String(value || '').trim().toLowerCase()).filter(Boolean) : [];
+  const suggestedRequests = Array.isArray(entry?.suggested_requests) ? entry.suggested_requests.map(value => String(value || '').trim()).filter(Boolean) : [];
+  const normalizedPreferredAction = String(preferredAction || '').trim().toLowerCase();
+  const action = (normalizedPreferredAction && availableActions.includes(normalizedPreferredAction))
+    ? normalizedPreferredAction
+    : String(availableActions[0] || normalizedPreferredAction || 'explain_section').trim().toLowerCase();
+  const actionIndex = availableActions.indexOf(action);
+  const sectionTitle = String(sectionPlan?.section_title || fallbackTitle || '').trim();
+  const sectionPath = Array.isArray(sectionPlan?.section_path) ? sectionPlan.section_path : [];
+  const genericRequestByAction = {
+    explain_section: `Help me explain ${sectionTitle}.`,
+    simplify_explanation: `Simplify the explanation for ${sectionTitle}.`,
+    generate_guided_examples: `Create guided examples for ${sectionTitle}.`,
+    generate_easier_practice: `Create easier practice for ${sectionTitle}.`,
+    generate_harder_practice: `Create harder practice for ${sectionTitle}.`,
+    generate_quick_quiz: `Create a quick quiz for ${sectionTitle}.`,
+    generate_teacher_notes: `Create teacher notes for ${sectionTitle}.`,
+    generate_slides: `Outline slides for ${sectionTitle}.`,
+    generate_remediation: `Create remediation support for ${sectionTitle}.`,
+  };
+  const teacherRequest = (actionIndex >= 0 ? String(suggestedRequests[actionIndex] || '').trim() : '')
+    || String(suggestedRequests[0] || '').trim()
+    || genericRequestByAction[action]
+    || (sectionTitle ? `Help me prepare ${sectionTitle}.` : '');
+  return {
+    sectionTitle,
+    sectionPath,
+    teacherRequest,
+    assistantAction: action || 'explain_section',
+  };
+}
+
+function _renderPreviewNextFocusActions(sectionPlan, playbookEntry, fallbackTitle = '') {
+  const sectionTitle = String(sectionPlan?.section_title || fallbackTitle || '').trim();
+  if (!sectionTitle) return '';
+  const availableActions = Array.isArray(playbookEntry?.available_actions) ? playbookEntry.available_actions.map(value => String(value || '').trim().toLowerCase()).filter(Boolean) : [];
+  const actions = (availableActions.length ? availableActions : ['explain_section']).slice(0, 3);
+  return `
+    <div class="rounded-xl border border-amber-200 bg-amber-50 p-3">
+      <p class="text-[12px] font-semibold text-amber-800">Next Teaching Focus</p>
+      <p class="text-[12px] text-amber-700 mt-1">${_escapeHtml(sectionTitle)}</p>
+      <div class="mt-3 flex flex-wrap gap-2">
+        ${actions.map(action => `
+          <button
+            class="btn btn-secondary btn-sm btn-preview-next-focus-action"
+            data-assistant-action="${_escapeHtmlAttr(action)}"
+          >${_escapeHtml(_assistantActionLabel(action))}</button>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
 function _openSessionWriteupModal(writeup) {
   return new Promise(resolve => {
     const item = writeup && typeof writeup === 'object' ? writeup : {};
@@ -2666,6 +2719,10 @@ function _render(el, classId) {
                   </div>
                 </div>
               </div>
+              ${previewResumeItem ? `
+                <div class="mt-3">
+                  ${_renderPreviewNextFocusActions(previewResumeSectionPlan, previewResumePlaybookEntry, previewResumeItem.title)}
+                </div>` : ''}
             </div>` : ''}
             <!-- Checklist tree -->
             ${checklist.length ? `
@@ -4998,6 +5055,43 @@ function _bindWorkflowEvents(el, classId) {
       } catch (err) {
         showToast(String(err?.message || 'Failed to open unit guidance.'), 'error');
       }
+    });
+  });
+
+  el.querySelectorAll('.btn-preview-next-focus-action').forEach(button => {
+    button.addEventListener('click', async () => {
+      const unit = getActiveUnit();
+      if (!unit?.id) {
+        el.querySelector('#btn-ask-unit-assistant')?.click();
+        return;
+      }
+      await _withActionLock(`workflow:unit-assistant-preview-action:${classId}`, async () => {
+        try {
+          const state = await _loadUnitBlueprint(classId, unit.id, { force: false });
+          if (state?.error) {
+            showToast(state.error, 'error');
+            return;
+          }
+          if (!state?.item) {
+            showToast('No saved unit intelligence is available for this unit yet.', 'warning');
+            return;
+          }
+          const prefill = _buildAssistantPrefillFromPlaybook(
+            previewResumePlaybookEntry,
+            previewResumeSectionPlan,
+            String(previewResumeItem?.title || '').trim(),
+            String(button.dataset.assistantAction || 'explain_section').trim().toLowerCase(),
+          );
+          _openUnitAssistantModal({
+            classId,
+            unit,
+            blueprint: state.item,
+            initial: prefill,
+          });
+        } catch (err) {
+          showToast(String(err?.message || 'Failed to open unit guidance.'), 'error');
+        }
+      });
     });
   });
 
