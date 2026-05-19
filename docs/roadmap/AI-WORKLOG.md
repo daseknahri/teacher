@@ -38,6 +38,33 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-19 21:35 - Codex
+
+- Status: done
+- Goal: turn the repo handoff docs into a practical Claude CLI workflow with safe worktrees and task prompts
+- Files expected:
+  - `README.md`
+  - `.gitignore`
+  - `docs/roadmap/CLAUDE-CLI-WORKFLOW.md`
+  - `scripts/ai/New-ClaudeWorktree.ps1`
+  - `scripts/ai/Invoke-ClaudeTask.ps1`
+  - `docs/roadmap/AI-WORKLOG.md`
+- Assumptions:
+  - Claude CLI is installed and authenticated on this machine
+  - the safest first usage is one task per worktree, reviewed before merge
+- Notes:
+  - verified `claude -p` works on this machine
+  - smoke-tested the helper scripts
+  - cleaned the temporary smoke worktree after validation
+- Result:
+  - the repo now has a working Claude CLI workflow with:
+    - task markdown files
+    - worktree helper
+    - task runner
+    - log storage under `storage/ai/claude/`
+- Follow-up:
+  - next real use should be the leaf-content persistence task in its own Claude worktree
+
 ### 2026-05-19 19:35 - Claude
 
 - Status: planned

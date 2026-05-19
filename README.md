@@ -110,6 +110,7 @@ Excel formats supported:
 - `docs/roadmap/INTEGRATION-AUTH-PATTERNS.md` reusable guide for choosing between API, OAuth, restored-session, and browser-automation integrations
 - `docs/roadmap/AI-CONTENT-BANK-HANDOFF.md` fastest handoff for the NotebookLM unit-brain and leaf-content direction
 - `docs/roadmap/CLAUDE-CONTINUATION-PROMPT.md` paste-ready prompt for handing the repo to Claude safely
+- `docs/roadmap/CLAUDE-CLI-WORKFLOW.md` step-by-step process for running Claude CLI in a safe repo worktree
 - `docs/roadmap/AI-COLLABORATION-PROTOCOL.md` how to let multiple AI helpers work on the same repo without breaking direction
 - `docs/roadmap/AI-WORKLOG.md` shared handoff log for active AI and engineering work
 - `docs/roadmap/NOTEBOOKLM-UNIT-BRAIN-ARCHITECTURE.md` target architecture for moving from PDF extraction to a reusable unit brain
