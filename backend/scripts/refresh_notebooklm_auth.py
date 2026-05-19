@@ -35,6 +35,17 @@ def _parse_args() -> argparse.Namespace:
         help="Run `python -m notebooklm login` locally before uploading the auth file.",
     )
     parser.add_argument(
+        "--fresh-login",
+        action="store_true",
+        help="Run NotebookLM login with --fresh to force a clean browser session and allow switching Google accounts.",
+    )
+    parser.add_argument(
+        "--browser",
+        choices=["chromium", "msedge"],
+        default="chromium",
+        help="Browser to use for local NotebookLM login. Default: chromium.",
+    )
+    parser.add_argument(
         "--skip-smoke-test",
         action="store_true",
         help="Upload the auth file but skip the live NotebookLM smoke test.",
@@ -48,9 +59,21 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _run_local_login() -> None:
+def _run_local_login(*, auth_path: Path, fresh_login: bool = False, browser: str = "chromium") -> None:
     print("Running local NotebookLM login...")
-    result = subprocess.run([sys.executable, "-m", "notebooklm", "login"])
+    command = [
+        sys.executable,
+        "-m",
+        "notebooklm",
+        "login",
+        "--storage",
+        str(auth_path),
+        "--browser",
+        str(browser or "chromium"),
+    ]
+    if fresh_login:
+        command.append("--fresh")
+    result = subprocess.run(command)
     if result.returncode != 0:
         raise SystemExit(f"NotebookLM login failed with exit code {result.returncode}.")
 
@@ -74,7 +97,11 @@ def main() -> int:
     auth_path = Path(args.auth_file).expanduser() if args.auth_file else _default_auth_path(args.profile)
 
     if args.run_login:
-        _run_local_login()
+        _run_local_login(
+            auth_path=auth_path,
+            fresh_login=bool(args.fresh_login),
+            browser=str(args.browser or "chromium"),
+        )
 
     if not auth_path.exists():
         raise SystemExit(f"Auth file not found: {auth_path}")

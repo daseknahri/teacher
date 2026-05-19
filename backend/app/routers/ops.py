@@ -59,7 +59,7 @@ def _build_notebooklm_refresh_helper_cmd(*, app_url: str, access_token: str, pro
         "set \"AUTH_FILE=%USERPROFILE%\\.notebooklm\\profiles\\%PROFILE%\\storage_state.json\"\r\n"
         "echo Starting NotebookLM refresh helper...\r\n"
         "echo This will open the Google login window if needed.\r\n"
-        "python -m notebooklm login\r\n"
+        "python -m notebooklm login --fresh --storage \"%AUTH_FILE%\"\r\n"
         "if errorlevel 1 goto :login_failed\r\n"
         "if not exist \"%AUTH_FILE%\" goto :missing_auth\r\n"
         "python -c \"import pathlib,sys,httpx; app_url=r'%APP_URL%'; token=r'%ACCESS_TOKEN%'; auth_file=pathlib.Path.home()/'.notebooklm'/'profiles'/r'%PROFILE%'/'storage_state.json'; headers={'Authorization':'Bearer '+token}; client=httpx.Client(timeout=60, follow_redirects=True); fh=auth_file.open('rb'); upload=client.post(app_url+'/ops/notebooklm/auth/upload', headers=headers, files={'file': (auth_file.name, fh, 'application/json')}); fh.close(); upload.raise_for_status(); smoke=client.post(app_url+'/ops/notebooklm/smoke-test', headers=headers); smoke.raise_for_status(); payload=smoke.json(); smoke_data=payload.get('smoke') or {}; print('Smoke test result:', 'Success' if smoke_data.get('ok') else 'Failed'); print('Answer:', smoke_data.get('answer') or '-'); err=smoke_data.get('error_message'); print('Error:', err) if err else None; sys.exit(0 if smoke_data.get('ok') else 1)\"\r\n"
