@@ -20,6 +20,7 @@ let _mutationInFlight = false;
 let _calendarPlannedHideDone = false;
 let _calendarSessionGuidanceHideImported = false;
 let _calendarSessionGuidanceKindFilter = 'all';
+let _calendarSessionGuidanceCollapseImported = false;
 let _holidayByDate = new Map();
 const _timetableRulesByClass = new Map();
 const _timetableExceptionsByClass = new Map();
@@ -1026,6 +1027,7 @@ function _renderCalendarSessionMatchedGuidance(items, { canImport = false, impor
   const visibleImported = visible.filter(item => importedIds.has(Number(item?.id || 0)));
   const remainingCount = sorted.filter(item => !importedIds.has(Number(item?.id || 0))).length;
   const importedCount = sorted.filter(item => importedIds.has(Number(item?.id || 0))).length;
+  const showGroupedSections = Boolean(visibleRemaining.length && visibleImported.length && !hideImported);
   const renderRows = rows => rows.map(item => {
     const artifactId = Number(item?.id || 0);
     const imported = importedIds.has(artifactId);
@@ -1050,9 +1052,15 @@ function _renderCalendarSessionMatchedGuidance(items, { canImport = false, impor
   }).join('');
   return `
     <div class="flex flex-col gap-2">
-      ${visibleRemaining.length && visibleImported.length && !hideImported ? `<p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Ready to reuse (${remainingCount})</p>` : ''}
-      ${renderRows(visibleRemaining.length && visibleImported.length && !hideImported ? visibleRemaining : visible)}
-      ${visibleRemaining.length && visibleImported.length && !hideImported ? `<p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500 pt-1">Already imported (${importedCount})</p>${renderRows(visibleImported)}` : ''}
+      ${showGroupedSections ? `<p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Ready to reuse (${remainingCount})</p>` : ''}
+      ${renderRows(showGroupedSections ? visibleRemaining : visible)}
+      ${showGroupedSections ? `
+        <div class="flex items-center justify-between gap-2 pt-1">
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Already imported (${importedCount})</p>
+          <button id="btn-calendar-session-guidance-collapse-imported-toggle" class="btn btn-ghost btn-sm">${_calendarSessionGuidanceCollapseImported ? 'Show Section' : 'Hide Section'}</button>
+        </div>
+        ${_calendarSessionGuidanceCollapseImported ? '<p class="text-[11px] text-slate-500">Imported guidance is hidden for a cleaner review.</p>' : renderRows(visibleImported)}
+      ` : ''}
       ${sorted.length > visible.length
         ? `<p class="text-[11px] text-slate-500">Showing ${visible.length} of ${sorted.length} matching saved guidance items${hideImported ? ' still available to import' : ''}.</p>`
         : ''}
@@ -4519,6 +4527,11 @@ function _renderCalendar(el, classId) {
   el.querySelector('#btn-calendar-session-guidance-reset-filters')?.addEventListener('click', () => {
     _calendarSessionGuidanceHideImported = false;
     _calendarSessionGuidanceKindFilter = 'all';
+    _calendarSessionGuidanceCollapseImported = false;
+    _renderCalendar(el, classId);
+  });
+  el.querySelector('#btn-calendar-session-guidance-collapse-imported-toggle')?.addEventListener('click', () => {
+    _calendarSessionGuidanceCollapseImported = !_calendarSessionGuidanceCollapseImported;
     _renderCalendar(el, classId);
   });
   el.querySelectorAll('.btn-calendar-session-guidance-kind-toggle').forEach(button => {
