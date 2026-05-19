@@ -3308,12 +3308,15 @@ function _renderCalendar(el, classId) {
   const selectedCanEdit = Boolean(selectedEvent) && !selectedIsPastWorkflowLocked;
   const selectedCanAttendanceEdit = Boolean(selectedEvent) && !selectedIsFuture;
   const selectedConfirmLabel = selectedIsFuture ? 'Future Session' : 'Confirm Session';
+  const selectedHasWorkflowUnit = Boolean(selectedEvent && selectedEvent.unit_id != null);
+  const selectedCompletedCount = Number(selectedEvent?.checked_items_count || 0);
+  const selectedAbsentCount = Number(selectedEvent?.absent_count || 0);
   const selectedSessionStateLabel = selectedEvent
     ? selectedIsFuture
       ? 'Upcoming'
       : selectedWriteup
         ? (selectedWriteup.approved === false ? 'Awaiting review' : 'Completed')
-        : selectedEvent.unit_id != null
+        : selectedHasWorkflowUnit
           ? 'Ready to confirm'
           : 'Standalone session'
     : '';
@@ -3322,7 +3325,7 @@ function _renderCalendar(el, classId) {
       ? 'badge-blue'
       : selectedWriteup
         ? (selectedWriteup.approved === false ? 'badge-amber' : 'badge-green')
-        : selectedEvent.unit_id != null
+        : selectedHasWorkflowUnit
           ? 'badge-amber'
           : 'badge-gray'
     : 'badge-gray';
@@ -3333,10 +3336,33 @@ function _renderCalendar(el, classId) {
         ? (selectedWriteup.approved === false
           ? 'Review the generated write-up, then approve it when it reflects what happened in class.'
           : 'This session is documented. You can still review the write-up or reopen Workflow for unit context.')
-        : selectedEvent.unit_id != null
+        : selectedHasWorkflowUnit
           ? 'Confirm the delivered session to auto-check the checklist and generate the textbook write-up.'
           : 'This session stands outside the workflow unit system, so only note and attendance are tracked here.'
     : '';
+  const selectedWriteupStateLabel = !selectedEvent
+    ? 'No write-up'
+    : !selectedHasWorkflowUnit
+      ? 'Outside workflow'
+      : selectedIsFuture
+        ? 'Not needed yet'
+        : selectedWriteup
+          ? (selectedWriteup.approved === false ? 'Draft write-up' : 'Approved write-up')
+          : 'Not generated';
+  const selectedWriteupStateClass = !selectedEvent
+    ? 'badge-gray'
+    : !selectedHasWorkflowUnit
+      ? 'badge-gray'
+      : selectedIsFuture
+        ? 'badge-blue'
+        : selectedWriteup
+          ? (selectedWriteup.approved === false ? 'badge-amber' : 'badge-green')
+          : 'badge-slate';
+  const selectedSessionNote = String(selectedDetail?.session?.note || selectedEvent?.note || '').trim();
+  const selectedSessionNotePreview = selectedSessionNote.length > 180
+    ? `${selectedSessionNote.slice(0, 177).trim()}...`
+    : selectedSessionNote;
+  const selectedHeadlineCount = headlineBlocks.reduce((sum, block) => sum + (Array.isArray(block?.items) ? block.items.length : 0), 0);
   const selectedConfirmTitle = selectedEvent
     ? (selectedCanConfirm
       ? 'Confirm this delivered session and auto-check checklist flow.'
@@ -3554,80 +3580,148 @@ function _renderCalendar(el, classId) {
           </div>
         </div>
         <div class="flex flex-col gap-4">
-          <div class="p-3 rounded-xl border border-slate-200 bg-slate-50">
-            <p class="text-[13px] font-semibold text-slate-700">${_escapeHtml(selectedEvent.unit_title || 'Session')}</p>
-            <div class="flex gap-2 mt-2 flex-wrap">
-              <span class="badge ${selectedSessionStateClass}">${_escapeHtml(selectedSessionStateLabel)}</span>
-              <span class="badge badge-green">${selectedEvent.checked_items_count ?? 0} items done</span>
-              <span class="badge badge-red">${selectedEvent.absent_count ?? 0} absent</span>
-              ${selectedMatchesActiveWorkflow ? '<span class="badge badge-amber">Live in Workflow</span>' : ''}
-            </div>
-            ${selectedNextStepText ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedNextStepText)}</p>` : ''}
-            ${hasOtherActiveWorkflowSession ? `
-              <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-                <p class="text-[12px] font-semibold text-amber-800">Another workflow session is currently active</p>
-                <p class="text-[12px] text-amber-700 mt-1">
-                  ${_escapeHtml(String(activeWorkflowSession?.unit_title || 'Active unit session'))}
-                  ${activeWorkflowSession?.unit_session_number ? ` • Unit Session ${Number(activeWorkflowSession.unit_session_number)}` : ''}
-                </p>
-                <div class="mt-3 flex gap-2 flex-wrap">
-                  <button id="btn-open-active-workflow-session" class="btn btn-secondary btn-sm">Resume Active Session</button>
+          <div class="rounded-2xl border border-blue-100 bg-[linear-gradient(180deg,rgba(239,246,255,0.95),rgba(255,255,255,0.98))] p-4 sm:p-5 shadow-sm">
+            <div class="flex flex-col gap-4">
+              <div class="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
+                <div class="min-w-0">
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">Session Summary</p>
+                  <p class="mt-1 text-[18px] font-semibold text-slate-800">${_escapeHtml(selectedEvent.unit_title || 'Session')}</p>
+                  <div class="mt-2 flex gap-2 flex-wrap">
+                    <span class="badge ${selectedSessionStateClass}">${_escapeHtml(selectedSessionStateLabel)}</span>
+                    ${selectedHasWorkflowUnit ? `<span class="badge ${plannedSessionStatus.className}">${_escapeHtml(plannedSessionStatus.label)}</span>` : '<span class="badge badge-gray">Outside workflow</span>'}
+                    ${selectedMatchesActiveWorkflow ? '<span class="badge badge-amber">Live in Workflow</span>' : ''}
+                    ${selectedSessionNumber ? `<span class="badge badge-blue">Unit Session ${Number(selectedSessionNumber)}</span>` : ''}
+                  </div>
                 </div>
-              </div>` : ''}
-          </div>
-
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            <div class="p-3 rounded-xl border border-slate-200">
-              <div class="flex items-center justify-between gap-2">
-                <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Absent Students</h4>
-                <button id="btn-edit-selected-attendance" class="btn btn-ghost btn-sm" ${selectedCanAttendanceEdit ? '' : 'disabled'} title="${_escapeHtml(selectedAttendanceTitle)}">Edit Attendance</button>
+                <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 xl:min-w-[420px]">
+                  <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3">
+                    <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Progress</p>
+                    <p class="mt-1 text-[18px] font-semibold text-slate-800">${selectedCompletedCount}</p>
+                    <p class="text-[11px] text-slate-500">Checklist rows done</p>
+                  </div>
+                  <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3">
+                    <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Attendance</p>
+                    <p class="mt-1 text-[18px] font-semibold text-slate-800">${selectedAbsentCount}</p>
+                    <p class="text-[11px] text-slate-500">${selectedAbsentCount === 1 ? 'Student absent' : 'Students absent'}</p>
+                  </div>
+                  <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3">
+                    <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Headlines</p>
+                    <p class="mt-1 text-[18px] font-semibold text-slate-800">${selectedHeadlineCount}</p>
+                    <p class="text-[11px] text-slate-500">${headlineBlocks.length ? `${headlineBlocks.length} teaching block${headlineBlocks.length === 1 ? '' : 's'}` : 'No structure saved'}</p>
+                  </div>
+                  <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3">
+                    <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Write-Up</p>
+                    <p class="mt-1 text-[14px] font-semibold text-slate-800">${_escapeHtml(selectedWriteupStateLabel)}</p>
+                    <div class="mt-2">
+                      <span class="badge ${selectedWriteupStateClass}">${selectedWriteup ? (selectedWriteup.approved === false ? 'Draft' : 'Approved') : _escapeHtml(selectedWriteupStateLabel)}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
-              ${_selectedSessionLoading
-        ? '<p class="text-[12px] text-slate-500 mt-2">Loading session attendance...</p>'
-        : _selectedSessionError
-          ? `<div class="mt-2 flex flex-col gap-2">
-               <p class="text-[12px] text-red-600">${_escapeHtml(_selectedSessionError)}</p>
-               <button id="btn-retry-session-detail" class="btn btn-ghost btn-sm self-start">Retry details</button>
-             </div>`
-          : absentRows.length
-            ? `<div class="mt-2 flex flex-col gap-1">
-                    ${absentRows.map(row => `
-                    <div class="text-[13px] text-slate-700">
-                      ${_escapeHtml(row.name)}
-                      ${row.code ? `<span class="text-[11px] text-slate-400">(${_escapeHtml(row.code)})</span>` : ''}
-                    </div>`).join('')}
-                 </div>`
-            : '<p class="text-[12px] text-slate-500 mt-2">No absent students for this session.</p>'}
+              <div class="grid grid-cols-1 xl:grid-cols-[1.3fr_0.9fr] gap-3">
+                <div class="rounded-2xl border border-blue-100 bg-white/90 px-4 py-3">
+                  <p class="text-[12px] font-semibold text-slate-700">What the teacher should do next</p>
+                  ${selectedNextStepText ? `<p class="mt-1 text-[13px] leading-relaxed text-slate-600">${_escapeHtml(selectedNextStepText)}</p>` : '<p class="mt-1 text-[13px] text-slate-500">No next-step guidance saved for this session.</p>'}
+                  ${hasOtherActiveWorkflowSession ? `
+                    <div class="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3">
+                      <p class="text-[12px] font-semibold text-amber-800">Another workflow session is currently active</p>
+                      <p class="text-[12px] text-amber-700 mt-1">
+                        ${_escapeHtml(String(activeWorkflowSession?.unit_title || 'Active unit session'))}
+                        ${activeWorkflowSession?.unit_session_number ? ` • Unit Session ${Number(activeWorkflowSession.unit_session_number)}` : ''}
+                      </p>
+                      <div class="mt-3 flex gap-2 flex-wrap">
+                        <button id="btn-open-active-workflow-session" class="btn btn-secondary btn-sm">Resume Active Session</button>
+                      </div>
+                    </div>` : ''}
+                </div>
+                <div class="rounded-2xl border border-white/80 bg-white/90 px-4 py-3">
+                  <p class="text-[12px] font-semibold text-slate-700">Quick facts</p>
+                  <div class="mt-2 flex flex-col gap-2 text-[12px] text-slate-600">
+                    <div class="flex items-start justify-between gap-3">
+                      <span class="text-slate-500">Time</span>
+                      <span class="font-medium text-slate-700">${_escapeHtml(`${fmtTime(selectedEvent.start_time)}${selectedEvent.end_time ? ` -> ${fmtTime(selectedEvent.end_time)}` : ''}`)}</span>
+                    </div>
+                    <div class="flex items-start justify-between gap-3">
+                      <span class="text-slate-500">Route coverage</span>
+                      <span class="font-medium text-slate-700">${_escapeHtml(plannedSessionStatus.hint)}</span>
+                    </div>
+                    <div class="flex items-start justify-between gap-3">
+                      <span class="text-slate-500">Attendance editing</span>
+                      <span class="font-medium text-slate-700">${selectedCanAttendanceEdit ? 'Open' : 'Locked until session day'}</span>
+                    </div>
+                    <div class="flex items-start justify-between gap-3">
+                      <span class="text-slate-500">Workflow link</span>
+                      <span class="font-medium text-slate-700">${selectedHasWorkflowUnit ? 'Linked to unit workflow' : 'Standalone calendar session'}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
+          </div>
 
-            <div class="p-3 rounded-xl border border-slate-200">
-              <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Headlines Structure</h4>
-              ${_selectedSessionLoading
-        ? '<p class="text-[12px] text-slate-500 mt-2">Loading session progress...</p>'
-        : _selectedSessionError
-          ? '<p class="text-[12px] text-slate-500 mt-2">Unable to load detailed progress. Showing available calendar data only.</p>'
-          : ''}
-              ${headlineBlocks.length
+          <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div class="flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Classroom Snapshot</p>
+                <p class="mt-1 text-[15px] font-semibold text-slate-800">Attendance, delivered structure, and session note</p>
+              </div>
+              <div class="flex gap-2 flex-wrap">
+                <span class="badge badge-gray">${selectedAbsentCount} absent</span>
+                <span class="badge badge-gray">${selectedHeadlineCount} headlines</span>
+                <span class="badge ${selectedSessionNotePreview ? 'badge-blue' : 'badge-gray'}">${selectedSessionNotePreview ? 'Note saved' : 'No note yet'}</span>
+              </div>
+            </div>
+            <div class="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+                <div class="flex items-center justify-between gap-2">
+                  <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Absent Students</h4>
+                  <button id="btn-edit-selected-attendance" class="btn btn-ghost btn-sm" ${selectedCanAttendanceEdit ? '' : 'disabled'} title="${_escapeHtml(selectedAttendanceTitle)}">Edit Attendance</button>
+                </div>
+                ${_selectedSessionLoading
+      ? '<p class="text-[12px] text-slate-500 mt-2">Loading session attendance...</p>'
+      : _selectedSessionError
         ? `<div class="mt-2 flex flex-col gap-2">
-                   ${headlineBlocks.map(block => `
-                   <div>
-                     <p class="text-[12px] font-semibold text-slate-600">${_escapeHtml(block.label)}</p>
-                     <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
-                       ${block.items.map(item => `<li>${_escapeHtml(item)}</li>`).join('')}
-                     </ul>
-                   </div>`).join('')}
-                 </div>`
-        : '<p class="text-[12px] text-slate-500 mt-2">No headlines recorded for this session.</p>'}
+             <p class="text-[12px] text-red-600">${_escapeHtml(_selectedSessionError)}</p>
+             <button id="btn-retry-session-detail" class="btn btn-ghost btn-sm self-start">Retry details</button>
+           </div>`
+        : absentRows.length
+          ? `<div class="mt-3 flex flex-col gap-2">
+                  ${absentRows.map(row => `
+                  <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[13px] text-slate-700">
+                    ${_escapeHtml(row.name)}
+                    ${row.code ? `<span class="text-[11px] text-slate-400">(${_escapeHtml(row.code)})</span>` : ''}
+                  </div>`).join('')}
+               </div>`
+          : '<p class="text-[12px] text-slate-500 mt-2">No absent students for this session.</p>'}
+              </div>
+
+              <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+                <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Headlines Structure</h4>
+                ${_selectedSessionLoading
+      ? '<p class="text-[12px] text-slate-500 mt-2">Loading session progress...</p>'
+      : _selectedSessionError
+        ? '<p class="text-[12px] text-slate-500 mt-2">Unable to load detailed progress. Showing available calendar data only.</p>'
+        : ''}
+                ${headlineBlocks.length
+      ? `<div class="mt-3 flex flex-col gap-3">
+                 ${headlineBlocks.map(block => `
+                 <div class="rounded-xl border border-slate-200 bg-white px-3 py-3">
+                   <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(block.label)}</p>
+                   <ul class="mt-2 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+                     ${block.items.map(item => `<li>${_escapeHtml(item)}</li>`).join('')}
+                   </ul>
+                 </div>`).join('')}
+               </div>`
+      : '<p class="text-[12px] text-slate-500 mt-2">No headlines recorded for this session.</p>'}
+              </div>
+            </div>
+            <div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+              <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Session Note</h4>
+              ${selectedSessionNotePreview
+      ? `<p class="mt-2 text-[13px] text-slate-700 whitespace-pre-wrap leading-relaxed">${_escapeHtml(selectedSessionNotePreview)}</p>${selectedSessionNote.length > selectedSessionNotePreview.length ? '<p class="mt-2 text-[11px] text-slate-400">The note is longer in full edit view.</p>' : ''}`
+      : '<p class="text-[12px] text-slate-500 mt-2">No note for this session.</p>'}
             </div>
           </div>
-
-          <div class="p-3 rounded-xl border border-slate-200">
-            <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Note</h4>
-            ${String(selectedDetail?.session?.note || selectedEvent.note || '').trim()
-        ? `<p class="mt-2 text-[13px] text-slate-700 whitespace-pre-wrap">${_escapeHtml(String(selectedDetail?.session?.note || selectedEvent.note || '').trim())}</p>`
-        : '<p class="text-[12px] text-slate-500 mt-2">No note for this session.</p>'}
-          </div>
-
           <div class="p-3 rounded-xl border border-slate-200">
             <div class="flex items-center justify-between gap-2 flex-wrap">
               <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Planned Teaching Flow</h4>
