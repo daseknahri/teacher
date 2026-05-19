@@ -2440,6 +2440,14 @@ function _render(el, classId) {
     : [];
   const previewMatchedDone = previewMatchedChecklist.filter(item => Boolean(item?.is_completed || item?.done)).length;
   const previewMatchedRemaining = Math.max(0, previewMatchedChecklist.length - previewMatchedDone);
+  const previewCompletionPct = previewMatchedChecklist.length ? Math.round((previewMatchedDone / previewMatchedChecklist.length) * 100) : 0;
+  const previewRouteStatus = !previewMatchedChecklist.length
+    ? { label: 'No route saved', className: 'badge-gray', hint: 'No planned checklist route is saved for this session yet.' }
+    : previewMatchedDone === 0
+      ? { label: 'Not started', className: 'badge-blue', hint: 'This planned route has not been covered yet.' }
+      : previewMatchedRemaining === 0
+        ? { label: 'Fully covered', className: 'badge-green', hint: 'All planned rows for this session are already completed.' }
+        : { label: 'Partly covered', className: 'badge-amber', hint: `${previewMatchedRemaining} planned row${previewMatchedRemaining === 1 ? '' : 's'} still remain.` };
   const previewKindCounts = previewMatchedChecklist.reduce((acc, item) => {
     const kind = String(item?.item_kind || '').trim().toLowerCase();
     if (!kind || kind === 'other') return acc;
@@ -2450,6 +2458,7 @@ function _render(el, classId) {
     previewMatchedChecklist.length ? `${previewMatchedChecklist.length} planned items` : '',
     previewMatchedChecklist.length ? `${previewMatchedDone}/${previewMatchedChecklist.length} done` : '',
     previewMatchedChecklist.length ? `${previewMatchedRemaining} remaining` : '',
+    previewMatchedChecklist.length ? `${previewCompletionPct}% covered` : '',
     previewKindCounts.activity ? `${previewKindCounts.activity} activities` : '',
     previewKindCounts.example ? `${previewKindCounts.example} examples` : '',
     previewKindCounts.exercise ? `${previewKindCounts.exercise} exercises` : '',
@@ -2585,6 +2594,10 @@ function _render(el, classId) {
                   ${_escapeHtml(_workflowEntryContext?.session_label || `Unit Session ${previewSessionNumber}`)}
                   ${_workflowEntryContext?.session_date ? ` • ${_escapeHtml(fmtDate(_workflowEntryContext.session_date))}` : ''}
                 </p>
+                <div class="mt-2 flex items-center gap-2 flex-wrap">
+                  <span class="badge ${previewRouteStatus.className}">${_escapeHtml(previewRouteStatus.label)}</span>
+                  ${previewMatchedChecklist.length ? `<span class="text-[11px] text-blue-700">${_escapeHtml(previewRouteStatus.hint)}</span>` : ''}
+                </div>
                 ${previewSummaryBadges.length ? `
                 <div class="mt-3 flex flex-wrap gap-2">
                   ${previewSummaryBadges.map(label => `<span class="badge badge-blue">${_escapeHtml(label)}</span>`).join('')}

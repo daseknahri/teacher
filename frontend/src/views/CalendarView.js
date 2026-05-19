@@ -453,6 +453,7 @@ function _buildCalendarPlannedSessionSummary(nodes) {
   if (!flat.length) return [];
   const done = flat.filter(node => Boolean(node?.is_completed)).length;
   const remaining = Math.max(0, flat.length - done);
+  const coveragePct = Math.round((done / flat.length) * 100);
   const kindCounts = flat.reduce((acc, node) => {
     const kind = String(node?.kind || '').trim().toLowerCase();
     if (!kind || kind === 'other') return acc;
@@ -463,6 +464,7 @@ function _buildCalendarPlannedSessionSummary(nodes) {
     `${flat.length} planned items`,
     `${done}/${flat.length} done`,
     `${remaining} remaining`,
+    `${coveragePct}% covered`,
     kindCounts.activity ? `${kindCounts.activity} activities` : '',
     kindCounts.example ? `${kindCounts.example} examples` : '',
     kindCounts.exercise ? `${kindCounts.exercise} exercises` : '',
@@ -2777,7 +2779,17 @@ function _renderCalendar(el, classId) {
   const plannedSessionTree = selectedSessionNumber ? _collectSessionBlueprintNodes(selectedBlueprintTree, selectedSessionNumber) : [];
   const plannedSessionTitles = _flattenCalendarBlueprintTitles(plannedSessionTree, []);
   const plannedSessionSummary = _buildCalendarPlannedSessionSummary(plannedSessionTree);
-  const plannedSessionDoneCount = _flattenCalendarBlueprintNodes(plannedSessionTree, []).filter(node => Boolean(node?.is_completed)).length;
+  const plannedSessionFlat = _flattenCalendarBlueprintNodes(plannedSessionTree, []);
+  const plannedSessionDoneCount = plannedSessionFlat.filter(node => Boolean(node?.is_completed)).length;
+  const plannedSessionRemainingCount = Math.max(0, plannedSessionFlat.length - plannedSessionDoneCount);
+  const plannedSessionCoveragePct = plannedSessionFlat.length ? Math.round((plannedSessionDoneCount / plannedSessionFlat.length) * 100) : 0;
+  const plannedSessionStatus = !plannedSessionFlat.length
+    ? { label: 'No route saved', className: 'badge-gray', hint: 'No planned checklist route is saved for this session yet.' }
+    : plannedSessionDoneCount === 0
+      ? { label: 'Not started', className: 'badge-blue', hint: 'This planned route has not been covered yet.' }
+      : plannedSessionRemainingCount === 0
+        ? { label: 'Fully covered', className: 'badge-green', hint: 'All planned rows for this session are already completed.' }
+        : { label: 'Partly covered', className: 'badge-amber', hint: `${plannedSessionRemainingCount} planned row${plannedSessionRemainingCount === 1 ? '' : 's'} still remain.` };
   const visiblePlannedSessionTree = _filterCalendarBlueprintTree(plannedSessionTree, { hideDone: _calendarPlannedHideDone });
   const selectedUnitMap = selectedBlueprint?.unit_map_json && typeof selectedBlueprint.unit_map_json === 'object'
     ? selectedBlueprint.unit_map_json
@@ -3132,6 +3144,10 @@ function _renderCalendar(el, classId) {
                     : `
                       <div class="mt-2 flex flex-col gap-3">
                         <p class="text-[12px] text-slate-500">Planned checklist path for unit session ${Number(selectedSessionNumber)}.</p>
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <span class="badge ${plannedSessionStatus.className}">${_escapeHtml(plannedSessionStatus.label)}</span>
+                          ${plannedSessionFlat.length ? `<span class="text-[11px] text-slate-500">${_escapeHtml(plannedSessionStatus.hint)}</span>` : ''}
+                        </div>
                         ${plannedSessionSummary.length ? `
                           <div class="flex flex-wrap gap-2">
                             ${plannedSessionSummary.map(label => `<span class="badge badge-gray">${_escapeHtml(label)}</span>`).join('')}
