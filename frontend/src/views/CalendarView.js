@@ -3610,7 +3610,7 @@ function _renderCalendar(el, classId) {
         <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
           <div>
             <h3 class="detail-title mb-0">
-              Session ${fmtDate(selectedEvent.session_date || selectedEvent.date)}${selectedSessionNumber ? ` â€¢ Unit Session ${selectedSessionNumber}` : ''}
+              Session ${fmtDate(selectedEvent.session_date || selectedEvent.date)}${selectedSessionNumber ? ` - Unit Session ${selectedSessionNumber}` : ''}
             </h3>
             <p class="detail-meta mb-0 mt-0.5">${fmtTime(selectedEvent.start_time)}${selectedEvent.end_time ? ` -> ${fmtTime(selectedEvent.end_time)}` : ''}</p>
           </div>
@@ -3628,79 +3628,85 @@ function _renderCalendar(el, classId) {
         <div class="flex flex-col gap-4">
           <div class="rounded-2xl border border-blue-100 bg-[linear-gradient(180deg,rgba(239,246,255,0.95),rgba(255,255,255,0.98))] p-4 sm:p-5 shadow-sm">
             <div class="flex flex-col gap-4">
-              <div class="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-4">
-                <div class="min-w-0">
+              <div class="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-5">
+                <div class="min-w-0 xl:flex-1">
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">Session Summary</p>
-                  <p class="mt-1 text-[18px] font-semibold text-slate-800">${_escapeHtml(selectedEvent.unit_title || 'Session')}</p>
-                  <div class="mt-2 flex gap-2 flex-wrap">
+                  <p class="mt-1 text-[21px] font-semibold tracking-tight text-slate-900">${_escapeHtml(selectedEvent.unit_title || 'Session')}</p>
+                  <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500">
+                    <span>${_escapeHtml(fmtDate(selectedEvent.session_date || selectedEvent.date))}</span>
+                    <span class="text-slate-300">&middot;</span>
+                    <span>${_escapeHtml(`${fmtTime(selectedEvent.start_time)}${selectedEvent.end_time ? ` -> ${fmtTime(selectedEvent.end_time)}` : ''}`)}</span>
+                    ${selectedSessionNumber ? `<span class="text-slate-300">&middot;</span><span>Unit Session ${Number(selectedSessionNumber)}</span>` : ''}
+                    <span class="text-slate-300">&middot;</span>
+                    <span>${selectedHasWorkflowUnit ? 'Linked to workflow' : 'Standalone calendar session'}</span>
+                  </div>
+                  <div class="mt-3 flex gap-2 flex-wrap">
                     <span class="badge ${selectedSessionStateClass}">${_escapeHtml(selectedSessionStateLabel)}</span>
                     ${selectedHasWorkflowUnit ? `<span class="badge ${plannedSessionStatus.className}">${_escapeHtml(plannedSessionStatus.label)}</span>` : '<span class="badge badge-gray">Outside workflow</span>'}
                     ${selectedMatchesActiveWorkflow ? '<span class="badge badge-amber">Live in Workflow</span>' : ''}
-                    ${selectedSessionNumber ? `<span class="badge badge-blue">Unit Session ${Number(selectedSessionNumber)}</span>` : ''}
+                    <span class="badge ${selectedWriteupStateClass}">${selectedWriteup ? (selectedWriteup.approved === false ? 'Write-up Draft' : 'Write-up Approved') : _escapeHtml(selectedWriteupStateLabel)}</span>
                   </div>
                 </div>
-                <div class="grid grid-cols-2 lg:grid-cols-4 gap-2 xl:min-w-[420px]">
-                  <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3">
+                <div class="grid grid-cols-2 gap-2 xl:min-w-[360px] xl:max-w-[420px]">
+                  <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
                     <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Progress</p>
-                    <p class="mt-1 text-[18px] font-semibold text-slate-800">${selectedCompletedCount}</p>
-                    <p class="text-[11px] text-slate-500">Checklist rows done</p>
+                    <p class="mt-1 text-[19px] font-semibold text-slate-900">${selectedCompletedCount}</p>
+                    <p class="text-[11px] text-slate-500">Checklist rows completed</p>
                   </div>
-                  <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3">
+                  <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
                     <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Attendance</p>
-                    <p class="mt-1 text-[18px] font-semibold text-slate-800">${selectedAbsentCount}</p>
+                    <p class="mt-1 text-[19px] font-semibold text-slate-900">${selectedAbsentCount}</p>
                     <p class="text-[11px] text-slate-500">${selectedAbsentCount === 1 ? 'Student absent' : 'Students absent'}</p>
                   </div>
-                  <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3">
+                  <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
                     <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Headlines</p>
-                    <p class="mt-1 text-[18px] font-semibold text-slate-800">${selectedHeadlineCount}</p>
+                    <p class="mt-1 text-[19px] font-semibold text-slate-900">${selectedHeadlineCount}</p>
                     <p class="text-[11px] text-slate-500">${headlineBlocks.length ? `${headlineBlocks.length} teaching block${headlineBlocks.length === 1 ? '' : 's'}` : 'No structure saved'}</p>
                   </div>
-                  <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3">
+                  <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
                     <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Write-Up</p>
-                    <p class="mt-1 text-[14px] font-semibold text-slate-800">${_escapeHtml(selectedWriteupStateLabel)}</p>
-                    <div class="mt-2">
-                      <span class="badge ${selectedWriteupStateClass}">${selectedWriteup ? (selectedWriteup.approved === false ? 'Draft' : 'Approved') : _escapeHtml(selectedWriteupStateLabel)}</span>
-                    </div>
+                    <p class="mt-1 text-[15px] font-semibold text-slate-900">${_escapeHtml(selectedWriteupStateLabel)}</p>
+                    <p class="mt-1 text-[11px] text-slate-500">${selectedWriteup ? 'Session summary is saved below' : 'No saved lesson summary yet'}</p>
                   </div>
                 </div>
               </div>
-              <div class="grid grid-cols-1 xl:grid-cols-[1.3fr_0.9fr] gap-3">
-                <div class="rounded-2xl border border-blue-100 bg-white/90 px-4 py-3">
-                  <p class="text-[12px] font-semibold text-slate-700">What the teacher should do next</p>
-                  ${selectedNextStepText ? `<p class="mt-1 text-[13px] leading-relaxed text-slate-600">${_escapeHtml(selectedNextStepText)}</p>` : '<p class="mt-1 text-[13px] text-slate-500">No next-step guidance saved for this session.</p>'}
+              <div class="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-3">
+                <div class="rounded-2xl border border-blue-100 bg-white/92 px-4 py-4 shadow-sm">
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">Next Move</p>
+                  <p class="mt-2 text-[15px] font-semibold text-slate-800">What the teacher should do next</p>
+                  ${selectedNextStepText ? `<p class="mt-2 text-[13px] leading-relaxed text-slate-600">${_escapeHtml(selectedNextStepText)}</p>` : '<p class="mt-2 text-[13px] text-slate-500">No next-step guidance saved for this session.</p>'}
                   ${hasOtherActiveWorkflowSession ? `
                     <div class="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3">
                       <p class="text-[12px] font-semibold text-amber-800">Another workflow session is currently active</p>
                       <p class="text-[12px] text-amber-700 mt-1">
                         ${_escapeHtml(String(activeWorkflowSession?.unit_title || 'Active unit session'))}
-                        ${activeWorkflowSession?.unit_session_number ? ` • Unit Session ${Number(activeWorkflowSession.unit_session_number)}` : ''}
+                        ${activeWorkflowSession?.unit_session_number ? ` - Unit Session ${Number(activeWorkflowSession.unit_session_number)}` : ''}
                       </p>
                       <div class="mt-3 flex gap-2 flex-wrap">
                         <button id="btn-open-active-workflow-session" class="btn btn-secondary btn-sm">Resume Active Session</button>
                       </div>
                     </div>` : ''}
                 </div>
-                <div class="rounded-2xl border border-white/80 bg-white/90 px-4 py-3">
-                  <p class="text-[12px] font-semibold text-slate-700">Quick facts</p>
-                  <div class="mt-2 flex flex-col gap-2 text-[12px] text-slate-600">
-                    <div class="flex items-start justify-between gap-3">
-                      <span class="text-slate-500">Time</span>
-                      <span class="font-medium text-slate-700">${_escapeHtml(`${fmtTime(selectedEvent.start_time)}${selectedEvent.end_time ? ` -> ${fmtTime(selectedEvent.end_time)}` : ''}`)}</span>
+                <div class="rounded-2xl border border-white/80 bg-white/92 px-4 py-4 shadow-sm">
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">At a Glance</p>
+                  <div class="mt-3 flex flex-col gap-3 text-[12px] text-slate-600">
+                    <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3">
+                      <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Route coverage</p>
+                      <p class="mt-1 text-[13px] font-medium text-slate-800">${_escapeHtml(plannedSessionStatus.hint)}</p>
                     </div>
-                    <div class="flex items-start justify-between gap-3">
-                      <span class="text-slate-500">Route coverage</span>
-                      <span class="font-medium text-slate-700">${_escapeHtml(plannedSessionStatus.hint)}</span>
-                    </div>
-                    <div class="flex items-start justify-between gap-3">
-                      <span class="text-slate-500">Attendance editing</span>
-                      <span class="font-medium text-slate-700">${selectedCanAttendanceEdit ? 'Open' : 'Locked until session day'}</span>
-                    </div>
-                    <div class="flex items-start justify-between gap-3">
-                      <span class="text-slate-500">Workflow link</span>
-                      <span class="font-medium text-slate-700">${selectedHasWorkflowUnit ? 'Linked to unit workflow' : 'Standalone calendar session'}</span>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Attendance editing</p>
+                        <p class="mt-1 text-[13px] font-medium text-slate-800">${selectedCanAttendanceEdit ? 'Open now' : 'Locked until session day'}</p>
+                      </div>
+                      <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Workflow link</p>
+                        <p class="mt-1 text-[13px] font-medium text-slate-800">${selectedHasWorkflowUnit ? 'Connected to a unit workflow' : 'Standalone calendar session'}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
+              </div>
               </div>
             </div>
           </div>
