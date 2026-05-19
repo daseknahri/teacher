@@ -3472,10 +3472,20 @@ function _render(el, classId) {
                   <h4 class="text-[13px] font-semibold text-slate-700">Session Write-Up</h4>
                   <p class="text-[12px] text-slate-500">Generate and review the textbook text for this session.</p>
                 </div>
-                <div class="flex gap-2 flex-wrap">
-                  <button id="btn-generate-session-writeup" class="btn btn-primary btn-sm">${session?.has_saved_writeup ? 'Re-generate' : 'Generate'}</button>
-                  <button id="btn-edit-session-writeup" class="btn btn-ghost btn-sm" ${sessionWriteupState.item ? '' : 'disabled'}>Edit</button>
-                  <button id="btn-import-session-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>
+                <div class="rounded-2xl border border-slate-200 bg-white px-3 py-3 flex flex-col gap-2 min-w-[250px]">
+                  <div>
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Main actions</p>
+                    <div class="mt-2 flex gap-2 flex-wrap">
+                      <button id="btn-generate-session-writeup" class="btn btn-primary btn-sm">${session?.has_saved_writeup ? 'Re-generate' : 'Generate'}</button>
+                      <button id="btn-import-session-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>
+                    </div>
+                  </div>
+                  <div class="pt-2 border-t border-slate-200">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Tools</p>
+                    <div class="mt-2 flex gap-2 flex-wrap">
+                      <button id="btn-edit-session-writeup" class="btn btn-ghost btn-sm" ${sessionWriteupState.item ? '' : 'disabled'}>Edit</button>
+                    </div>
+                  </div>
                 </div>
               </div>
               <div class="rounded-xl border border-slate-200 bg-white p-3 flex flex-col gap-2">

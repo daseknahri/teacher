@@ -3813,28 +3813,36 @@ function _renderCalendar(el, classId) {
                 <h4 class="mt-1 text-[15px] font-semibold text-slate-800">Textbook Write-Up</h4>
                 <p class="mt-1 text-[12px] text-slate-500">The saved teaching summary for what really happened in class.</p>
               </div>
-              <div class="flex items-center gap-2 flex-wrap">
+              <div class="flex flex-col items-start sm:items-end gap-2">
                 ${selectedWriteup
                   ? `<span class="badge ${selectedWriteup.approved === false ? 'badge-amber' : 'badge-green'}">${selectedWriteup.approved === false ? 'Draft' : 'Approved'}</span>`
                   : ''}
-                ${selectedWriteup
-                  ? `<button id="btn-copy-selected-writeup" class="btn btn-ghost btn-sm">Copy</button>`
-                  : ''}
-                ${selectedWriteup
-                  ? `<button id="btn-download-selected-writeup" class="btn btn-ghost btn-sm">Download</button>`
-                  : ''}
-                ${selectedEvent.unit_id != null && !selectedIsFuture
-                  ? `<button id="btn-generate-selected-writeup" class="btn btn-ghost btn-sm">${selectedWriteup ? 'Re-generate' : 'Generate'}</button>`
-                  : ''}
-                ${selectedWriteup
-                  ? `<button id="btn-edit-selected-writeup" class="btn btn-ghost btn-sm">Edit</button>`
-                  : ''}
-                ${selectedEvent.unit_id != null && !selectedIsFuture
-                  ? `<button id="btn-import-selected-guidance" class="btn btn-ghost btn-sm">Use Saved Guidance</button>`
-                  : ''}
-                ${selectedWriteup
-                  ? `<button id="btn-toggle-selected-writeup-approval" class="btn btn-ghost btn-sm">${selectedWriteup.approved === false ? 'Approve' : 'Mark Draft'}</button>`
-                  : ''}
+                <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3 flex flex-col gap-2 min-w-[260px]">
+                  <div>
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Main actions</p>
+                    <div class="mt-2 flex items-center gap-2 flex-wrap">
+                      ${selectedEvent.unit_id != null && !selectedIsFuture
+                        ? `<button id="btn-generate-selected-writeup" class="btn ${selectedWriteup ? 'btn-secondary' : 'btn-primary'} btn-sm">${selectedWriteup ? 'Re-generate' : 'Generate'}</button>`
+                        : ''}
+                      ${selectedEvent.unit_id != null && !selectedIsFuture
+                        ? `<button id="btn-import-selected-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>`
+                        : ''}
+                      ${selectedWriteup
+                        ? `<button id="btn-toggle-selected-writeup-approval" class="btn btn-ghost btn-sm">${selectedWriteup.approved === false ? 'Approve' : 'Mark Draft'}</button>`
+                        : ''}
+                    </div>
+                  </div>
+                  ${selectedWriteup
+                    ? `<div class="pt-2 border-t border-slate-200">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Tools</p>
+                        <div class="mt-2 flex items-center gap-2 flex-wrap">
+                          <button id="btn-edit-selected-writeup" class="btn btn-ghost btn-sm">Edit</button>
+                          <button id="btn-copy-selected-writeup" class="btn btn-ghost btn-sm">Copy</button>
+                          <button id="btn-download-selected-writeup" class="btn btn-ghost btn-sm">Download</button>
+                        </div>
+                      </div>`
+                    : ''}
+                </div>
               </div>
             </div>
             <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 mt-3">
