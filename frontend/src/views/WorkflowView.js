@@ -2710,6 +2710,24 @@ function _flattenSessionPlannedTitles(nodes, output = []) {
   return output;
 }
 
+function _collectSessionPlannedPaths(nodes, lineage = [], output = []) {
+  const rows = Array.isArray(nodes) ? nodes : [];
+  rows.forEach(node => {
+    if (!node || typeof node !== 'object') return;
+    const title = String(node.title || '').trim();
+    if (!title) return;
+    const path = [...lineage, title];
+    output.push({
+      title,
+      kind: String(node.kind || '').trim().toLowerCase(),
+      path,
+      pathKey: path.map(value => String(value || '').trim().toLowerCase()).filter(Boolean).join('|'),
+    });
+    _collectSessionPlannedPaths(node.children || [], path, output);
+  });
+  return output;
+}
+
 function _renderSessionPlannedTree(nodes, depth = 0) {
   if (!Array.isArray(nodes) || !nodes.length) {
     return depth === 0
@@ -2750,6 +2768,199 @@ function _renderSessionFallbackRouteRows(rows) {
           </div>
         </div>
       `).join('')}
+    </div>
+  `;
+}
+
+function _normalizeChecklistTeachingPhase(item, sectionPlan = null) {
+  const title = String(item?.title || '').trim();
+  const titleKey = title.toLowerCase();
+  const kind = String(item?.item_kind || '').trim().toLowerCase();
+  const plan = sectionPlan && typeof sectionPlan === 'object' ? sectionPlan : null;
+  const inPlanBucket = bucket => Array.isArray(plan?.[bucket]) && plan[bucket].some(value => String(value || '').trim().toLowerCase() === titleKey);
+
+  if (inPlanBucket('activity_titles')) return 'activity';
+  if (inPlanBucket('example_titles')) return 'example';
+  if (inPlanBucket('exercise_titles')) return kind === 'evaluation' ? 'assessment' : 'practice';
+  if (inPlanBucket('content_titles')) return 'content';
+
+  if (kind === 'activity') return 'activity';
+  if (kind === 'example') return 'example';
+  if (kind === 'exercise') return 'practice';
+  if (kind === 'evaluation') return 'assessment';
+  if (kind === 'definition' || kind === 'property' || kind === 'lesson') return 'content';
+  if (kind === 'chapter' || kind === 'section' || kind === 'subsection') return 'section';
+
+  if (/(activit|decouv|decouvr|explor)/.test(titleKey)) return 'activity';
+  if (/(exemple|example|modele|model)/.test(titleKey)) return 'example';
+  if (/(exercice|exercise|application|entrain|practice|quiz|evaluation|assessment|probleme|problem)/.test(titleKey)) {
+    return 'practice';
+  }
+  return 'content';
+}
+
+function _sessionTeachingPhaseLabel(phase) {
+  const key = String(phase || '').trim().toLowerCase();
+  if (key === 'activity') return 'Launch';
+  if (key === 'content') return 'Teach';
+  if (key === 'example') return 'Model';
+  if (key === 'practice') return 'Practice';
+  if (key === 'assessment') return 'Check';
+  return 'Other';
+}
+
+function _findSectionPlanForChecklistContext(unitMap, context, item = null) {
+  const plans = Array.isArray(unitMap?.section_plans) ? unitMap.section_plans.filter(Boolean) : [];
+  if (!plans.length) return null;
+  const itemTitleKey = String(item?.title || '').trim().toLowerCase();
+  const sectionPathKey = String(context?.sectionPathKey || '').trim().toLowerCase();
+  const itemPathKey = String(context?.itemPathKey || '').trim().toLowerCase();
+
+  let best = null;
+  let bestScore = -1;
+  plans.forEach(plan => {
+    const sectionTitle = String(plan?.section_title || '').trim();
+    const sectionPath = Array.isArray(plan?.section_path) && plan.section_path.length ? plan.section_path : (sectionTitle ? [sectionTitle] : []);
+    const planPathKey = sectionPath.map(value => String(value || '').trim().toLowerCase()).filter(Boolean).join('|');
+    let score = -1;
+    if (sectionPathKey && planPathKey && sectionPathKey === planPathKey) score = 5;
+    else if (sectionPathKey && planPathKey && itemPathKey === planPathKey) score = 4;
+    else if (itemTitleKey && Array.isArray(plan?.delivery_sequence) && plan.delivery_sequence.some(value => String(value || '').trim().toLowerCase() === itemTitleKey)) score = 3;
+    else if (itemTitleKey && String(plan?.section_title || '').trim().toLowerCase() === itemTitleKey) score = 2;
+    if (score > bestScore) {
+      bestScore = score;
+      best = plan;
+    }
+  });
+  return bestScore >= 0 ? best : null;
+}
+
+function _buildSessionTeachingChecklistGroups(items, unitMap, allChecklistItems = null) {
+  const rows = Array.isArray(items) ? items : [];
+  if (!rows.length) return [];
+  const contextSource = Array.isArray(allChecklistItems) && allChecklistItems.length ? allChecklistItems : rows;
+  const contextMap = _buildChecklistContextMap(contextSource);
+  const phaseOrder = ['activity', 'content', 'example', 'practice', 'assessment', 'other'];
+  const groups = [];
+  const groupMap = new Map();
+
+  rows.forEach(row => {
+    const itemId = Number(row?.id || 0);
+    if (!itemId) return;
+    const context = contextMap.get(itemId) || {
+      itemPath: [String(row?.title || '').trim()].filter(Boolean),
+      sectionPath: [],
+      itemPathKey: String(row?.title || '').trim().toLowerCase(),
+      sectionPathKey: '',
+    };
+    const sectionPlan = _findSectionPlanForChecklistContext(unitMap, context, row);
+    const sectionTitle = String(sectionPlan?.section_title || '').trim()
+      || (Array.isArray(context.sectionPath) && context.sectionPath.length ? context.sectionPath[context.sectionPath.length - 1] : '')
+      || 'Teaching Flow';
+    const sectionPath = Array.isArray(sectionPlan?.section_path) && sectionPlan.section_path.length
+      ? sectionPlan.section_path
+      : (Array.isArray(context.sectionPath) && context.sectionPath.length ? context.sectionPath : [sectionTitle]);
+    const groupKey = sectionPath.map(value => String(value || '').trim().toLowerCase()).filter(Boolean).join('|') || sectionTitle.toLowerCase();
+    if (!groupMap.has(groupKey)) {
+      const phaseBuckets = new Map();
+      phaseOrder.forEach(phase => phaseBuckets.set(phase, []));
+      const group = {
+        key: groupKey,
+        title: sectionTitle,
+        path: sectionPath,
+        plan: sectionPlan,
+        rows: [],
+        done: 0,
+        total: 0,
+        phases: phaseBuckets,
+      };
+      groupMap.set(groupKey, group);
+      groups.push(group);
+    }
+    const group = groupMap.get(groupKey);
+    const phase = _normalizeChecklistTeachingPhase(row, sectionPlan);
+    const normalizedPhase = phaseOrder.includes(phase) ? phase : 'other';
+    group.rows.push(row);
+    group.total += 1;
+    if (row?.is_completed || row?.done) group.done += 1;
+    group.phases.get(normalizedPhase).push({
+      row,
+      context,
+      phase: normalizedPhase,
+    });
+  });
+
+  return groups;
+}
+
+function _renderSessionTeachingChecklistGroups(groups, { hasPlannedRoute = false } = {}) {
+  const rows = Array.isArray(groups) ? groups : [];
+  if (!rows.length) {
+    return `<p class="text-[12px] text-slate-500">${hasPlannedRoute ? 'No matched teaching route rows are ready for this session yet.' : 'Start checking checklist rows to build the live teaching flow for this session.'}</p>`;
+  }
+  const phaseOrder = ['activity', 'content', 'example', 'practice', 'assessment', 'other'];
+  return `
+    <div class="flex flex-col gap-3">
+      ${rows.map(group => {
+        const remaining = Math.max(0, Number(group.total || 0) - Number(group.done || 0));
+        return `
+          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <p class="text-[13px] font-semibold text-slate-800">${_escapeHtml(group.title)}</p>
+                ${Array.isArray(group.path) && group.path.length > 1
+                  ? `<p class="mt-1 text-[11px] text-slate-400">${_escapeHtml(group.path.join(' > '))}</p>`
+                  : ''}
+              </div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="badge ${remaining === 0 ? 'badge-green' : group.done ? 'badge-amber' : 'badge-blue'}">${group.done}/${group.total} covered</span>
+                ${remaining > 0 ? `<span class="badge badge-gray">${remaining} left</span>` : ''}
+              </div>
+            </div>
+            <div class="mt-3 flex flex-col gap-3">
+              ${phaseOrder.map(phase => {
+                const phaseRows = group.phases.get(phase) || [];
+                if (!phaseRows.length) return '';
+                return `
+                  <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3">
+                    <div class="flex items-center justify-between gap-2 flex-wrap mb-2">
+                      <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">${_escapeHtml(_sessionTeachingPhaseLabel(phase))}</p>
+                      <span class="text-[11px] text-slate-400">${phaseRows.filter(entry => entry?.row?.is_completed || entry?.row?.done).length}/${phaseRows.length}</span>
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                      ${phaseRows.map(entry => {
+                        const item = entry.row || {};
+                        const isDone = Boolean(item?.is_completed || item?.done);
+                        return `
+                          <button
+                            type="button"
+                            class="w-full text-left rounded-xl border px-3 py-2 transition ${isDone ? 'border-green-200 bg-green-50/80' : 'border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/50'}"
+                            data-session-flow-check-item-id="${Number(item.id || 0)}"
+                            aria-pressed="${isDone ? 'true' : 'false'}"
+                          >
+                            <div class="flex items-start gap-2">
+                              <span class="mt-0.5 inline-flex h-[18px] w-[18px] items-center justify-center rounded-[4px] border-2 text-[10px] ${isDone ? 'border-green-600 bg-green-600 text-white' : 'border-slate-300 bg-white text-transparent'}">${isDone ? 'Y' : 'Y'}</span>
+                              <div class="min-w-0 flex-1">
+                                <p class="text-[13px] leading-snug ${isDone ? 'text-slate-500 line-through' : 'text-slate-700'}">${_escapeHtml(String(item.title || 'Checklist item'))}</p>
+                                <div class="mt-1 flex items-center gap-2 flex-wrap">
+                                  ${item?.item_kind ? `<span class="badge badge-gray">${_escapeHtml(String(item.item_kind))}</span>` : ''}
+                                  ${Array.isArray(entry?.context?.itemPath) && entry.context.itemPath.length > 1
+                                    ? `<span class="text-[11px] text-slate-400">${_escapeHtml(entry.context.itemPath.slice(0, -1).join(' > '))}</span>`
+                                    : ''}
+                                </div>
+                              </div>
+                            </div>
+                          </button>
+                        `;
+                      }).join('')}
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }).join('')}
     </div>
   `;
 }
@@ -2998,6 +3209,7 @@ function _render(el, classId) {
   const previewSessionPlanTitles = _flattenSessionPlannedTitles(previewSessionPlanTree, []);
   const previewSessionTitleKeys = new Set(previewSessionPlanTitles.map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
   const activeSessionPlanTree = session?.unit_session_number ? _collectSessionPlannedNodes(activeBlueprintTree, session.unit_session_number) : [];
+  const activeSessionPlanPaths = _collectSessionPlannedPaths(activeSessionPlanTree, [], []);
   const activeSessionPlanTitles = _flattenSessionPlannedTitles(activeSessionPlanTree, []);
   const activeSessionCheckedChecklist = session
     ? checklist.filter(item => Number(item?.completed_session_id || 0) === Number(session.id || 0))
@@ -3011,13 +3223,36 @@ function _render(el, classId) {
   const activeSessionCheckedTitles = activeSessionCheckedChecklist.map(item => String(item?.title || '').trim()).filter(Boolean);
   const activeEffectiveRouteTitles = activeSessionPlanTitles.length ? activeSessionPlanTitles : activeSessionCheckedTitles;
   const activeEffectiveTitleKeys = new Set(activeEffectiveRouteTitles.map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+  const activeChecklistContextMap = _buildChecklistContextMap(checklist);
+  const activePlannedPathKeys = new Set(activeSessionPlanPaths.map(row => String(row?.pathKey || '').trim().toLowerCase()).filter(Boolean));
+  const activePlannedRowIds = activePlannedPathKeys.size
+    ? new Set(checklist
+      .filter(item => {
+        const itemId = Number(item?.id || 0);
+        if (!itemId) return false;
+        const context = activeChecklistContextMap.get(itemId) || null;
+        const itemPathKey = String(context?.itemPathKey || '').trim().toLowerCase();
+        return itemPathKey && activePlannedPathKeys.has(itemPathKey);
+      })
+      .map(item => Number(item?.id || 0))
+      .filter(Boolean))
+    : new Set();
   const activeEffectiveChecklist = session
-    ? checklist.filter(item => activeEffectiveTitleKeys.has(String(item?.title || '').trim().toLowerCase()))
+    ? (activePlannedRowIds.size
+      ? checklist.filter(item => activePlannedRowIds.has(Number(item?.id || 0)))
+      : checklist.filter(item => activeEffectiveTitleKeys.has(String(item?.title || '').trim().toLowerCase())))
     : [];
-  const activeFallbackFocusIds = _collectPreviewFocusIds(checklist, activeEffectiveTitleKeys);
+  const activeFallbackFocusIds = activeSessionCheckedChecklist.length
+    ? _collectChecklistFocusIdsByItemIds(checklist, activeSessionCheckedChecklist.map(item => Number(item?.id || 0)))
+    : _collectPreviewFocusIds(checklist, activeEffectiveTitleKeys);
   const activeFallbackRouteRows = activeSessionPlanTitles.length
     ? []
     : _visibleChecklistRows(checklist.filter(item => activeFallbackFocusIds.has(Number(item?.id || 0))), new Set());
+  const activeTeachingFlowGroups = _buildSessionTeachingChecklistGroups(
+    activeSessionPlanTitles.length ? activeEffectiveChecklist : activeFallbackRouteRows,
+    activeUnitMap,
+    checklist,
+  );
   const activeSessionMatchedGuidance = unit?.id
     ? _filterAssistantArtifactsForRouteContext(
       _unitAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(unit.id || 0)}`) || [],
@@ -3072,10 +3307,10 @@ function _render(el, classId) {
     previewKindCounts.definition ? `${previewKindCounts.definition} definitions` : '',
     previewKindCounts.property ? `${previewKindCounts.property} properties` : '',
   ].filter(Boolean);
-  const activeMatchedChecklist = activeEffectiveChecklist;
+  const activeHasPlannedRoute = activeSessionPlanTitles.length > 0;
+  const activeMatchedChecklist = activeHasPlannedRoute ? activeEffectiveChecklist : activeFallbackRouteRows;
   const activeMatchedDone = activeMatchedChecklist.filter(item => Boolean(item?.is_completed || item?.done)).length;
   const activeMatchedRemaining = Math.max(0, activeMatchedChecklist.length - activeMatchedDone);
-  const activeHasPlannedRoute = activeSessionPlanTitles.length > 0;
   const activeCompletionPct = activeHasPlannedRoute
     ? (activeMatchedChecklist.length ? Math.round((activeMatchedDone / activeMatchedChecklist.length) * 100) : 0)
     : (activeMatchedChecklist.length ? 100 : 0);
@@ -3962,12 +4197,35 @@ function _render(el, classId) {
             ${checklist.length ? `
             <div class="flex flex-col gap-1">
               <div class="flex items-center justify-between gap-2 mb-1">
-                <h4 class="text-[12px] font-semibold text-slate-600">Session Checklist</h4>
+                <div>
+                  <h4 class="text-[12px] font-semibold text-slate-600">Session Checklist</h4>
+                  <p class="text-[11px] text-slate-400 mt-1">Use the teaching-flow view to work in classroom order, or scroll the full checklist when you need the whole unit tree.</p>
+                </div>
                 <div class="flex items-center gap-1">
                   <button data-checklist-expand-all class="btn btn-ghost btn-sm !text-slate-500" title="Expand all checklist branches">Expand All</button>
                   <button data-checklist-collapse-all class="btn btn-ghost btn-sm !text-slate-500" title="Collapse all checklist branches">Collapse All</button>
                 </div>
               </div>
+              <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4 mb-3">
+                <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
+                  <div>
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Teaching Flow View</p>
+                    <p class="mt-1 text-[12px] text-slate-500">${activeHasPlannedRoute ? 'This session route is grouped the way the lesson is taught: launch, teach, model, practice, and check.' : 'As you check rows, the session builds a live teaching flow grouped around the classroom experience.'}</p>
+                  </div>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    ${activeTeachingFlowGroups.length ? `<span class="badge badge-blue">${activeTeachingFlowGroups.length} section${activeTeachingFlowGroups.length === 1 ? '' : 's'}</span>` : ''}
+                    ${activeMatchedChecklist.length ? `<span class="badge badge-gray">${activeMatchedChecklist.length} route row${activeMatchedChecklist.length === 1 ? '' : 's'}</span>` : ''}
+                  </div>
+                </div>
+                ${_renderSessionTeachingChecklistGroups(activeTeachingFlowGroups, { hasPlannedRoute: activeHasPlannedRoute })}
+              </div>
+              <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                  <div>
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Full Unit Checklist</p>
+                    <p class="mt-1 text-[12px] text-slate-500">The complete unit tree stays here so you can still check, expand, and manage every row.</p>
+                  </div>
+                </div>
               ${visibleChecklist.map(item => {
       const itemId = Number(item.id);
       const hasChildren = Number(checklistChildrenCount.get(itemId) || 0) > 0;
@@ -3991,6 +4249,7 @@ function _render(el, classId) {
                 <span class="todo-title text-[13px] leading-snug flex-1">${item.title}</span>
               </div>`;
     }).join('')}
+              </div>
             </div>` : '<p class="text-[13px] text-slate-400">No checklist for this unit.</p>'}
             <button id="btn-end-session"
               class="btn btn-danger self-start mt-2">End Session</button>
@@ -4110,15 +4369,32 @@ function _collectPreviewFocusIds(items, titleKeys) {
   return focusIds;
 }
 
-function _deriveChecklistSectionPaths(items, targetIds = []) {
+function _collectChecklistFocusIdsByItemIds(items, itemIds) {
   const rows = Array.isArray(items) ? items : [];
-  const selected = new Set((Array.isArray(targetIds) ? targetIds : []).map(value => Number(value)).filter(value => Number.isFinite(value) && value > 0));
-  if (!selected.size || !rows.length) return [];
+  const selectedIds = new Set((Array.isArray(itemIds) ? itemIds : []).map(value => Number(value)).filter(value => Number.isFinite(value) && value > 0));
+  if (!rows.length || !selectedIds.size) return new Set();
+  const byId = new Map(rows.map(row => [Number(row?.id || 0), row]).filter(([id]) => id > 0));
+  const focusIds = new Set();
+  selectedIds.forEach(itemId => {
+    let currentId = Number(itemId);
+    while (Number.isFinite(currentId) && currentId > 0 && !focusIds.has(currentId)) {
+      focusIds.add(currentId);
+      const current = byId.get(currentId);
+      if (!current || current.parent_item_id == null) break;
+      currentId = Number(current.parent_item_id || 0);
+    }
+  });
+  return focusIds;
+}
+
+function _buildChecklistContextMap(items) {
+  const rows = Array.isArray(items) ? items : [];
   const byId = new Map(rows.map(row => [Number(row?.id || 0), row]).filter(([id]) => id > 0));
   const structuralKinds = new Set(['chapter', 'section', 'subsection']);
-  const output = [];
-  const seen = new Set();
-  selected.forEach(itemId => {
+  const contextMap = new Map();
+
+  const buildFor = itemId => {
+    if (contextMap.has(itemId)) return contextMap.get(itemId);
     let current = byId.get(itemId) || null;
     const visited = new Set();
     const itemPath = [];
@@ -4138,7 +4414,36 @@ function _deriveChecklistSectionPaths(items, targetIds = []) {
     }
     itemPath.reverse();
     sectionPath.reverse();
-    const normalizedSectionPath = sectionPath.length ? sectionPath : (itemPath.length ? itemPath.slice(0, -1).length ? itemPath.slice(0, -1) : itemPath : []);
+    const normalizedSectionPath = sectionPath.length
+      ? sectionPath
+      : (itemPath.length > 1 ? itemPath.slice(0, -1) : itemPath.slice());
+    const context = {
+      itemPath,
+      sectionPath: normalizedSectionPath,
+      itemPathKey: itemPath.map(value => String(value || '').trim().toLowerCase()).filter(Boolean).join('|'),
+      sectionPathKey: normalizedSectionPath.map(value => String(value || '').trim().toLowerCase()).filter(Boolean).join('|'),
+    };
+    contextMap.set(itemId, context);
+    return context;
+  };
+
+  rows.forEach(row => {
+    const itemId = Number(row?.id || 0);
+    if (itemId > 0) buildFor(itemId);
+  });
+  return contextMap;
+}
+
+function _deriveChecklistSectionPaths(items, targetIds = []) {
+  const rows = Array.isArray(items) ? items : [];
+  const selected = new Set((Array.isArray(targetIds) ? targetIds : []).map(value => Number(value)).filter(value => Number.isFinite(value) && value > 0));
+  if (!selected.size || !rows.length) return [];
+  const contextMap = _buildChecklistContextMap(rows);
+  const output = [];
+  const seen = new Set();
+  selected.forEach(itemId => {
+    const context = contextMap.get(Number(itemId)) || null;
+    const normalizedSectionPath = Array.isArray(context?.sectionPath) ? context.sectionPath : [];
     const key = normalizedSectionPath.join(' > ').toLowerCase();
     if (!normalizedSectionPath.length || seen.has(key)) return;
     seen.add(key);
@@ -4673,6 +4978,19 @@ function _bindWorkflowEvents(el, classId) {
       if (e.key !== 'Enter' && e.key !== ' ') return;
       e.preventDefault();
       await checkChecklistItem();
+    });
+  });
+
+  el.querySelectorAll('[data-session-flow-check-item-id]').forEach(node => {
+    const checkSessionFlowItem = async event => {
+      event?.preventDefault?.();
+      await applyChecklistCheck(node.dataset.sessionFlowCheckItemId, { showNoSessionWarning: true });
+    };
+    node.addEventListener('click', checkSessionFlowItem);
+    node.addEventListener('keydown', async e => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      e.preventDefault();
+      await checkSessionFlowItem(e);
     });
   });
 
