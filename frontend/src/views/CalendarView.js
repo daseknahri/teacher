@@ -21,6 +21,7 @@ let _calendarPlannedHideDone = false;
 let _calendarSessionGuidanceHideImported = false;
 let _calendarSessionGuidanceKindFilter = 'all';
 let _calendarSessionGuidanceCollapseImported = false;
+let _calendarSessionGuidanceStateSessionId = null;
 let _holidayByDate = new Map();
 const _timetableRulesByClass = new Map();
 const _timetableExceptionsByClass = new Map();
@@ -3235,6 +3236,13 @@ function _renderCalendar(el, classId) {
   const selectedEvent = _findSelectedEvent(weekEvents);
   const selectedSessionNumber = selectedEvent ? unitSessionNumbers.get(Number(selectedEvent.session_id)) || null : null;
   const selectedDetail = selectedEvent ? _sessionDetailCache.get(Number(selectedEvent.session_id)) : null;
+  const currentSelectedSessionId = Number(selectedEvent?.session_id || 0) || null;
+  if (_calendarSessionGuidanceStateSessionId !== currentSelectedSessionId) {
+    _calendarSessionGuidanceStateSessionId = currentSelectedSessionId;
+    _calendarSessionGuidanceHideImported = false;
+    _calendarSessionGuidanceKindFilter = 'all';
+    _calendarSessionGuidanceCollapseImported = false;
+  }
   const selectedBlueprint = selectedDetail?.unit_blueprint && typeof selectedDetail.unit_blueprint === 'object'
     ? selectedDetail.unit_blueprint
     : null;

@@ -38,6 +38,7 @@ let _workflowPreviewHideDone = false;
 let _sessionGuidanceHideImported = false;
 let _sessionGuidanceKindFilter = 'all';
 let _sessionGuidanceCollapseImported = false;
+let _sessionGuidanceStateSessionId = null;
 const _collapsedChecklistIds = new Set();
 const _inFlightActions = new Set();
 const _sessionProgressCache = new Map();
@@ -2874,6 +2875,13 @@ async function _refreshWorkflowCalendarSnapshot(classId) {
 function _render(el, classId) {
   const unit = getActiveUnit();
   const session = getActiveSession();
+  const currentSessionId = Number(session?.id || 0) || null;
+  if (_sessionGuidanceStateSessionId !== currentSessionId) {
+    _sessionGuidanceStateSessionId = currentSessionId;
+    _sessionGuidanceHideImported = false;
+    _sessionGuidanceKindFilter = 'all';
+    _sessionGuidanceCollapseImported = false;
+  }
   const sessionProgressState = session ? _getSessionProgressState(session.id) : _emptySessionProgressState();
   const sessionWriteupState = session ? _getSessionWriteupState(session.id) : _emptySessionWriteupState();
   const closed = getClosedUnits();
