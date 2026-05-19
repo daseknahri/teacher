@@ -415,6 +415,28 @@ function _renderCalendarWriteupSourcePayload(payload) {
     : '';
 }
 
+function _renderCalendarImportedGuidanceSummary(payload) {
+  const normalized = _normalizeCalendarWriteupSourcePayload(payload);
+  const items = Array.isArray(normalized?.importedAssistantArtifacts) ? normalized.importedAssistantArtifacts : [];
+  if (!items.length) return '';
+  return `
+    <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-3 flex flex-col gap-2">
+      <div class="flex items-center justify-between gap-2 flex-wrap">
+        <p class="text-[12px] font-semibold text-emerald-800">Imported guidance in this write-up</p>
+        <span class="badge badge-green">${items.length} imported</span>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        ${items.map(item => `
+          <span class="badge badge-white border border-emerald-200 !text-emerald-800">
+            ${_escapeHtml(item.sectionTitle || 'Saved guidance')}
+            ${item.artifactKind ? ` • ${_escapeHtml(_assistantArtifactKindLabel(item.artifactKind))}` : ''}
+          </span>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
 function _flattenChecklistNodes(nodes, depth = 0, output = []) {
   const rows = Array.isArray(nodes) ? nodes : [];
   rows.forEach(row => {
@@ -3627,6 +3649,7 @@ function _renderCalendar(el, classId) {
                 ? `
                   <div class="mt-2 flex flex-col gap-3">
                     <p class="text-[13px] font-semibold text-slate-700">${_escapeHtml(selectedWriteup.title || 'Session write-up')}</p>
+                    ${_renderCalendarImportedGuidanceSummary(selectedWriteup.source_payload)}
                     ${Array.isArray(selectedWriteup.learning_focus) && selectedWriteup.learning_focus.length ? `
                       <div>
                         <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Learning Focus</p>

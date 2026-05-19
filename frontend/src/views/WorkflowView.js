@@ -2528,6 +2528,28 @@ function _renderWriteupSourcePayload(payload, { compact = false } = {}) {
   `;
 }
 
+function _renderImportedGuidanceSummary(payload) {
+  const meta = _normalizeWriteupSourcePayload(payload);
+  const items = Array.isArray(meta?.importedAssistantArtifacts) ? meta.importedAssistantArtifacts : [];
+  if (!items.length) return '';
+  return `
+    <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-3 flex flex-col gap-2">
+      <div class="flex items-center justify-between gap-2 flex-wrap">
+        <p class="text-[12px] font-semibold text-emerald-800">Imported guidance in this write-up</p>
+        <span class="badge badge-green">${items.length} imported</span>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        ${items.map(item => `
+          <span class="badge badge-white border border-emerald-200 !text-emerald-800">
+            ${_escapeHtml(item.sectionTitle || 'Saved guidance')}
+            ${item.artifactKind ? ` • ${_escapeHtml(_assistantArtifactKindLabel(item.artifactKind))}` : ''}
+          </span>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
 function _collectSessionPlannedNodes(nodes, sessionNumber) {
   const target = Number(sessionNumber || 0);
   if (!Number.isFinite(target) || target <= 0 || !Array.isArray(nodes)) return [];
@@ -3399,6 +3421,7 @@ function _render(el, classId) {
                     <button id="btn-download-session-writeup" class="btn btn-ghost btn-sm">Download</button>
                   </div>
                 </div>
+                ${_renderImportedGuidanceSummary(sessionWriteupState.item.source_payload)}
                 ${Array.isArray(sessionWriteupState.item.learning_focus) && sessionWriteupState.item.learning_focus.length ? `
                   <div>
                     <p class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Learning Focus</p>
