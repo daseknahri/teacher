@@ -11,6 +11,7 @@ import { fmtDate, fmtTime } from '../utils/format.js';
 import { askConfirm } from '../utils/modal.js';
 import { navigate } from '../router.js';
 import { copyText } from '../utils/password.js';
+import { openLeafContentModal, fetchUnitLeafContentSummaries, renderLeafStatusBadge } from '../utils/leafContent.js';
 
 let _weekStart = _startOfWeek(new Date());
 let _selectedSessionId = null;
@@ -34,6 +35,7 @@ const CALENDAR_VIEW_INTENT_KEY = 'calendar_view_intent';
 const _sessionDetailCache = new Map();
 const _calendarUnitBlueprintCache = new Map();
 const _calendarAssistantArtifactCache = new Map();
+const _calendarLeafSumFetchedUnits = new Set();
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const TIME_SLOTS = [
@@ -620,7 +622,7 @@ function _collectSessionBlueprintNodes(nodes, sessionNumber) {
   return walk(nodes);
 }
 
-function _renderCalendarBlueprintTree(nodes, depth = 0, { resumeNodeId = null } = {}) {
+function _renderCalendarBlueprintTree(nodes, depth = 0, { resumeNodeId = null, classId = null, unitId = null, lineage = [] } = {}) {
   if (!Array.isArray(nodes) || !nodes.length) {
     return depth === 0
       ? '<p class="text-[12px] text-slate-500">No planned checklist flow saved for this unit session.</p>'
@@ -631,17 +633,26 @@ function _renderCalendarBlueprintTree(nodes, depth = 0, { resumeNodeId = null } 
     : 'space-y-1.5 ml-4 mt-2 border-l border-slate-200 pl-3';
   return `
     <ul class="${listClass}">
-      ${nodes.map(node => `
+      ${nodes.map(node => {
+        const title = String(node?.title || '').trim();
+        const path = title ? [...lineage, title] : [...lineage];
+        const nodeId = Number(node?.id || 0);
+        const hasChildren = Array.isArray(node?.children) && node.children.length > 0;
+        const hasLeafId = nodeId > 0 && classId && unitId && !hasChildren;
+        return `
         <li>
           <div class="flex items-center gap-2 flex-wrap">
             <span class="text-[13px] ${node?.is_completed ? 'text-slate-400 line-through' : 'text-slate-700'}">${_escapeHtml(node?.title || '')}</span>
             ${node?.kind ? `<span class="badge badge-gray">${_escapeHtml(String(node.kind))}</span>` : ''}
             ${node?.session_number ? `<span class="badge badge-blue">S${Number(node.session_number)}</span>` : ''}
+            ${hasLeafId ? renderLeafStatusBadge(nodeId, classId, unitId) : ''}
             ${resumeNodeId != null && Number(node?.id || 0) === Number(resumeNodeId) ? `<span class="badge badge-amber">Resume here</span>` : node?.is_completed ? `<span class="badge badge-green">Done</span>` : ''}
+            ${hasLeafId ? `<button type="button" class="btn btn-ghost btn-sm btn-calendar-leaf-lesson !text-blue-600" data-item-id="${nodeId}" data-class-id="${Number(classId || 0)}" data-unit-id="${Number(unitId || 0)}" data-item-path="${_escapeHtmlAttr(JSON.stringify(path))}" data-section-path="${_escapeHtmlAttr(JSON.stringify(path.length > 1 ? path.slice(0, -1) : path))}" title="Open lesson card">Lesson</button>` : ''}
           </div>
-          ${_renderCalendarBlueprintTree(node?.children || [], depth + 1, { resumeNodeId })}
+          ${_renderCalendarBlueprintTree(node?.children || [], depth + 1, { resumeNodeId, classId, unitId, lineage: path })}
         </li>
-      `).join('')}
+      `;
+      }).join('')}
     </ul>`;
 }
 
@@ -663,15 +674,17 @@ function _collectCalendarBlueprintPaths(nodes, lineage = [], output = []) {
     const title = String(node.title || '').trim();
     if (!title) return;
     const path = [...lineage, title];
+    const childRows = Array.isArray(node.children) ? node.children.filter(Boolean) : [];
     output.push({
       id: Number(node?.id || 0) || null,
       title,
       kind: String(node?.kind || '').trim().toLowerCase(),
       is_completed: Boolean(node?.is_completed),
+      isLeaf: childRows.length === 0,
       path,
       pathKey: path.map(value => String(value || '').trim().toLowerCase()).filter(Boolean).join('|'),
     });
-    _collectCalendarBlueprintPaths(node.children || [], path, output);
+    _collectCalendarBlueprintPaths(childRows, path, output);
   });
   return output;
 }
@@ -778,7 +791,7 @@ function _buildCalendarTeachingFlowGroups(routeItems, sectionPlans = []) {
   return groups;
 }
 
-function _renderCalendarTeachingFlowGroups(groups, { hasPlannedRoute = false, resumeNodeId = null } = {}) {
+function _renderCalendarTeachingFlowGroups(groups, { hasPlannedRoute = false, resumeNodeId = null, classId = null, unitId = null } = {}) {
   const rows = Array.isArray(groups) ? groups : [];
   if (!rows.length) {
     return `<p class="text-[12px] text-slate-500">${hasPlannedRoute ? 'No grouped teaching flow is available for this session yet.' : 'No checked checklist route is recorded for this session yet.'}</p>`;
@@ -816,19 +829,25 @@ function _renderCalendarTeachingFlowGroups(groups, { hasPlannedRoute = false, re
                       ${phaseRows.map(row => {
                         const isDone = Boolean(row?.is_completed);
                         const isResume = resumeNodeId != null && Number(row?.id || 0) === Number(resumeNodeId);
+                        const rowItemId = Number(row?.id || 0);
+                        const hasLeafId = rowItemId > 0 && classId && unitId && Boolean(row?.isLeaf !== false);
                         return `
-                          <div class="rounded-xl border px-3 py-2 ${isDone ? 'border-green-200 bg-green-50/80' : 'border-slate-200 bg-white'}">
-                            <div class="flex items-start gap-2">
-                              <span class="mt-0.5 inline-flex h-[18px] w-[18px] items-center justify-center rounded-[4px] border-2 text-[10px] ${isDone ? 'border-green-600 bg-green-600 text-white' : 'border-slate-300 bg-white text-transparent'}">${isDone ? 'Y' : 'Y'}</span>
-                              <div class="min-w-0 flex-1">
-                                <p class="text-[13px] leading-snug ${isDone ? 'text-slate-500 line-through' : 'text-slate-700'}">${_escapeHtml(String(row?.title || 'Checklist item'))}</p>
-                                <div class="mt-1 flex items-center gap-2 flex-wrap">
-                                  ${row?.kind ? `<span class="badge badge-gray">${_escapeHtml(String(row.kind))}</span>` : ''}
-                                  ${isResume ? '<span class="badge badge-amber">Resume here</span>' : ''}
-                                  ${Array.isArray(row?.path) && row.path.length > 1 ? `<span class="text-[11px] text-slate-400">${_escapeHtml(row.path.slice(0, -1).join(' > '))}</span>` : ''}
+                          <div class="flex items-stretch gap-1">
+                            <div class="flex-1 rounded-xl border px-3 py-2 ${isDone ? 'border-green-200 bg-green-50/80' : 'border-slate-200 bg-white'}">
+                              <div class="flex items-start gap-2">
+                                <span class="mt-0.5 inline-flex h-[18px] w-[18px] items-center justify-center rounded-[4px] border-2 text-[10px] ${isDone ? 'border-green-600 bg-green-600 text-white' : 'border-slate-300 bg-white text-transparent'}">${isDone ? 'Y' : 'Y'}</span>
+                                <div class="min-w-0 flex-1">
+                                  <p class="text-[13px] leading-snug ${isDone ? 'text-slate-500 line-through' : 'text-slate-700'}">${_escapeHtml(String(row?.title || 'Checklist item'))}</p>
+                                  <div class="mt-1 flex items-center gap-2 flex-wrap">
+                                    ${row?.kind ? `<span class="badge badge-gray">${_escapeHtml(String(row.kind))}</span>` : ''}
+                                    ${isResume ? '<span class="badge badge-amber">Resume here</span>' : ''}
+                                    ${Array.isArray(row?.path) && row.path.length > 1 ? `<span class="text-[11px] text-slate-400">${_escapeHtml(row.path.slice(0, -1).join(' > '))}</span>` : ''}
+                                    ${hasLeafId ? renderLeafStatusBadge(rowItemId, classId, unitId) : ''}
+                                  </div>
                                 </div>
                               </div>
                             </div>
+                            ${hasLeafId ? `<button type="button" class="btn btn-ghost btn-sm btn-calendar-leaf-lesson !text-blue-600 self-center flex-shrink-0" data-item-id="${rowItemId}" data-class-id="${Number(classId || 0)}" data-unit-id="${Number(unitId || 0)}" data-item-path="${_escapeHtmlAttr(JSON.stringify(Array.isArray(row?.path) ? row.path : []))}" data-section-path="${_escapeHtmlAttr(JSON.stringify(Array.isArray(row?.sectionPath) ? row.sectionPath : []))}" title="Open lesson card">Lesson</button>` : ''}
                           </div>
                         `;
                       }).join('')}
@@ -4301,12 +4320,12 @@ function _renderCalendar(el, classId) {
                               ${(plannedSessionPaths.length || selectedFallbackRouteItems.length) ? `<span class="badge badge-gray">${plannedSessionPaths.length || selectedFallbackRouteItems.length} route row${(plannedSessionPaths.length || selectedFallbackRouteItems.length) === 1 ? '' : 's'}</span>` : ''}
                             </div>
                           </div>
-                          ${_renderCalendarTeachingFlowGroups(selectedTeachingFlowGroups, { hasPlannedRoute: plannedSessionTitles.length > 0, resumeNodeId: plannedResumeNodeId })}
+                          ${_renderCalendarTeachingFlowGroups(selectedTeachingFlowGroups, { hasPlannedRoute: plannedSessionTitles.length > 0, resumeNodeId: plannedResumeNodeId, classId, unitId: selectedEvent?.unit_id ?? null })}
                         </div>
                         <div class="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-3">
                           <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                             <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">${plannedSessionTitles.length ? 'Full Planned Route' : 'Recorded Checklist Route'}</p>
-                            ${plannedSessionTitles.length ? _renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId }) : _renderCalendarFallbackRouteRows(selectedCheckedItems)}
+                            ${plannedSessionTitles.length ? _renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId, classId, unitId: selectedEvent?.unit_id ?? null, lineage: [] }) : _renderCalendarFallbackRouteRows(selectedCheckedItems)}
                           </div>
                           <div class="flex flex-col gap-3">
                             ${plannedResumeNode ? _renderCalendarNextFocusActions(plannedResumeSectionPlan, plannedResumePlaybookEntry, plannedResumeNode.title, { classId, unitId: selectedEvent?.unit_id }) : ''}
@@ -4956,6 +4975,41 @@ function _renderCalendar(el, classId) {
       }).catch(() => {});
     }
   }
+
+  if (selectedEvent?.unit_id != null) {
+    const uid = Number(selectedEvent.unit_id);
+    if (!_calendarLeafSumFetchedUnits.has(uid)) {
+      _calendarLeafSumFetchedUnits.add(uid);
+      fetchUnitLeafContentSummaries(classId, uid).then(() => {
+        if (Number(_selectedSessionId || 0) === Number(selectedEvent.session_id || 0)) {
+          _renderCalendar(el, classId);
+        }
+      }).catch(() => {});
+    }
+  }
+
+  el.querySelectorAll('.btn-calendar-leaf-lesson').forEach(button => {
+    button.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const itemId = Number(button.dataset.itemId || 0);
+      const btnClassId = Number(button.dataset.classId || classId || 0);
+      const btnUnitId = Number(button.dataset.unitId || 0);
+      if (!itemId || !btnClassId || !btnUnitId) return;
+      let itemPath = [];
+      let sectionPath = [];
+      try { itemPath = JSON.parse(button.dataset.itemPath || '[]'); } catch {}
+      try { sectionPath = JSON.parse(button.dataset.sectionPath || '[]'); } catch {}
+      openLeafContentModal(btnClassId, btnUnitId, {
+        id: itemId,
+        title: Array.isArray(itemPath) && itemPath.length ? itemPath[itemPath.length - 1] : 'Leaf Item',
+        item_path_json: Array.isArray(itemPath) ? itemPath : [],
+        section_path_json: Array.isArray(sectionPath) ? sectionPath : [],
+      }, {
+        onChange: () => _renderCalendar(el, classId),
+      });
+    });
+  });
 
   el.querySelector('#btn-open-selected-material-studio')?.addEventListener('click', () => {
     const intent = _buildCalendarWorkflowIntent(selectedEvent, 'material_studio', {

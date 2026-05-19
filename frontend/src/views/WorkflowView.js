@@ -24,7 +24,7 @@ import { askConfirm } from '../utils/modal.js';
 import { mountRetryCard } from '../utils/retryView.js';
 import { fmtDate, fmtTime } from '../utils/format.js';
 import { copyText } from '../utils/password.js';
-import { openLeafContentModal } from '../utils/leafContent.js';
+import { openLeafContentModal, fetchUnitLeafContentSummaries, renderLeafStatusBadge } from '../utils/leafContent.js';
 
 let _activeTab = 0;
 let _recentWindow = 'month';
@@ -2468,6 +2468,9 @@ export async function renderWorkflowView() {
       _workflowPreviewFocusOnly = true;
       _workflowPreviewHideDone = false;
     }
+    if (ws?.active_unit?.id) {
+      await fetchUnitLeafContentSummaries(classId, ws.active_unit.id);
+    }
     setWorkspace(ws);
     _render(el, classId);
   } catch (err) {
@@ -2972,6 +2975,7 @@ function _renderSessionTeachingChecklistGroups(groups, { hasPlannedRoute = false
                                     ${Array.isArray(entry?.context?.itemPath) && entry.context.itemPath.length > 1
                                       ? `<span class="text-[11px] text-slate-400">${_escapeHtml(entry.context.itemPath.slice(0, -1).join(' > '))}</span>`
                                       : ''}
+                                    ${renderLeafStatusBadge(item.id, classId, Number(unit?.id || 0))}
                                   </div>
                                 </div>
                               </div>
@@ -3687,6 +3691,7 @@ function _render(el, classId) {
                   ${isDone ? 'Y' : ''}
                 </button>
                 <span class="todo-title text-[13px] leading-snug flex-1">${item.title}</span>
+                ${!hasChildren ? renderLeafStatusBadge(item.id, classId, Number(unit?.id || 0)) : ''}
                 ${previewResumeTarget ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex-shrink-0">Resume here</span>` : previewMatch ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 flex-shrink-0">Planned now</span>` : ''}
                 ${item.item_kind && item.item_kind !== 'other' ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 flex-shrink-0">${item.item_kind}</span>` : ''}
                 <div class="row-hover-actions flex items-center gap-1 ml-auto flex-wrap">
@@ -4290,6 +4295,7 @@ function _render(el, classId) {
                   ${item.is_completed || item.done ? 'Y' : (isStructural ? '·' : '')}
                 </div>
                 <span class="todo-title text-[13px] leading-snug flex-1">${item.title}</span>
+                ${!isStructural && !hasChildren ? renderLeafStatusBadge(item.id, classId, Number(unit?.id || 0)) : ''}
                 ${isStructural ? '<span class="text-[10px] text-slate-400 whitespace-nowrap">Auto-completes when all child rows are done</span>' : ''}
                 ${hasChildren ? `<button class="btn btn-ghost btn-sm !text-sky-600 btn-checklist-group-complete" data-item-id="${item.id}" title="Mark all unfinished lesson steps under this heading">Check group</button>` : ''}
                 ${!isStructural && !hasChildren ? `<button class="btn btn-ghost btn-sm btn-leaf-lesson !text-blue-600" data-item-id="${item.id}" title="Open lesson card">Lesson</button>` : ''}
@@ -5148,6 +5154,8 @@ function _bindWorkflowEvents(el, classId) {
         section_path_json: Array.isArray(item?.section_path_json) && item.section_path_json.length
           ? item.section_path_json
           : (Array.isArray(context?.sectionPath) ? context.sectionPath : []),
+      }, {
+        onChange: () => _render(el, classId),
       });
     });
   });
