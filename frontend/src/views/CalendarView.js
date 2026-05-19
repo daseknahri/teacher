@@ -886,9 +886,10 @@ function _renderCalendarRemainingGuidanceSummary(items) {
 function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = false, remainingGuidanceCount = 0, bestRemainingGuidanceTitle = '', quickGuidanceItems = [] } = {}) {
   if (isFuture) {
     return `
-      <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-        <p class="text-[12px] font-semibold text-slate-600">Recommended next step</p>
-        <p class="text-[12px] text-slate-500 mt-1">Review the planned flow and prep suggestions now. The textbook write-up becomes available after the session happens.</p>
+      <div class="rounded-2xl border border-blue-200 bg-blue-50/70 px-4 py-3">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700">Recommended next step</p>
+        <p class="mt-1 text-[14px] font-semibold text-slate-800">Prepare before the session happens</p>
+        <p class="text-[12px] text-slate-600 mt-1">Review the planned flow and prep suggestions now. The textbook write-up becomes available after the session happens.</p>
         ${hasUnit ? `
           <div class="mt-3 flex gap-2 flex-wrap">
             <button id="btn-calendar-next-open-workflow" class="btn btn-primary btn-sm">Open workflow</button>
@@ -899,26 +900,31 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
   }
   if (!hasUnit) {
     return `
-      <div class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2">
-        <p class="text-[12px] font-semibold text-slate-600">Recommended next step</p>
-        <p class="text-[12px] text-slate-500 mt-1">This session is outside the workflow unit system, so only attendance and notes are managed here.</p>
+      <div class="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-3">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Recommended next step</p>
+        <p class="mt-1 text-[14px] font-semibold text-slate-800">Track attendance and note only</p>
+        <p class="text-[12px] text-slate-600 mt-1">This session is outside the workflow unit system, so only attendance and notes are managed here.</p>
       </div>`;
   }
   if (!writeup) {
     return `
-      <div class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2">
-        <p class="text-[12px] font-semibold text-slate-600">Recommended next step</p>
-        <p class="text-[12px] text-slate-500 mt-1">
+      <div class="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-3">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Recommended next step</p>
+        <p class="mt-1 text-[14px] font-semibold text-slate-800">Create the first session record</p>
+        <p class="text-[12px] text-slate-600 mt-1">
           ${remainingGuidanceCount > 0
             ? `You already have ${remainingGuidanceCount} matching saved guidance item${remainingGuidanceCount === 1 ? '' : 's'} for this session. Import one first, or generate the write-up after confirming what was really covered in class.`
             : 'Generate the write-up after confirming what was really covered in class.'}
         </p>
         ${remainingGuidanceCount > 0 ? _renderCalendarRemainingGuidanceSummary(quickGuidanceItems) : ''}
-        <div class="mt-3 flex gap-2 flex-wrap">
+        <div class="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-3">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Actions</p>
+          <div class="mt-2 flex gap-2 flex-wrap">
           ${remainingGuidanceCount === 1 ? '<button id="btn-calendar-next-import-best" class="btn btn-primary btn-sm">Import Best Match</button>' : ''}
           ${remainingGuidanceCount > 1 ? `<button id="btn-calendar-next-import-all" class="btn btn-primary btn-sm">Import All Guidance (${remainingGuidanceCount})</button>` : ''}
           <button id="btn-calendar-next-generate" class="btn btn-primary btn-sm">Generate now</button>
           <button id="btn-calendar-next-guidance" class="btn btn-secondary btn-sm">${remainingGuidanceCount === 1 && bestRemainingGuidanceTitle ? 'Choose Other Guidance' : 'Use Saved Guidance'}</button>
+          </div>
         </div>
         ${remainingGuidanceCount > 1 ? _renderCalendarGuidanceKindImportButtons(quickGuidanceItems, 'calendar-next-guidance-kind') : ''}
         ${remainingGuidanceCount > 1 ? _renderCalendarGuidanceQuickPickButtons(quickGuidanceItems, 'calendar-next-guidance') : ''}
@@ -926,32 +932,40 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
   }
   if (writeup.approved === false) {
     return `
-      <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-        <p class="text-[12px] font-semibold text-amber-800">Recommended next step</p>
+      <div class="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-800">Recommended next step</p>
+        <p class="mt-1 text-[14px] font-semibold text-slate-800">Review and finish this draft</p>
         <p class="text-[12px] text-amber-700 mt-1">
           ${remainingGuidanceCount > 0
             ? 'Review this draft, import any remaining saved guidance you still want, and approve it once it matches the actual lesson.'
             : 'Review this draft, edit it if needed, and approve it once it matches the actual lesson.'}
         </p>
         ${remainingGuidanceCount > 0 ? _renderCalendarRemainingGuidanceSummary(quickGuidanceItems) : ''}
-        <div class="mt-3 flex gap-2 flex-wrap">
+        <div class="mt-3 rounded-xl border border-amber-200 bg-white/80 px-3 py-3">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-800">Actions</p>
+          <div class="mt-2 flex gap-2 flex-wrap">
           <button id="btn-calendar-next-edit" class="btn btn-primary btn-sm">Edit draft</button>
           ${remainingGuidanceCount === 1 ? '<button id="btn-calendar-next-import-best" class="btn btn-secondary btn-sm">Import Best Match</button>' : ''}
           ${remainingGuidanceCount > 1 ? `<button id="btn-calendar-next-import-all" class="btn btn-secondary btn-sm">Import All Guidance (${remainingGuidanceCount})</button>` : ''}
           ${remainingGuidanceCount > 0 ? '<button id="btn-calendar-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>' : ''}
           <button id="btn-calendar-next-approve" class="btn btn-secondary btn-sm">Approve now</button>
+          </div>
         </div>
         ${remainingGuidanceCount > 1 ? _renderCalendarGuidanceKindImportButtons(quickGuidanceItems, 'calendar-draft-guidance-kind') : ''}
         ${remainingGuidanceCount > 1 ? _renderCalendarGuidanceQuickPickButtons(quickGuidanceItems, 'calendar-draft-guidance') : ''}
       </div>`;
   }
   return `
-    <div class="rounded-xl border border-green-200 bg-green-50 px-3 py-2">
-      <p class="text-[12px] font-semibold text-green-800">Recommended next step</p>
+    <div class="rounded-2xl border border-green-200 bg-green-50/80 px-4 py-3">
+      <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-green-800">Recommended next step</p>
+      <p class="mt-1 text-[14px] font-semibold text-slate-800">Reuse or revise this approved record</p>
       <p class="text-[12px] text-green-700 mt-1">This write-up is approved. You can copy it, download it, or reopen it as a draft if you need changes.</p>
-      <div class="mt-3 flex gap-2 flex-wrap">
+      <div class="mt-3 rounded-xl border border-green-200 bg-white/80 px-3 py-3">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-green-800">Actions</p>
+        <div class="mt-2 flex gap-2 flex-wrap">
         <button id="btn-calendar-next-copy" class="btn btn-primary btn-sm">Copy</button>
         <button id="btn-calendar-next-download" class="btn btn-secondary btn-sm">Download</button>
+        </div>
       </div>
     </div>`;
 }

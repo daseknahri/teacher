@@ -1305,19 +1305,23 @@ function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuid
   if (!hasSession) return '';
   if (!writeup) {
     return `
-      <div class="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-2">
-        <p class="text-[12px] font-semibold text-slate-600">Recommended next step</p>
-        <p class="text-[12px] text-slate-500 mt-1">
+      <div class="rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 px-4 py-3">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Recommended next step</p>
+        <p class="mt-1 text-[14px] font-semibold text-slate-800">Create the first session record</p>
+        <p class="text-[12px] text-slate-600 mt-1">
           ${remainingGuidanceCount > 0
             ? `You already have ${remainingGuidanceCount} matching saved guidance item${remainingGuidanceCount === 1 ? '' : 's'} for this session. Import one first, or generate the write-up from scratch once you have checked what was actually covered in class.`
             : 'Generate the write-up once you have checked what was actually covered in class.'}
         </p>
         ${remainingGuidanceCount > 0 ? _renderRemainingGuidanceSummary(quickGuidanceItems) : ''}
-        <div class="mt-3 flex gap-2 flex-wrap">
+        <div class="mt-3 rounded-xl border border-slate-200 bg-white px-3 py-3">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Actions</p>
+          <div class="mt-2 flex gap-2 flex-wrap">
           ${remainingGuidanceCount === 1 ? `<button id="btn-session-next-import-best" class="btn btn-primary btn-sm">Import Best Match</button>` : ''}
           ${remainingGuidanceCount > 1 ? `<button id="btn-session-next-import-all" class="btn btn-primary btn-sm">Import All Guidance (${remainingGuidanceCount})</button>` : ''}
           <button id="btn-session-next-generate" class="btn btn-primary btn-sm">Generate now</button>
           <button id="btn-session-next-guidance" class="btn btn-secondary btn-sm">${remainingGuidanceCount === 1 && bestRemainingGuidanceTitle ? `Choose Other Guidance` : 'Use Saved Guidance'}</button>
+          </div>
         </div>
         ${remainingGuidanceCount > 1 ? _renderGuidanceKindImportButtons(quickGuidanceItems, 'session-next-guidance-kind') : ''}
         ${remainingGuidanceCount > 1 ? _renderGuidanceQuickPickButtons(quickGuidanceItems, 'session-next-guidance') : ''}
@@ -1325,32 +1329,40 @@ function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuid
   }
   if (writeup.approved === false) {
     return `
-      <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-        <p class="text-[12px] font-semibold text-amber-800">Recommended next step</p>
+      <div class="rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-800">Recommended next step</p>
+        <p class="mt-1 text-[14px] font-semibold text-slate-800">Review and finish this draft</p>
         <p class="text-[12px] text-amber-700 mt-1">
           ${remainingGuidanceCount > 0
             ? `Review this draft, edit it if needed, and import any remaining saved guidance you still want before marking it approved.`
             : 'Review this draft, edit it if needed, then mark it approved when it matches the real lesson.'}
         </p>
         ${remainingGuidanceCount > 0 ? _renderRemainingGuidanceSummary(quickGuidanceItems) : ''}
-        <div class="mt-3 flex gap-2 flex-wrap">
+        <div class="mt-3 rounded-xl border border-amber-200 bg-white/80 px-3 py-3">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-800">Actions</p>
+          <div class="mt-2 flex gap-2 flex-wrap">
           <button id="btn-session-next-edit" class="btn btn-primary btn-sm">Edit draft</button>
           ${remainingGuidanceCount === 1 ? '<button id="btn-session-next-import-best" class="btn btn-secondary btn-sm">Import Best Match</button>' : ''}
           ${remainingGuidanceCount > 1 ? `<button id="btn-session-next-import-all" class="btn btn-secondary btn-sm">Import All Guidance (${remainingGuidanceCount})</button>` : ''}
           ${remainingGuidanceCount > 0 ? '<button id="btn-session-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>' : ''}
           <button id="btn-session-next-approve" class="btn btn-secondary btn-sm">Approve now</button>
+          </div>
         </div>
         ${remainingGuidanceCount > 1 ? _renderGuidanceKindImportButtons(quickGuidanceItems, 'session-draft-guidance-kind') : ''}
         ${remainingGuidanceCount > 1 ? _renderGuidanceQuickPickButtons(quickGuidanceItems, 'session-draft-guidance') : ''}
       </div>`;
   }
   return `
-    <div class="rounded-xl border border-green-200 bg-green-50 px-3 py-2">
-      <p class="text-[12px] font-semibold text-green-800">Recommended next step</p>
+    <div class="rounded-2xl border border-green-200 bg-green-50/80 px-4 py-3">
+      <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-green-800">Recommended next step</p>
+      <p class="mt-1 text-[14px] font-semibold text-slate-800">Reuse or revise this approved record</p>
       <p class="text-[12px] text-green-700 mt-1">This write-up is approved. Copy it, download it, or mark it draft again if you need to revise it.</p>
-      <div class="mt-3 flex gap-2 flex-wrap">
+      <div class="mt-3 rounded-xl border border-green-200 bg-white/80 px-3 py-3">
+        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-green-800">Actions</p>
+        <div class="mt-2 flex gap-2 flex-wrap">
         <button id="btn-session-next-copy" class="btn btn-primary btn-sm">Copy</button>
         <button id="btn-session-next-download" class="btn btn-secondary btn-sm">Download</button>
+        </div>
       </div>
     </div>`;
 }
