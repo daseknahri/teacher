@@ -40,24 +40,46 @@ Keep entries short and factual.
 
 ### 2026-05-19 22:45 - Claude
 
-- Status: planned
+- Status: done
 - Goal: implement the first Workflow-only leaf content reader/editor on top of the new leaf-content backend endpoints
 - Files expected:
   - `frontend/package.json`
+  - `frontend/src/utils/leafContent.js` (new helper)
   - `frontend/src/views/WorkflowView.js`
   - `frontend/src/style/components.css`
-  - `frontend/src/utils/*` (optional small helper only if needed)
   - `docs/roadmap/AI-WORKLOG.md`
 - Assumptions:
   - the safest next slice is Workflow only, not Calendar yet
   - the UI should open from leaf checklist rows without changing checklist toggle semantics
   - rendered mode should support Markdown + LaTeX, while source mode keeps the raw editable content
   - missing content should lead to a Generate-first empty state, not an error wall
+  - installing marked + katex as npm deps for Markdown + LaTeX rendering inside Vite
+  - "Lesson" button added to leaf rows (no children) in Unit Setup checklist and Active Session Full Unit Checklist
+  - modal is large (max-w-2xl) to give content space; scrollable body
 - Notes:
   - task prompt lives in `docs/roadmap/CLAUDE-TASK-WORKFLOW-LEAF-READER.md`
   - this task should not change session completion logic, calendar flow, or partial regeneration
 - Result:
+  - installed `marked` (v18) and `katex` (v0.16) as npm dependencies
+  - created `frontend/src/utils/leafContent.js`:
+    - `openLeafContentModal(classId, unitId, item)` — full lesson card modal
+    - `renderMarkdownLatex(text)` — extracts $$/$$ and $$ blocks, runs marked, injects KaTeX HTML
+    - rendered mode: per-section cards with prose styling; source_excerpt_md in `<details>`
+    - source mode: textareas per field with Markdown + LaTeX hint
+    - Generate button → POST .../generate; Save button → PUT .../leaf-content/{item_id}
+    - loading / 404 empty state handled cleanly
+  - added `import { openLeafContentModal }` to WorkflowView.js
+  - added "Lesson" button to leaf rows (no children) in Unit Setup DnD checklist (in row-hover-actions)
+  - added "Lesson" button to leaf rows in Active Session Full Unit Checklist
+  - restructured Teaching Flow View item rows with wrapper div to add "Lesson" button as sibling of check button
+  - added `.btn-leaf-lesson` event handler in `_bindWorkflowEvents` — resolves item from `_checklist(unit)`, calls `openLeafContentModal`
+  - added CSS in `components.css`: `.leaf-content-modal`, `.lcm-header`, `.lcm-body`, `.lcm-footer`, `.lcm-prose`, `.lcm-math-err`
+  - `npm run build` passes (27 modules, no errors; chunk size warning is pre-existing)
 - Follow-up:
+  - next: connect leaf content status to checklist row visual indicator (e.g. a small blue dot when content exists)
+  - next: add partial regeneration per field (Phase 5 in LEAF-CONTENT-READER-ROADMAP.md)
+  - next: connect leaf lesson card to session flow navigation (Phase 6)
+  - consider lazy-loading katex/marked to reduce initial bundle size
 
 ### 2026-05-19 22:05 - Claude
 
