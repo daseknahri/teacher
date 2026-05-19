@@ -3206,6 +3206,7 @@ function _render(el, classId) {
     ? Number(_workflowEntryContext.unit_session_number || 0) || null
     : null;
   const previewSessionPlanTree = previewSessionNumber ? _collectSessionPlannedNodes(activeBlueprintTree, previewSessionNumber) : [];
+  const previewSessionPlanPaths = _collectSessionPlannedPaths(previewSessionPlanTree, [], []);
   const previewSessionPlanTitles = _flattenSessionPlannedTitles(previewSessionPlanTree, []);
   const previewSessionTitleKeys = new Set(previewSessionPlanTitles.map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
   const activeSessionPlanTree = session?.unit_session_number ? _collectSessionPlannedNodes(activeBlueprintTree, session.unit_session_number) : [];
@@ -3253,12 +3254,15 @@ function _render(el, classId) {
     activeUnitMap,
     checklist,
   );
+  const activeRouteSectionPaths = activeTeachingFlowGroups
+    .map(group => Array.isArray(group?.path) ? group.path : [])
+    .filter(path => path.length);
   const activeSessionMatchedGuidance = unit?.id
     ? _filterAssistantArtifactsForRouteContext(
       _unitAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(unit.id || 0)}`) || [],
       activeUnitMap,
       activeEffectiveRouteTitles,
-      activeSessionCheckedSectionPaths,
+      activeRouteSectionPaths.length ? activeRouteSectionPaths : activeSessionCheckedSectionPaths,
     )
     : [];
   const activeSessionImportedGuidanceIds = _getImportedAssistantArtifactIds(sessionWriteupState.item);
@@ -3570,7 +3574,13 @@ function _render(el, classId) {
                 <div class="rounded-xl border border-blue-100 bg-white p-3">
                   <h4 class="text-[12px] font-semibold text-slate-700">Teacher Prep Suggestions</h4>
                   <div class="mt-2">
-                    ${_renderSessionPlaybookPreview(activeUnitMap, previewSessionPlanTitles)}
+                    ${_renderSessionPlaybookPreview(
+                      activeUnitMap,
+                      previewSessionPlanTitles,
+                      previewSessionPlanPaths
+                        .map(row => Array.isArray(row?.path) && row.path.length > 1 ? row.path.slice(0, -1) : [])
+                        .filter(path => path.length),
+                    )}
                   </div>
                 </div>
               </div>
@@ -3997,7 +4007,11 @@ function _render(el, classId) {
                           <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
                             <p class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Teacher Prep</p>
                             <p class="text-[12px] text-slate-500 mb-3">${activeSessionPlanTitles.length ? 'Notebook-backed suggestions tied to this planned route.' : 'Notebook-backed suggestions tied to the checklist work already captured in this session.'}</p>
-                            ${_renderSessionPlaybookPreview(activeUnitMap, activeEffectiveRouteTitles, activeSessionCheckedSectionPaths)}
+                            ${_renderSessionPlaybookPreview(
+                              activeUnitMap,
+                              activeEffectiveRouteTitles,
+                              activeRouteSectionPaths.length ? activeRouteSectionPaths : activeSessionCheckedSectionPaths,
+                            )}
                           </div>
                         </div>
                       </div>`}

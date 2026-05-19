@@ -890,12 +890,15 @@ function _filterCalendarBlueprintTree(nodes, { hideDone = false } = {}) {
   }, []);
 }
 
-function _renderCalendarSectionPlans(sectionPlans, plannedTitles) {
+function _renderCalendarSectionPlans(sectionPlans, plannedTitles, routeSectionPaths = []) {
   const plans = Array.isArray(sectionPlans) ? sectionPlans.filter(Boolean) : [];
   const titleKeys = new Set((Array.isArray(plannedTitles) ? plannedTitles : []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+  const routePathKeys = new Set((Array.isArray(routeSectionPaths) ? routeSectionPaths : []).map(path => _normalizeSectionPathKey(path)).filter(Boolean));
   const matched = plans.filter(plan => {
     const sectionTitle = String(plan?.section_title || '').trim().toLowerCase();
     if (sectionTitle && titleKeys.has(sectionTitle)) return true;
+    const pathKey = _normalizeSectionPathKey(plan?.section_path);
+    if (pathKey && routePathKeys.has(pathKey)) return true;
     const delivery = Array.isArray(plan?.delivery_sequence) ? plan.delivery_sequence : [];
     return delivery.some(value => titleKeys.has(String(value || '').trim().toLowerCase()));
   }).slice(0, 4);
@@ -3620,12 +3623,15 @@ function _renderCalendar(el, classId) {
       : selectedFallbackRouteItems,
     selectedSectionPlans,
   );
+  const selectedRouteSectionPaths = selectedTeachingFlowGroups
+    .map(group => Array.isArray(group?.path) ? group.path : [])
+    .filter(path => path.length);
   const selectedMatchedGuidance = selectedEvent?.unit_id != null
     ? _filterCalendarAssistantArtifactsForRouteContext(
       _calendarAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(selectedEvent.unit_id || 0)}`) || [],
       selectedUnitMap,
       selectedEffectiveRouteTitles,
-      selectedCheckedSectionPaths,
+      selectedRouteSectionPaths.length ? selectedRouteSectionPaths : selectedCheckedSectionPaths,
     )
     : [];
   const selectedImportedGuidanceIds = _getCalendarImportedAssistantArtifactIds(selectedWriteup);
@@ -4236,7 +4242,11 @@ function _renderCalendar(el, classId) {
                             ${plannedResumeNode ? _renderCalendarNextFocusActions(plannedResumeSectionPlan, plannedResumePlaybookEntry, plannedResumeNode.title, { classId, unitId: selectedEvent?.unit_id }) : ''}
                             <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
                               <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Matched Section Plans</p>
-                              ${_renderCalendarSectionPlans(selectedSectionPlans, selectedEffectiveRouteTitles)}
+                              ${_renderCalendarSectionPlans(
+                                selectedSectionPlans,
+                                selectedEffectiveRouteTitles,
+                                selectedRouteSectionPaths.length ? selectedRouteSectionPaths : selectedCheckedSectionPaths,
+                              )}
                             </div>
                           </div>
                         </div>
@@ -4273,7 +4283,11 @@ function _renderCalendar(el, classId) {
                 : selectedBlueprintError
                   ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedBlueprintError)}</p>`
                   : `<div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                      ${_renderCalendarTeacherPrep(selectedUnitMap, selectedEffectiveRouteTitles, selectedCheckedSectionPaths)}
+                      ${_renderCalendarTeacherPrep(
+                        selectedUnitMap,
+                        selectedEffectiveRouteTitles,
+                        selectedRouteSectionPaths.length ? selectedRouteSectionPaths : selectedCheckedSectionPaths,
+                      )}
                     </div>`}
           </div>
 
