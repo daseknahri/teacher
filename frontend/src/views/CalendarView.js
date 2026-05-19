@@ -632,6 +632,194 @@ function _flattenCalendarBlueprintTitles(nodes, output = []) {
   return output;
 }
 
+function _collectCalendarBlueprintPaths(nodes, lineage = [], output = []) {
+  const rows = Array.isArray(nodes) ? nodes : [];
+  rows.forEach(node => {
+    if (!node || typeof node !== 'object') return;
+    const title = String(node.title || '').trim();
+    if (!title) return;
+    const path = [...lineage, title];
+    output.push({
+      id: Number(node?.id || 0) || null,
+      title,
+      kind: String(node?.kind || '').trim().toLowerCase(),
+      is_completed: Boolean(node?.is_completed),
+      path,
+      pathKey: path.map(value => String(value || '').trim().toLowerCase()).filter(Boolean).join('|'),
+    });
+    _collectCalendarBlueprintPaths(node.children || [], path, output);
+  });
+  return output;
+}
+
+function _normalizeCalendarTeachingPhase(item, sectionPlan = null) {
+  const title = String(item?.title || '').trim();
+  const titleKey = title.toLowerCase();
+  const kind = String(item?.kind || item?.item_kind || '').trim().toLowerCase();
+  const plan = sectionPlan && typeof sectionPlan === 'object' ? sectionPlan : null;
+  const inPlanBucket = bucket => Array.isArray(plan?.[bucket]) && plan[bucket].some(value => String(value || '').trim().toLowerCase() === titleKey);
+
+  if (inPlanBucket('activity_titles')) return 'activity';
+  if (inPlanBucket('example_titles')) return 'example';
+  if (inPlanBucket('exercise_titles')) return kind === 'evaluation' ? 'assessment' : 'practice';
+  if (inPlanBucket('content_titles')) return 'content';
+
+  if (kind === 'activity') return 'activity';
+  if (kind === 'example') return 'example';
+  if (kind === 'exercise') return 'practice';
+  if (kind === 'evaluation') return 'assessment';
+  if (kind === 'definition' || kind === 'property' || kind === 'lesson') return 'content';
+  if (kind === 'chapter' || kind === 'section' || kind === 'subsection') return 'section';
+
+  if (/(activit|decouv|decouvr|explor)/.test(titleKey)) return 'activity';
+  if (/(exemple|example|modele|model)/.test(titleKey)) return 'example';
+  if (/(exercice|exercise|application|entrain|practice|quiz|evaluation|assessment|probleme|problem)/.test(titleKey)) return 'practice';
+  return 'content';
+}
+
+function _calendarTeachingPhaseLabel(phase) {
+  const key = String(phase || '').trim().toLowerCase();
+  if (key === 'activity') return 'Launch';
+  if (key === 'content') return 'Teach';
+  if (key === 'example') return 'Model';
+  if (key === 'practice') return 'Practice';
+  if (key === 'assessment') return 'Check';
+  return 'Other';
+}
+
+function _findCalendarSectionPlanForRouteItem(sectionPlans, item) {
+  const plans = Array.isArray(sectionPlans) ? sectionPlans.filter(Boolean) : [];
+  if (!plans.length) return null;
+  const itemTitleKey = String(item?.title || '').trim().toLowerCase();
+  const sectionPathKey = _normalizeSectionPathKey(item?.sectionPath || []);
+  const itemPathKey = _normalizeSectionPathKey(item?.path || []);
+
+  let best = null;
+  let bestScore = -1;
+  plans.forEach(plan => {
+    const sectionTitle = String(plan?.section_title || '').trim();
+    const sectionPath = Array.isArray(plan?.section_path) && plan.section_path.length ? plan.section_path : (sectionTitle ? [sectionTitle] : []);
+    const planPathKey = _normalizeSectionPathKey(sectionPath);
+    let score = -1;
+    if (sectionPathKey && planPathKey && sectionPathKey === planPathKey) score = 5;
+    else if (itemPathKey && planPathKey && itemPathKey === planPathKey) score = 4;
+    else if (itemTitleKey && Array.isArray(plan?.delivery_sequence) && plan.delivery_sequence.some(value => String(value || '').trim().toLowerCase() === itemTitleKey)) score = 3;
+    else if (itemTitleKey && String(plan?.section_title || '').trim().toLowerCase() === itemTitleKey) score = 2;
+    if (score > bestScore) {
+      bestScore = score;
+      best = plan;
+    }
+  });
+  return bestScore >= 0 ? best : null;
+}
+
+function _buildCalendarTeachingFlowGroups(routeItems, sectionPlans = []) {
+  const rows = Array.isArray(routeItems) ? routeItems : [];
+  if (!rows.length) return [];
+  const phaseOrder = ['activity', 'content', 'example', 'practice', 'assessment', 'other'];
+  const groups = [];
+  const groupMap = new Map();
+
+  rows.forEach(item => {
+    const sectionPlan = _findCalendarSectionPlanForRouteItem(sectionPlans, item);
+    const sectionTitle = String(sectionPlan?.section_title || '').trim()
+      || (Array.isArray(item?.sectionPath) && item.sectionPath.length ? item.sectionPath[item.sectionPath.length - 1] : '')
+      || 'Teaching Flow';
+    const sectionPath = Array.isArray(sectionPlan?.section_path) && sectionPlan.section_path.length
+      ? sectionPlan.section_path
+      : (Array.isArray(item?.sectionPath) && item.sectionPath.length ? item.sectionPath : [sectionTitle]);
+    const groupKey = _normalizeSectionPathKey(sectionPath) || sectionTitle.toLowerCase();
+    if (!groupMap.has(groupKey)) {
+      const phases = new Map();
+      phaseOrder.forEach(phase => phases.set(phase, []));
+      const group = {
+        key: groupKey,
+        title: sectionTitle,
+        path: sectionPath,
+        total: 0,
+        done: 0,
+        phases,
+      };
+      groupMap.set(groupKey, group);
+      groups.push(group);
+    }
+    const group = groupMap.get(groupKey);
+    const phase = _normalizeCalendarTeachingPhase(item, sectionPlan);
+    const normalizedPhase = phaseOrder.includes(phase) ? phase : 'other';
+    group.total += 1;
+    if (item?.is_completed) group.done += 1;
+    group.phases.get(normalizedPhase).push(item);
+  });
+
+  return groups;
+}
+
+function _renderCalendarTeachingFlowGroups(groups, { hasPlannedRoute = false, resumeNodeId = null } = {}) {
+  const rows = Array.isArray(groups) ? groups : [];
+  if (!rows.length) {
+    return `<p class="text-[12px] text-slate-500">${hasPlannedRoute ? 'No grouped teaching flow is available for this session yet.' : 'No checked checklist route is recorded for this session yet.'}</p>`;
+  }
+  const phaseOrder = ['activity', 'content', 'example', 'practice', 'assessment', 'other'];
+  return `
+    <div class="flex flex-col gap-3">
+      ${rows.map(group => {
+        const remaining = Math.max(0, Number(group.total || 0) - Number(group.done || 0));
+        return `
+          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <p class="text-[13px] font-semibold text-slate-800">${_escapeHtml(group.title)}</p>
+                ${Array.isArray(group.path) && group.path.length > 1
+                  ? `<p class="mt-1 text-[11px] text-slate-400">${_escapeHtml(group.path.join(' > '))}</p>`
+                  : ''}
+              </div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="badge ${remaining === 0 ? 'badge-green' : group.done ? 'badge-amber' : 'badge-blue'}">${group.done}/${group.total} covered</span>
+                ${remaining > 0 ? `<span class="badge badge-gray">${remaining} left</span>` : ''}
+              </div>
+            </div>
+            <div class="mt-3 flex flex-col gap-3">
+              ${phaseOrder.map(phase => {
+                const phaseRows = group.phases.get(phase) || [];
+                if (!phaseRows.length) return '';
+                return `
+                  <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3">
+                    <div class="flex items-center justify-between gap-2 flex-wrap mb-2">
+                      <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">${_escapeHtml(_calendarTeachingPhaseLabel(phase))}</p>
+                      <span class="text-[11px] text-slate-400">${phaseRows.filter(row => Boolean(row?.is_completed)).length}/${phaseRows.length}</span>
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                      ${phaseRows.map(row => {
+                        const isDone = Boolean(row?.is_completed);
+                        const isResume = resumeNodeId != null && Number(row?.id || 0) === Number(resumeNodeId);
+                        return `
+                          <div class="rounded-xl border px-3 py-2 ${isDone ? 'border-green-200 bg-green-50/80' : 'border-slate-200 bg-white'}">
+                            <div class="flex items-start gap-2">
+                              <span class="mt-0.5 inline-flex h-[18px] w-[18px] items-center justify-center rounded-[4px] border-2 text-[10px] ${isDone ? 'border-green-600 bg-green-600 text-white' : 'border-slate-300 bg-white text-transparent'}">${isDone ? 'Y' : 'Y'}</span>
+                              <div class="min-w-0 flex-1">
+                                <p class="text-[13px] leading-snug ${isDone ? 'text-slate-500 line-through' : 'text-slate-700'}">${_escapeHtml(String(row?.title || 'Checklist item'))}</p>
+                                <div class="mt-1 flex items-center gap-2 flex-wrap">
+                                  ${row?.kind ? `<span class="badge badge-gray">${_escapeHtml(String(row.kind))}</span>` : ''}
+                                  ${isResume ? '<span class="badge badge-amber">Resume here</span>' : ''}
+                                  ${Array.isArray(row?.path) && row.path.length > 1 ? `<span class="text-[11px] text-slate-400">${_escapeHtml(row.path.slice(0, -1).join(' > '))}</span>` : ''}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        `;
+                      }).join('')}
+                    </div>
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+  `;
+}
+
 function _renderCalendarFallbackRouteRows(items) {
   const rows = Array.isArray(items) ? items.map(value => String(value || '').trim()).filter(Boolean) : [];
   if (!rows.length) {
@@ -3375,10 +3563,14 @@ function _renderCalendar(el, classId) {
   const selectedCheckedItems = Array.isArray(selectedEvent?.checked_items)
     ? selectedEvent.checked_items.map(value => String(value || '').trim()).filter(Boolean)
     : [];
+  const selectedCheckedItemPaths = Array.isArray(selectedEvent?.checked_item_paths)
+    ? selectedEvent.checked_item_paths.map(path => Array.isArray(path) ? path.map(value => String(value || '').trim()).filter(Boolean) : []).filter(path => path.length)
+    : [];
   const selectedCheckedSectionPaths = Array.isArray(selectedEvent?.checked_section_paths)
     ? selectedEvent.checked_section_paths.map(path => Array.isArray(path) ? path.map(value => String(value || '').trim()).filter(Boolean) : []).filter(path => path.length)
     : [];
   const plannedSessionTree = selectedSessionNumber ? _collectSessionBlueprintNodes(selectedBlueprintTree, selectedSessionNumber) : [];
+  const plannedSessionPaths = _collectCalendarBlueprintPaths(plannedSessionTree, [], []);
   const plannedSessionTitles = _flattenCalendarBlueprintTitles(plannedSessionTree, []);
   const selectedEffectiveRouteTitles = plannedSessionTitles.length ? plannedSessionTitles : selectedCheckedItems;
   const plannedSessionSummary = plannedSessionTitles.length
@@ -3409,6 +3601,25 @@ function _renderCalendar(el, classId) {
     ? selectedBlueprint.unit_map_json
     : {};
   const selectedSectionPlans = Array.isArray(selectedUnitMap?.section_plans) ? selectedUnitMap.section_plans : [];
+  const selectedFallbackRouteItems = selectedCheckedItems.map((title, index) => ({
+    id: null,
+    title,
+    kind: '',
+    is_completed: true,
+    path: Array.isArray(selectedCheckedItemPaths[index]) && selectedCheckedItemPaths[index].length ? selectedCheckedItemPaths[index] : [title],
+    sectionPath: Array.isArray(selectedCheckedSectionPaths[index]) && selectedCheckedSectionPaths[index].length
+      ? selectedCheckedSectionPaths[index]
+      : (Array.isArray(selectedCheckedItemPaths[index]) && selectedCheckedItemPaths[index].length > 1 ? selectedCheckedItemPaths[index].slice(0, -1) : [title]),
+  }));
+  const selectedTeachingFlowGroups = _buildCalendarTeachingFlowGroups(
+    plannedSessionPaths.length
+      ? plannedSessionPaths.map(row => ({
+        ...row,
+        sectionPath: Array.isArray(row?.path) && row.path.length > 1 ? row.path.slice(0, -1) : (row?.path || []),
+      }))
+      : selectedFallbackRouteItems,
+    selectedSectionPlans,
+  );
   const selectedMatchedGuidance = selectedEvent?.unit_id != null
     ? _filterCalendarAssistantArtifactsForRouteContext(
       _calendarAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(selectedEvent.unit_id || 0)}`) || [],
@@ -4003,9 +4214,22 @@ function _renderCalendar(el, classId) {
                         ${_calendarPlannedHideDone && plannedSessionDoneCount > 0 && !visiblePlannedSessionTree.length
                           ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">All planned rows for this session are already completed. Use <span class="font-semibold">Show Completed Rows</span> if you want to review them.</div>'
                           : ''}
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                          <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
+                            <div>
+                              <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Teaching Flow View</p>
+                              <p class="mt-1 text-[12px] text-slate-500">${plannedSessionTitles.length ? 'This session route is grouped the way the lesson was meant to unfold in class.' : 'The checked work from this session is grouped into a classroom teaching flow.'}</p>
+                            </div>
+                            <div class="flex items-center gap-2 flex-wrap">
+                              ${selectedTeachingFlowGroups.length ? `<span class="badge badge-blue">${selectedTeachingFlowGroups.length} section${selectedTeachingFlowGroups.length === 1 ? '' : 's'}</span>` : ''}
+                              ${(plannedSessionPaths.length || selectedFallbackRouteItems.length) ? `<span class="badge badge-gray">${plannedSessionPaths.length || selectedFallbackRouteItems.length} route row${(plannedSessionPaths.length || selectedFallbackRouteItems.length) === 1 ? '' : 's'}</span>` : ''}
+                            </div>
+                          </div>
+                          ${_renderCalendarTeachingFlowGroups(selectedTeachingFlowGroups, { hasPlannedRoute: plannedSessionTitles.length > 0, resumeNodeId: plannedResumeNodeId })}
+                        </div>
                         <div class="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-3">
                           <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                            <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">${plannedSessionTitles.length ? 'Planned Route' : 'Checked In This Session'}</p>
+                            <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">${plannedSessionTitles.length ? 'Full Planned Route' : 'Recorded Checklist Route'}</p>
                             ${plannedSessionTitles.length ? _renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId }) : _renderCalendarFallbackRouteRows(selectedCheckedItems)}
                           </div>
                           <div class="flex flex-col gap-3">
