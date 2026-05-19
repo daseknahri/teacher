@@ -10,6 +10,7 @@ import { mountRetryCard } from '../utils/retryView.js';
 import { fmtDate, fmtTime } from '../utils/format.js';
 import { askConfirm } from '../utils/modal.js';
 import { navigate } from '../router.js';
+import { copyText } from '../utils/password.js';
 
 let _weekStart = _startOfWeek(new Date());
 let _selectedSessionId = null;
@@ -25,6 +26,7 @@ const CALENDAR_VIEW_INTENT_KEY = 'calendar_view_intent';
 
 const _sessionDetailCache = new Map();
 const _calendarUnitBlueprintCache = new Map();
+const _calendarAssistantArtifactCache = new Map();
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const TIME_SLOTS = [
@@ -150,6 +152,35 @@ function _escapeHtml(value) {
 
 function _escapeHtmlAttr(value) {
   return _escapeHtml(value).replace(/`/g, '&#96;');
+}
+
+function _normalizeSectionPathKey(values) {
+  return Array.isArray(values)
+    ? values.map(value => String(value || '').trim().toLowerCase()).filter(Boolean).join(' > ')
+    : '';
+}
+
+async function _loadCalendarAssistantArtifacts(classId, unitId, { force = false } = {}) {
+  const cacheKey = `${Number(classId || 0)}:${Number(unitId || 0)}`;
+  if (!force && _calendarAssistantArtifactCache.has(cacheKey)) {
+    return _calendarAssistantArtifactCache.get(cacheKey) || [];
+  }
+  const rows = await api(`/workflow/classes/${classId}/units/${unitId}/assistant/artifacts`);
+  const safeRows = Array.isArray(rows) ? rows : [];
+  _calendarAssistantArtifactCache.set(cacheKey, safeRows);
+  return safeRows;
+}
+
+function _filterCalendarAssistantArtifactsForSection(artifacts, sectionPlan, fallbackTitle = '') {
+  const safeRows = Array.isArray(artifacts) ? artifacts : [];
+  const targetTitle = String(sectionPlan?.section_title || fallbackTitle || '').trim().toLowerCase();
+  const targetPathKey = _normalizeSectionPathKey(sectionPlan?.section_path);
+  return safeRows.filter(item => {
+    const itemTitle = String(item?.section_title || '').trim().toLowerCase();
+    if (targetTitle && itemTitle === targetTitle) return true;
+    const itemPathKey = _normalizeSectionPathKey(item?.section_path);
+    return Boolean(targetPathKey) && itemPathKey === targetPathKey;
+  });
 }
 
 function _setWorkflowViewIntent(intent) {
@@ -577,7 +608,7 @@ function _buildCalendarAssistantPrefill(entry, sectionPlan, fallbackTitle = '', 
   };
 }
 
-function _renderCalendarNextFocusActions(sectionPlan, playbookEntry, fallbackTitle = '') {
+function _renderCalendarNextFocusActions(sectionPlan, playbookEntry, fallbackTitle = '', { classId = null, unitId = null } = {}) {
   const sectionTitle = String(sectionPlan?.section_title || fallbackTitle || '').trim();
   if (!sectionTitle) return '';
   const availableActions = Array.isArray(playbookEntry?.available_actions) ? playbookEntry.available_actions.map(value => String(value || '').trim().toLowerCase()).filter(Boolean) : [];
@@ -593,6 +624,7 @@ function _renderCalendarNextFocusActions(sectionPlan, playbookEntry, fallbackTit
             data-assistant-action="${_escapeHtmlAttr(action)}"
           >${_escapeHtml(_teacherActionLabel(action))}</button>`).join('')}
       </div>
+      ${classId && unitId ? `<div class="mt-2" data-calendar-next-focus-guidance data-class-id="${_escapeHtmlAttr(String(classId))}" data-unit-id="${_escapeHtmlAttr(String(unitId))}"></div>` : ''}
     </div>
   `;
 }
@@ -777,6 +809,79 @@ function _assistantArtifactKindLabel(kind) {
 
 function _assistantActionLabel(action) {
   return _teacherActionLabel(action);
+}
+
+function _calendarArtifactDownloadFilename(item, fallbackTitle = '') {
+  const base = String(item?.title || fallbackTitle || 'saved-guidance')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'saved-guidance';
+  return `${base}.md`;
+}
+
+function _renderCalendarSavedGuidancePreviewRows(items, fallbackTitle = '') {
+  const visible = Array.isArray(items) ? items.slice(0, 3) : [];
+  if (!visible.length) {
+    return '<p class="text-[12px] text-slate-600 mt-3">No saved guidance has been kept for this exact teaching focus yet.</p>';
+  }
+  return `
+    <div class="mt-3 flex flex-col gap-2">
+      <p class="text-[11px] font-semibold text-amber-800 uppercase tracking-wider">Saved guidance for this focus</p>
+      ${visible.map(item => `
+        <div class="rounded-xl border border-amber-200 bg-white px-3 py-3">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap">
+              <p class="text-[12px] font-semibold text-slate-800">${_escapeHtml(String(item?.title || fallbackTitle || 'Saved guidance'))}</p>
+              <span class="badge badge-blue">${_escapeHtml(_assistantArtifactKindLabel(item?.artifact_kind))}</span>
+              ${item?.action ? `<span class="badge badge-gray">${_escapeHtml(_assistantActionLabel(item.action))}</span>` : ''}
+            </div>
+            <div class="flex items-center gap-2">
+              <button class="btn btn-ghost btn-sm btn-calendar-preview-guidance-copy" data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}">Copy</button>
+              <button class="btn btn-secondary btn-sm btn-calendar-preview-guidance-download" data-artifact-id="${_escapeHtmlAttr(String(item?.id || ''))}">Download</button>
+            </div>
+          </div>
+          ${item?.content_markdown ? `<p class="text-[12px] text-slate-600 leading-6 mt-2">${_escapeHtml(String(item.content_markdown).split('\n').slice(0, 3).join(' '))}</p>` : ''}
+        </div>
+      `).join('')}
+      ${Array.isArray(items) && items.length > visible.length
+        ? `<p class="text-[11px] text-amber-700">Showing ${visible.length} of ${items.length} saved guidance item${items.length === 1 ? '' : 's'} for this focus.</p>`
+        : ''}
+    </div>
+  `;
+}
+
+async function _hydrateCalendarSavedGuidance(container, { classId, unitId, sectionPlan, fallbackTitle = '' } = {}) {
+  if (!container || !classId || !unitId) return;
+  container.innerHTML = '<p class="text-[12px] text-amber-700 mt-3">Loading saved guidance…</p>';
+  try {
+    const artifacts = await _loadCalendarAssistantArtifacts(classId, unitId);
+    const matches = _filterCalendarAssistantArtifactsForSection(artifacts, sectionPlan, fallbackTitle);
+    container.innerHTML = _renderCalendarSavedGuidancePreviewRows(matches, fallbackTitle);
+    container.querySelectorAll('.btn-calendar-preview-guidance-copy').forEach(button => {
+      button.addEventListener('click', async () => {
+        const artifactId = Number(button.dataset.artifactId || 0);
+        const item = matches.find(row => Number(row?.id || 0) === artifactId);
+        if (!item?.content_markdown) return;
+        try {
+          await copyText(String(item.content_markdown));
+          showToast('Saved guidance copied.', 'ok');
+        } catch {
+          showToast('Failed to copy saved guidance.', 'error');
+        }
+      });
+    });
+    container.querySelectorAll('.btn-calendar-preview-guidance-download').forEach(button => {
+      button.addEventListener('click', () => {
+        const artifactId = Number(button.dataset.artifactId || 0);
+        const item = matches.find(row => Number(row?.id || 0) === artifactId);
+        if (!item?.content_markdown) return;
+        _downloadTextContent(String(item.content_markdown), _calendarArtifactDownloadFilename(item, fallbackTitle));
+      });
+    });
+  } catch (err) {
+    container.innerHTML = `<p class="text-[12px] text-red-600 mt-3">${_escapeHtml(String(err?.message || 'Failed to load saved guidance.'))}</p>`;
+  }
 }
 
 function _openCalendarSessionWriteupModal(writeup) {
@@ -3249,7 +3354,7 @@ function _renderCalendar(el, classId) {
                           ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">All planned rows for this session are already completed. Use <span class="font-semibold">Show Completed Rows</span> if you want to review them.</div>'
                           : ''}
                         ${_renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId })}
-                        ${plannedResumeNode ? _renderCalendarNextFocusActions(plannedResumeSectionPlan, plannedResumePlaybookEntry, plannedResumeNode.title) : ''}
+                        ${plannedResumeNode ? _renderCalendarNextFocusActions(plannedResumeSectionPlan, plannedResumePlaybookEntry, plannedResumeNode.title, { classId, unitId: selectedEvent?.unit_id }) : ''}
                         <div>
                           <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Matched Section Plans</p>
                           ${_renderCalendarSectionPlans(selectedSectionPlans, plannedSessionTitles)}
@@ -3689,6 +3794,15 @@ function _renderCalendar(el, classId) {
       navigate('workflow');
     });
   });
+  const calendarPreviewGuidanceWrap = el.querySelector('[data-calendar-next-focus-guidance]');
+  if (calendarPreviewGuidanceWrap && plannedResumeNode && selectedEvent?.unit_id) {
+    _hydrateCalendarSavedGuidance(calendarPreviewGuidanceWrap, {
+      classId,
+      unitId: selectedEvent.unit_id,
+      sectionPlan: plannedResumeSectionPlan,
+      fallbackTitle: plannedResumeNode.title,
+    });
+  }
 
   el.querySelectorAll('.btn-calendar-prep-request').forEach(button => {
     button.addEventListener('click', () => {

@@ -41,6 +41,7 @@ const _sessionProgressCache = new Map();
 const _sessionWriteupCache = new Map();
 const _unitSessionTimelineCache = new Map();
 const _unitBlueprintCache = new Map();
+const _unitAssistantArtifactCache = new Map();
 const CHECKLIST_KINDS = ['chapter', 'section', 'subsection', 'property', 'definition', 'example', 'exercise', 'supervision', 'correction', 'other'];
 const RECENT_SESSION_WINDOWS = [
   { key: 'today', label: 'Today' },
@@ -226,6 +227,108 @@ function _setSessionWriteupState(sessionId, state) {
   };
   _sessionWriteupCache.set(sid, next);
   return next;
+}
+
+function _normalizeSectionPathKey(values) {
+  return Array.isArray(values)
+    ? values.map(value => String(value || '').trim().toLowerCase()).filter(Boolean).join(' > ')
+    : '';
+}
+
+async function _loadUnitAssistantArtifacts(classId, unitId, { force = false } = {}) {
+  const cacheKey = `${Number(classId || 0)}:${Number(unitId || 0)}`;
+  if (!force && _unitAssistantArtifactCache.has(cacheKey)) {
+    return _unitAssistantArtifactCache.get(cacheKey) || [];
+  }
+  const rows = await api(`/workflow/classes/${classId}/units/${unitId}/assistant/artifacts`);
+  const safeRows = Array.isArray(rows) ? rows : [];
+  _unitAssistantArtifactCache.set(cacheKey, safeRows);
+  return safeRows;
+}
+
+function _filterAssistantArtifactsForSection(artifacts, sectionPlan, fallbackTitle = '') {
+  const safeRows = Array.isArray(artifacts) ? artifacts : [];
+  const targetTitle = String(sectionPlan?.section_title || fallbackTitle || '').trim().toLowerCase();
+  const targetPathKey = _normalizeSectionPathKey(sectionPlan?.section_path);
+  return safeRows.filter(item => {
+    const itemTitle = String(item?.section_title || '').trim().toLowerCase();
+    if (targetTitle && itemTitle === targetTitle) return true;
+    const itemPathKey = _normalizeSectionPathKey(item?.section_path);
+    return Boolean(targetPathKey) && itemPathKey === targetPathKey;
+  });
+}
+
+function _artifactDownloadFilename(item, fallbackTitle = '') {
+  const base = String(item?.title || fallbackTitle || 'saved-guidance')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'saved-guidance';
+  return `${base}.md`;
+}
+
+function _renderSavedGuidancePreviewRows(items, fallbackTitle = '') {
+  const visible = Array.isArray(items) ? items.slice(0, 3) : [];
+  if (!visible.length) {
+    return '<p class="text-[12px] text-slate-600 mt-3">No saved guidance has been kept for this exact teaching focus yet.</p>';
+  }
+  return `
+    <div class="mt-3 flex flex-col gap-2">
+      <p class="text-[11px] font-semibold text-amber-800 uppercase tracking-wider">Saved guidance for this focus</p>
+      ${visible.map(item => `
+        <div class="rounded-xl border border-amber-200 bg-white px-3 py-3">
+          <div class="flex items-center justify-between gap-3 flex-wrap">
+            <div class="flex items-center gap-2 flex-wrap">
+              <p class="text-[12px] font-semibold text-slate-800">${_escapeHtml(String(item?.title || fallbackTitle || 'Saved guidance'))}</p>
+              <span class="badge badge-blue">${_escapeHtml(_assistantArtifactKindLabel(item?.artifact_kind))}</span>
+              ${item?.action ? `<span class="badge badge-gray">${_escapeHtml(_assistantActionLabel(item.action))}</span>` : ''}
+            </div>
+            <div class="flex items-center gap-2">
+              <button class="btn btn-ghost btn-sm btn-preview-guidance-copy" data-artifact-id="${_escapeHtml(String(item?.id || ''))}">Copy</button>
+              <button class="btn btn-secondary btn-sm btn-preview-guidance-download" data-artifact-id="${_escapeHtml(String(item?.id || ''))}">Download</button>
+            </div>
+          </div>
+          ${item?.content_markdown ? `<p class="text-[12px] text-slate-600 leading-6 mt-2">${_escapeHtml(String(item.content_markdown).split('\n').slice(0, 3).join(' '))}</p>` : ''}
+        </div>
+      `).join('')}
+      ${Array.isArray(items) && items.length > visible.length
+        ? `<p class="text-[11px] text-amber-700">Showing ${visible.length} of ${items.length} saved guidance item${items.length === 1 ? '' : 's'} for this focus.</p>`
+        : ''}
+    </div>
+  `;
+}
+
+async function _hydratePreviewSavedGuidance(container, { classId, unitId, sectionPlan, fallbackTitle = '' } = {}) {
+  if (!container || !classId || !unitId) return;
+  container.innerHTML = '<p class="text-[12px] text-amber-700 mt-3">Loading saved guidance…</p>';
+  try {
+    const artifacts = await _loadUnitAssistantArtifacts(classId, unitId);
+    const matches = _filterAssistantArtifactsForSection(artifacts, sectionPlan, fallbackTitle);
+    container.innerHTML = _renderSavedGuidancePreviewRows(matches, fallbackTitle);
+    container.querySelectorAll('.btn-preview-guidance-copy').forEach(button => {
+      button.addEventListener('click', async () => {
+        const artifactId = Number(button.dataset.artifactId || 0);
+        const item = matches.find(row => Number(row?.id || 0) === artifactId);
+        if (!item?.content_markdown) return;
+        try {
+          await copyText(String(item.content_markdown));
+          showToast('Saved guidance copied.', 'ok');
+        } catch {
+          showToast('Failed to copy saved guidance.', 'error');
+        }
+      });
+    });
+    container.querySelectorAll('.btn-preview-guidance-download').forEach(button => {
+      button.addEventListener('click', () => {
+        const artifactId = Number(button.dataset.artifactId || 0);
+        const item = matches.find(row => Number(row?.id || 0) === artifactId);
+        if (!item?.content_markdown) return;
+        _downloadTextContent(String(item.content_markdown), _artifactDownloadFilename(item, fallbackTitle));
+      });
+    });
+  } catch (err) {
+    container.innerHTML = `<p class="text-[12px] text-red-600 mt-3">${_escapeHtml(String(err?.message || 'Failed to load saved guidance.'))}</p>`;
+  }
 }
 
 function _emptyUnitTimelineState() {
@@ -1205,6 +1308,7 @@ function _openUnitAssistantModal({ classId, unit, blueprint, initial = {} }) {
           method: 'POST',
           body: JSON.stringify(payload),
         });
+        _unitAssistantArtifactCache.delete(`${Number(classId || 0)}:${Number(unit?.id || 0)}`);
         showToast(`${_assistantArtifactKindLabel(artifactKind)} saved.`, 'ok');
         await loadSavedArtifacts();
       } catch (err) {
@@ -1280,6 +1384,7 @@ function _openUnitAssistantModal({ classId, unit, blueprint, initial = {} }) {
           await api(`/workflow/classes/${classId}/units/${unit.id}/assistant/artifacts/${artifactId}`, {
             method: 'DELETE',
           });
+          _unitAssistantArtifactCache.delete(`${Number(classId || 0)}:${Number(unit?.id || 0)}`);
           state.savedArtifacts = state.savedArtifacts.filter(item => Number(item?.id || 0) !== artifactId);
           renderSavedArtifacts();
           showToast('Saved guidance deleted.', 'ok');
@@ -2379,7 +2484,7 @@ function _buildAssistantPrefillFromPlaybook(entry, sectionPlan, fallbackTitle = 
   };
 }
 
-function _renderPreviewNextFocusActions(sectionPlan, playbookEntry, fallbackTitle = '') {
+function _renderPreviewNextFocusActions(sectionPlan, playbookEntry, fallbackTitle = '', { classId = null, unitId = null } = {}) {
   const sectionTitle = String(sectionPlan?.section_title || fallbackTitle || '').trim();
   if (!sectionTitle) return '';
   const availableActions = Array.isArray(playbookEntry?.available_actions) ? playbookEntry.available_actions.map(value => String(value || '').trim().toLowerCase()).filter(Boolean) : [];
@@ -2395,6 +2500,7 @@ function _renderPreviewNextFocusActions(sectionPlan, playbookEntry, fallbackTitl
             data-assistant-action="${_escapeHtmlAttr(action)}"
           >${_escapeHtml(_assistantActionLabel(action))}</button>`).join('')}
       </div>
+      ${classId && unitId ? `<div class="mt-2" data-preview-saved-guidance data-class-id="${_escapeHtmlAttr(String(classId))}" data-unit-id="${_escapeHtmlAttr(String(unitId))}"></div>` : ''}
     </div>
   `;
 }
@@ -2721,7 +2827,7 @@ function _render(el, classId) {
               </div>
               ${previewResumeItem ? `
                 <div class="mt-3">
-                  ${_renderPreviewNextFocusActions(previewResumeSectionPlan, previewResumePlaybookEntry, previewResumeItem.title)}
+                  ${_renderPreviewNextFocusActions(previewResumeSectionPlan, previewResumePlaybookEntry, previewResumeItem.title, { classId, unitId: unit?.id })}
                 </div>` : ''}
             </div>` : ''}
             <!-- Checklist tree -->
@@ -5094,6 +5200,15 @@ function _bindWorkflowEvents(el, classId) {
       });
     });
   });
+  const previewGuidanceWrap = el.querySelector('[data-preview-saved-guidance]');
+  if (previewGuidanceWrap && previewResumeItem && unit?.id) {
+    _hydratePreviewSavedGuidance(previewGuidanceWrap, {
+      classId,
+      unitId: unit.id,
+      sectionPlan: previewResumeSectionPlan,
+      fallbackTitle: previewResumeItem.title,
+    });
+  }
 
   el.querySelector('#btn-preview-session-materials')?.addEventListener('click', () => {
     el.querySelector('#btn-open-material-studio')?.click();
