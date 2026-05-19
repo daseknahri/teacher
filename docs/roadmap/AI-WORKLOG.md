@@ -38,6 +38,29 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-19 23:05 - Claude
+
+- Status: planned
+- Goal: make saved/generated leaf content visible across Workflow and Calendar, and open the same lesson card from Calendar
+- Files expected:
+  - `backend/app/schemas.py`
+  - `backend/app/routers/workflow.py`
+  - `backend/tests/test_app_flows.py`
+  - `frontend/src/utils/leafContent.js`
+  - `frontend/src/views/WorkflowView.js`
+  - `frontend/src/views/CalendarView.js`
+  - `frontend/src/style/components.css`
+  - `docs/roadmap/AI-WORKLOG.md`
+- Assumptions:
+  - the safest next slice is a unit-level leaf-content summary endpoint plus frontend status cues
+  - the first Calendar integration should open the existing lesson card, not add a second editor
+  - content status should be visible but visually quiet
+- Notes:
+  - task prompt lives in `docs/roadmap/CLAUDE-TASK-LEAF-CONTENT-VISIBILITY.md`
+  - this task should not change session semantics, checklist semantics, or partial regeneration
+- Result:
+- Follow-up:
+
 ### 2026-05-19 22:45 - Claude
 
 - Status: done
