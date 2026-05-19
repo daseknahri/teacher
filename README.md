@@ -109,6 +109,9 @@ Excel formats supported:
 - `docs/roadmap/PROD-ENV-CHECKLIST.md` production env and secret rotation checklist
 - `docs/roadmap/INTEGRATION-AUTH-PATTERNS.md` reusable guide for choosing between API, OAuth, restored-session, and browser-automation integrations
 - `docs/roadmap/AI-CONTENT-BANK-HANDOFF.md` fastest handoff for the NotebookLM unit-brain and leaf-content direction
+- `docs/roadmap/CLAUDE-CONTINUATION-PROMPT.md` paste-ready prompt for handing the repo to Claude safely
+- `docs/roadmap/AI-COLLABORATION-PROTOCOL.md` how to let multiple AI helpers work on the same repo without breaking direction
+- `docs/roadmap/AI-WORKLOG.md` shared handoff log for active AI and engineering work
 - `docs/roadmap/NOTEBOOKLM-UNIT-BRAIN-ARCHITECTURE.md` target architecture for moving from PDF extraction to a reusable unit brain
 - `docs/roadmap/LEAF-CONTENT-BANK-SPEC.md` proposed per-leaf content storage contract using Markdown + LaTeX
 - `docs/roadmap/LEAF-CONTENT-READER-ROADMAP.md` phased implementation plan for leaf content generation, reader UI, and session integration
