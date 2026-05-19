@@ -1146,7 +1146,7 @@ function _buildSessionWriteupMarkdown(writeup, { unitTitle = '', sessionLabel = 
   return lines.join('\n').trim();
 }
 
-function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuidanceCount = 0, remainingGuidanceCount = 0 } = {}) {
+function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuidanceCount = 0, remainingGuidanceCount = 0, bestRemainingGuidanceTitle = '' } = {}) {
   if (!hasSession) return '';
   if (!writeup) {
     return `
@@ -1158,8 +1158,9 @@ function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuid
             : 'Generate the write-up once you have checked what was actually covered in class.'}
         </p>
         <div class="mt-3 flex gap-2 flex-wrap">
+          ${remainingGuidanceCount === 1 ? `<button id="btn-session-next-import-best" class="btn btn-primary btn-sm">Import Best Match</button>` : ''}
           <button id="btn-session-next-generate" class="btn btn-primary btn-sm">Generate now</button>
-          <button id="btn-session-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>
+          <button id="btn-session-next-guidance" class="btn btn-secondary btn-sm">${remainingGuidanceCount === 1 && bestRemainingGuidanceTitle ? `Choose Other Guidance` : 'Use Saved Guidance'}</button>
         </div>
       </div>`;
   }
@@ -1174,6 +1175,7 @@ function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuid
         </p>
         <div class="mt-3 flex gap-2 flex-wrap">
           <button id="btn-session-next-edit" class="btn btn-primary btn-sm">Edit draft</button>
+          ${remainingGuidanceCount === 1 ? '<button id="btn-session-next-import-best" class="btn btn-secondary btn-sm">Import Best Match</button>' : ''}
           ${remainingGuidanceCount > 0 ? '<button id="btn-session-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>' : ''}
           <button id="btn-session-next-approve" class="btn btn-secondary btn-sm">Approve now</button>
         </div>
@@ -2715,7 +2717,9 @@ function _render(el, classId) {
   const activeSessionPlanTitles = _flattenSessionPlannedTitles(activeSessionPlanTree, []);
   const activeSessionMatchedGuidance = unit?.id ? _filterAssistantArtifactsForPlannedTitles(_unitAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(unit.id || 0)}`) || [], activeUnitMap, activeSessionPlanTitles) : [];
   const activeSessionImportedGuidanceIds = _getImportedAssistantArtifactIds(sessionWriteupState.item);
-  const activeSessionRemainingGuidanceCount = activeSessionMatchedGuidance.filter(item => !activeSessionImportedGuidanceIds.has(Number(item?.id || 0))).length;
+  const activeSessionRemainingGuidance = activeSessionMatchedGuidance.filter(item => !activeSessionImportedGuidanceIds.has(Number(item?.id || 0)));
+  const activeSessionRemainingGuidanceCount = activeSessionRemainingGuidance.length;
+  const activeSessionBestRemainingGuidance = activeSessionRemainingGuidanceCount === 1 ? activeSessionRemainingGuidance[0] : null;
 
   // Progress ring
   const checklist = _checklist(unit);
@@ -3291,6 +3295,7 @@ function _render(el, classId) {
                 hasSession: Boolean(session),
                 matchedGuidanceCount: activeSessionMatchedGuidance.length,
                 remainingGuidanceCount: activeSessionRemainingGuidanceCount,
+                bestRemainingGuidanceTitle: String(activeSessionBestRemainingGuidance?.title || '').trim(),
               })}
               ${sessionWriteupState.loading
         ? '<p class="text-[12px] text-slate-500">Loading session write-up...</p>'
@@ -5038,6 +5043,27 @@ function _bindWorkflowEvents(el, classId) {
   });
   el.querySelector('#btn-session-next-guidance')?.addEventListener('click', () => {
     el.querySelector('#btn-import-session-guidance')?.click();
+  });
+  el.querySelector('#btn-session-next-import-best')?.addEventListener('click', async () => {
+    const session = getActiveSession();
+    if (!session || !activeSessionBestRemainingGuidance) return;
+    try {
+      const updated = await api(`/workflow/classes/${classId}/sessions/${session.id}/writeup/import-assistant-artifact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifact_id: Number(activeSessionBestRemainingGuidance.id) }),
+      });
+      _setSessionWriteupState(session.id, {
+        loading: false,
+        loaded: true,
+        error: null,
+        item: updated || null,
+      });
+      _render(el, classId);
+      showToast('Best matching saved guidance imported.', 'ok');
+    } catch (err) {
+      showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
+    }
   });
   el.querySelector('#btn-session-next-edit')?.addEventListener('click', () => {
     el.querySelector('#btn-edit-session-writeup')?.click();

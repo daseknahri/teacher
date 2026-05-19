@@ -795,7 +795,7 @@ function _buildSessionWriteupMarkdown(writeup, { unitTitle = '', sessionLabel = 
   return lines.join('\n').trim();
 }
 
-function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = false, remainingGuidanceCount = 0 } = {}) {
+function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = false, remainingGuidanceCount = 0, bestRemainingGuidanceTitle = '' } = {}) {
   if (isFuture) {
     return `
       <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
@@ -826,8 +826,9 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
             : 'Generate the write-up after confirming what was really covered in class.'}
         </p>
         <div class="mt-3 flex gap-2 flex-wrap">
+          ${remainingGuidanceCount === 1 ? '<button id="btn-calendar-next-import-best" class="btn btn-primary btn-sm">Import Best Match</button>' : ''}
           <button id="btn-calendar-next-generate" class="btn btn-primary btn-sm">Generate now</button>
-          <button id="btn-calendar-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>
+          <button id="btn-calendar-next-guidance" class="btn btn-secondary btn-sm">${remainingGuidanceCount === 1 && bestRemainingGuidanceTitle ? 'Choose Other Guidance' : 'Use Saved Guidance'}</button>
         </div>
       </div>`;
   }
@@ -842,6 +843,7 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
         </p>
         <div class="mt-3 flex gap-2 flex-wrap">
           <button id="btn-calendar-next-edit" class="btn btn-primary btn-sm">Edit draft</button>
+          ${remainingGuidanceCount === 1 ? '<button id="btn-calendar-next-import-best" class="btn btn-secondary btn-sm">Import Best Match</button>' : ''}
           ${remainingGuidanceCount > 0 ? '<button id="btn-calendar-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>' : ''}
           <button id="btn-calendar-next-approve" class="btn btn-secondary btn-sm">Approve now</button>
         </div>
@@ -3094,7 +3096,9 @@ function _renderCalendar(el, classId) {
     ? _filterCalendarAssistantArtifactsForPlannedTitles(_calendarAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(selectedEvent.unit_id || 0)}`) || [], selectedUnitMap, plannedSessionTitles)
     : [];
   const selectedImportedGuidanceIds = _getCalendarImportedAssistantArtifactIds(selectedWriteup);
-  const selectedRemainingGuidanceCount = selectedMatchedGuidance.filter(item => !selectedImportedGuidanceIds.has(Number(item?.id || 0))).length;
+  const selectedRemainingGuidance = selectedMatchedGuidance.filter(item => !selectedImportedGuidanceIds.has(Number(item?.id || 0)));
+  const selectedRemainingGuidanceCount = selectedRemainingGuidance.length;
+  const selectedBestRemainingGuidance = selectedRemainingGuidanceCount === 1 ? selectedRemainingGuidance[0] : null;
   const plannedResumeSectionPlan = plannedResumeNode ? _findCalendarSectionPlanForTitle(selectedSectionPlans, plannedResumeNode.title) : null;
   const plannedResumePlaybookEntry = _findCalendarTeacherPlaybookEntry(selectedUnitMap, plannedResumeSectionPlan, plannedResumeNode?.title || '');
   const studentsById = new Map((getStudents() || []).map(student => [Number(student.id), student]));
@@ -3528,6 +3532,7 @@ function _renderCalendar(el, classId) {
               isFuture: selectedIsFuture,
               hasUnit: selectedEvent.unit_id != null,
               remainingGuidanceCount: selectedRemainingGuidanceCount,
+              bestRemainingGuidanceTitle: String(selectedBestRemainingGuidance?.title || '').trim(),
             })}
             ${_selectedSessionLoading
               ? '<p class="text-[12px] text-slate-500 mt-2">Loading workflow write-up...</p>'
@@ -4311,6 +4316,26 @@ function _renderCalendar(el, classId) {
   });
   el.querySelector('#btn-calendar-next-guidance')?.addEventListener('click', () => {
     el.querySelector('#btn-import-selected-guidance')?.click();
+  });
+  el.querySelector('#btn-calendar-next-import-best')?.addEventListener('click', async () => {
+    if (!selectedEvent || selectedEvent.unit_id == null || !selectedBestRemainingGuidance) return;
+    try {
+      const updated = await api(`/workflow/classes/${classId}/sessions/${selectedEvent.session_id}/writeup/import-assistant-artifact`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ artifact_id: Number(selectedBestRemainingGuidance.id) }),
+      });
+      const current = _sessionDetailCache.get(Number(selectedEvent.session_id)) || {};
+      _sessionDetailCache.set(Number(selectedEvent.session_id), {
+        ...current,
+        workflow_writeup: updated || null,
+        workflow_writeup_error: null,
+      });
+      _renderCalendar(el, classId);
+      showToast('Best matching saved guidance imported.', 'ok');
+    } catch (err) {
+      showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
+    }
   });
   el.querySelector('#btn-calendar-next-edit')?.addEventListener('click', () => {
     el.querySelector('#btn-edit-selected-writeup')?.click();
