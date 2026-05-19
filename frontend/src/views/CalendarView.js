@@ -391,6 +391,7 @@ function _collectSessionBlueprintNodes(nodes, sessionNumber) {
     const ownSession = Number(rawNode.session_number || 0);
     if (ownSession !== target && !childMatches.length) return acc;
     acc.push({
+      id: Number(rawNode.id || 0) || null,
       title: String(rawNode.title || '').trim(),
       kind: String(rawNode.kind || '').trim(),
       session_number: ownSession > 0 ? ownSession : null,
@@ -402,7 +403,7 @@ function _collectSessionBlueprintNodes(nodes, sessionNumber) {
   return walk(nodes);
 }
 
-function _renderCalendarBlueprintTree(nodes, depth = 0) {
+function _renderCalendarBlueprintTree(nodes, depth = 0, { resumeNodeId = null } = {}) {
   if (!Array.isArray(nodes) || !nodes.length) {
     return depth === 0
       ? '<p class="text-[12px] text-slate-500">No planned checklist flow saved for this unit session.</p>'
@@ -419,9 +420,9 @@ function _renderCalendarBlueprintTree(nodes, depth = 0) {
             <span class="text-[13px] ${node?.is_completed ? 'text-slate-400 line-through' : 'text-slate-700'}">${_escapeHtml(node?.title || '')}</span>
             ${node?.kind ? `<span class="badge badge-gray">${_escapeHtml(String(node.kind))}</span>` : ''}
             ${node?.session_number ? `<span class="badge badge-blue">S${Number(node.session_number)}</span>` : ''}
-            ${node?.is_completed ? `<span class="badge badge-green">Done</span>` : ''}
+            ${resumeNodeId != null && Number(node?.id || 0) === Number(resumeNodeId) ? `<span class="badge badge-amber">Resume here</span>` : node?.is_completed ? `<span class="badge badge-green">Done</span>` : ''}
           </div>
-          ${_renderCalendarBlueprintTree(node?.children || [], depth + 1)}
+          ${_renderCalendarBlueprintTree(node?.children || [], depth + 1, { resumeNodeId })}
         </li>
       `).join('')}
     </ul>`;
@@ -2783,6 +2784,7 @@ function _renderCalendar(el, classId) {
   const plannedSessionDoneCount = plannedSessionFlat.filter(node => Boolean(node?.is_completed)).length;
   const plannedSessionRemainingCount = Math.max(0, plannedSessionFlat.length - plannedSessionDoneCount);
   const plannedSessionCoveragePct = plannedSessionFlat.length ? Math.round((plannedSessionDoneCount / plannedSessionFlat.length) * 100) : 0;
+  const plannedResumeNodeId = Number(plannedSessionFlat.find(node => !Boolean(node?.is_completed))?.id || 0) || null;
   const plannedSessionStatus = !plannedSessionFlat.length
     ? { label: 'No route saved', className: 'badge-gray', hint: 'No planned checklist route is saved for this session yet.' }
     : plannedSessionDoneCount === 0
@@ -3152,11 +3154,12 @@ function _renderCalendar(el, classId) {
                           <div class="flex flex-wrap gap-2">
                             ${plannedSessionSummary.map(label => `<span class="badge badge-gray">${_escapeHtml(label)}</span>`).join('')}
                           </div>` : ''}
+                        ${plannedResumeNodeId != null ? '<p class="text-[11px] text-amber-700">The first unfinished planned row is marked below as <span class="font-semibold">Resume here</span>.</p>' : ''}
                         ${_calendarPlannedHideDone && plannedSessionDoneCount > 0 ? '<p class="text-[11px] text-amber-700">Showing only remaining planned rows.</p>' : ''}
                         ${_calendarPlannedHideDone && plannedSessionDoneCount > 0 && !visiblePlannedSessionTree.length
                           ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">All planned rows for this session are already completed. Use <span class="font-semibold">Show Completed Rows</span> if you want to review them.</div>'
                           : ''}
-                        ${_renderCalendarBlueprintTree(visiblePlannedSessionTree)}
+                        ${_renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId })}
                         <div>
                           <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Matched Section Plans</p>
                           ${_renderCalendarSectionPlans(selectedSectionPlans, plannedSessionTitles)}
