@@ -3017,6 +3017,34 @@ function _render(el, classId) {
         ? 'Review the draft, import any remaining saved guidance, then approve it when it matches the lesson.'
         : 'Review the draft write-up and approve it when it matches what happened in class.'
       : 'The write-up is approved. Keep teaching from the planned route and reopen it only if the lesson changes.';
+  const activeRouteValueLabel = activeMatchedChecklist.length ? `${activeMatchedDone}/${activeMatchedChecklist.length}` : '0';
+  const activeRouteProgressCaption = activeMatchedChecklist.length
+    ? (activeMatchedRemaining === 0
+      ? 'All planned rows for this live session are covered'
+      : `${activeMatchedRemaining} planned row${activeMatchedRemaining === 1 ? '' : 's'} still remain`)
+    : 'No planned checklist route saved for this live session yet';
+  const activeGuidanceCaption = activeSessionRemainingGuidanceCount === 0
+    ? 'No reusable saved guidance left'
+    : activeSessionRemainingGuidanceCount === 1
+      ? '1 saved item still reusable'
+      : `${activeSessionRemainingGuidanceCount} saved items still reusable`;
+  const activeProgressCaption = sessionProgressState.loaded
+    ? (activeProgressCount === 0
+      ? 'No confirmed progress rows saved yet'
+      : activeProgressCount === 1
+        ? '1 confirmed progress row saved'
+        : `${activeProgressCount} confirmed progress rows saved`)
+    : 'Load to review saved rows';
+  const activeWriteupToneClass = !sessionWriteupState.item
+    ? 'text-slate-900'
+    : sessionWriteupState.item.approved === false
+      ? 'text-amber-700'
+      : 'text-emerald-700';
+  const activeWriteupHeroCaption = !sessionWriteupState.item
+    ? 'No lesson summary saved yet'
+    : sessionWriteupState.item.approved === false
+      ? 'Draft summary is waiting for review'
+      : 'Approved lesson summary is ready below';
   const previewBaseChecklist = previewSessionNumber && _workflowPreviewFocusOnly && previewFocusIds.size
     ? visibleChecklist.filter(item => previewFocusIds.has(Number(item?.id || 0)))
     : visibleChecklist;
@@ -3486,27 +3514,56 @@ function _render(el, classId) {
                       <span class="badge ${activeRouteStatus.className}">${_escapeHtml(activeRouteStatus.label)}</span>
                       <span class="badge ${activeWriteupStateClass}">${_escapeHtml(activeWriteupStateLabel)}</span>
                     </div>
+                    <div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3 shadow-sm">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Route Coverage</p>
+                        <p class="mt-1 text-[13px] font-semibold text-slate-900">${_escapeHtml(activeRouteStatus.label)}</p>
+                        <p class="mt-1 text-[12px] leading-relaxed text-slate-600">${_escapeHtml(activeRouteStatus.hint)}</p>
+                      </div>
+                      <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3 shadow-sm">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Saved Guidance</p>
+                        <p class="mt-1 text-[13px] font-semibold text-slate-900">${activeSessionRemainingGuidanceCount === 0 ? 'Nothing left to import' : 'Reusable help is ready'}</p>
+                        <p class="mt-1 text-[12px] leading-relaxed text-slate-600">${_escapeHtml(activeGuidanceCaption)}</p>
+                      </div>
+                      <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3 shadow-sm">
+                        <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Write-Up Readiness</p>
+                        <p class="mt-1 text-[13px] font-semibold ${activeWriteupToneClass}">${_escapeHtml(activeWriteupStateLabel)}</p>
+                        <p class="mt-1 text-[12px] leading-relaxed text-slate-600">${_escapeHtml(activeWriteupHeroCaption)}</p>
+                      </div>
+                    </div>
                   </div>
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 xl:min-w-[360px] xl:max-w-[420px]">
                     <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
                       <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Route</p>
-                      <p class="mt-1 text-[19px] font-semibold text-slate-900">${activeMatchedChecklist.length}</p>
-                      <p class="text-[11px] text-slate-500">${activeCompletionPct}% covered</p>
+                      <div class="mt-1 flex items-end justify-between gap-2">
+                        <p class="text-[19px] font-semibold text-slate-900">${_escapeHtml(activeRouteValueLabel)}</p>
+                        <span class="text-[11px] font-semibold ${activeCompletionPct >= 100 ? 'text-emerald-600' : activeCompletionPct > 0 ? 'text-amber-600' : 'text-slate-400'}">${activeCompletionPct}%</span>
+                      </div>
+                      <div class="mt-2 h-2 rounded-full bg-slate-200 overflow-hidden">
+                        <div class="h-full rounded-full ${activeCompletionPct >= 100 ? 'bg-emerald-500' : activeCompletionPct > 0 ? 'bg-amber-500' : 'bg-slate-300'}" style="width:${activeCompletionPct}%;"></div>
+                      </div>
+                      <p class="mt-2 text-[11px] text-slate-500">${_escapeHtml(activeRouteProgressCaption)}</p>
                     </div>
                     <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
                       <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Progress</p>
-                      <p class="mt-1 text-[19px] font-semibold text-slate-900">${activeProgressCount}</p>
-                      <p class="text-[11px] text-slate-500">${sessionProgressState.loaded ? 'Confirmed rows saved' : 'Load to review saved rows'}</p>
+                      <div class="mt-1 flex items-end justify-between gap-2">
+                        <p class="text-[19px] font-semibold text-slate-900">${activeProgressCount}</p>
+                        <span class="text-[11px] font-semibold ${activeProgressCount > 0 ? 'text-blue-600' : 'text-slate-400'}">${activeProgressCount > 0 ? 'Saved' : 'Empty'}</span>
+                      </div>
+                      <p class="mt-2 text-[11px] text-slate-500">${_escapeHtml(activeProgressCaption)}</p>
                     </div>
                     <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
                       <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Guidance</p>
-                      <p class="mt-1 text-[19px] font-semibold text-slate-900">${activeSessionRemainingGuidanceCount}</p>
-                      <p class="text-[11px] text-slate-500">${activeSessionRemainingGuidanceCount === 0 ? 'No reusable saved guidance left' : activeSessionRemainingGuidanceCount === 1 ? 'Saved item still reusable' : 'Saved items still reusable'}</p>
+                      <div class="mt-1 flex items-end justify-between gap-2">
+                        <p class="text-[19px] font-semibold text-slate-900">${activeSessionRemainingGuidanceCount}</p>
+                        <span class="text-[11px] font-semibold ${activeSessionRemainingGuidanceCount > 0 ? 'text-amber-600' : 'text-emerald-600'}">${activeSessionRemainingGuidanceCount > 0 ? 'Ready' : 'Clear'}</span>
+                      </div>
+                      <p class="mt-2 text-[11px] text-slate-500">${_escapeHtml(activeGuidanceCaption)}</p>
                     </div>
                     <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
                       <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Write-Up</p>
-                      <p class="mt-1 text-[15px] font-semibold text-slate-900">${_escapeHtml(activeWriteupStateLabel)}</p>
-                      <p class="text-[11px] text-slate-500">${sessionWriteupState.item ? 'Lesson summary available below' : 'No lesson summary saved yet'}</p>
+                      <p class="mt-1 text-[15px] font-semibold ${activeWriteupToneClass}">${_escapeHtml(activeWriteupStateLabel)}</p>
+                      <p class="mt-2 text-[11px] text-slate-500">${_escapeHtml(activeWriteupHeroCaption)}</p>
                     </div>
                   </div>
                 </div>

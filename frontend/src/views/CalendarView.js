@@ -3350,6 +3350,7 @@ function _renderCalendar(el, classId) {
   const selectedHasWorkflowUnit = Boolean(selectedEvent && selectedEvent.unit_id != null);
   const selectedCompletedCount = Number(selectedEvent?.checked_items_count || 0);
   const selectedAbsentCount = Number(selectedEvent?.absent_count || 0);
+  const selectedPresentCount = Math.max(0, Number((getStudents() || []).length) - selectedAbsentCount);
   const selectedSessionStateLabel = selectedEvent
     ? selectedIsFuture
       ? 'Upcoming'
@@ -3382,7 +3383,7 @@ function _renderCalendar(el, classId) {
           ? 'Review the generated write-up, then approve it when it reflects what happened in class.'
           : 'This session is documented. You can still review the write-up or reopen Workflow for unit context.')
         : selectedHasWorkflowUnit
-          ? 'Confirm the delivered session to auto-check the checklist and generate the textbook write-up.'
+          ? 'Confirm the delivered session when class is finished. You can review the saved teaching route and continue with write-up work afterward.'
           : 'This session stands outside the workflow unit system, so only note and attendance are tracked here.'
     : '';
   const selectedWriteupStateLabel = !selectedEvent
@@ -3411,9 +3412,36 @@ function _renderCalendar(el, classId) {
   const selectedWriteupFocusCount = Array.isArray(selectedWriteup?.learning_focus) ? selectedWriteup.learning_focus.length : 0;
   const selectedWriteupContentCount = Array.isArray(selectedWriteup?.teaching_content) ? selectedWriteup.teaching_content.length : 0;
   const selectedWriteupPracticeCount = Array.isArray(selectedWriteup?.practice_items) ? selectedWriteup.practice_items.length : 0;
+  const selectedProgressValue = selectedHasWorkflowUnit && plannedSessionFlat.length ? plannedSessionCoveragePct : Math.min(100, selectedCompletedCount > 0 ? 100 : 0);
+  const selectedProgressValueLabel = selectedHasWorkflowUnit && plannedSessionFlat.length
+    ? `${plannedSessionDoneCount}/${plannedSessionFlat.length}`
+    : `${selectedCompletedCount}`;
+  const selectedProgressCaption = selectedHasWorkflowUnit && plannedSessionFlat.length
+    ? (plannedSessionRemainingCount === 0
+      ? 'All planned rows covered'
+      : `${plannedSessionRemainingCount} planned row${plannedSessionRemainingCount === 1 ? '' : 's'} still remaining`)
+    : (selectedCompletedCount === 1 ? '1 checklist row confirmed' : `${selectedCompletedCount} checklist rows confirmed`);
+  const selectedAttendanceCaption = selectedAbsentCount === 0
+    ? `${selectedPresentCount === 1 ? '1 student present' : `${selectedPresentCount} students present`}`
+    : `${selectedAbsentCount === 1 ? '1 student absent' : `${selectedAbsentCount} students absent`}`;
+  const selectedHeadlinesCaption = selectedHeadlineCount === 0
+    ? 'No delivered structure saved yet'
+    : selectedHeadlineCount === 1
+      ? '1 headline recorded'
+      : `${selectedHeadlineCount} headlines recorded`;
+  const selectedWriteupHeroToneClass = !selectedWriteup
+    ? 'text-slate-900'
+    : selectedWriteup.approved === false
+      ? 'text-amber-700'
+      : 'text-emerald-700';
+  const selectedWriteupHeroCaption = !selectedWriteup
+    ? 'No lesson summary saved yet'
+    : selectedWriteup.approved === false
+      ? 'Draft summary waiting for review'
+      : 'Approved lesson summary is ready below';
   const selectedConfirmTitle = selectedEvent
     ? (selectedCanConfirm
-      ? 'Confirm this delivered session.'
+      ? 'Mark this delivered session as confirmed.'
       : (selectedAlreadyConfirmed
         ? 'This session is already confirmed.'
         : (selectedEvent.unit_id == null ? 'Only workflow unit sessions can be confirmed.' : 'Future sessions can be confirmed only on/after the session date.')))
@@ -3663,27 +3691,56 @@ function _renderCalendar(el, classId) {
                     ${selectedMatchesActiveWorkflow ? '<span class="badge badge-amber">Live in Workflow</span>' : ''}
                     <span class="badge ${selectedWriteupStateClass}">${selectedWriteup ? (selectedWriteup.approved === false ? 'Write-up Draft' : 'Write-up Approved') : _escapeHtml(selectedWriteupStateLabel)}</span>
                   </div>
+                  <div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3 shadow-sm">
+                      <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Route Coverage</p>
+                      <p class="mt-1 text-[13px] font-semibold text-slate-900">${_escapeHtml(plannedSessionStatus.label)}</p>
+                      <p class="mt-1 text-[12px] leading-relaxed text-slate-600">${_escapeHtml(plannedSessionStatus.hint)}</p>
+                    </div>
+                    <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3 shadow-sm">
+                      <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Classroom Read</p>
+                      <p class="mt-1 text-[13px] font-semibold text-slate-900">${selectedAbsentCount === 0 ? 'Attendance is clear' : 'Attendance needs review'}</p>
+                      <p class="mt-1 text-[12px] leading-relaxed text-slate-600">${_escapeHtml(selectedAttendanceCaption)}</p>
+                    </div>
+                    <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3 shadow-sm">
+                      <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Write-Up Readiness</p>
+                      <p class="mt-1 text-[13px] font-semibold ${selectedWriteupHeroToneClass}">${_escapeHtml(selectedWriteupStateLabel)}</p>
+                      <p class="mt-1 text-[12px] leading-relaxed text-slate-600">${_escapeHtml(selectedWriteupHeroCaption)}</p>
+                    </div>
+                  </div>
                 </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 xl:min-w-[360px] xl:max-w-[420px]">
                   <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
                     <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Progress</p>
-                    <p class="mt-1 text-[19px] font-semibold text-slate-900">${selectedCompletedCount}</p>
-                    <p class="text-[11px] text-slate-500">Checklist rows completed</p>
+                    <div class="mt-1 flex items-end justify-between gap-2">
+                      <p class="text-[19px] font-semibold text-slate-900">${_escapeHtml(selectedProgressValueLabel)}</p>
+                      <span class="text-[11px] font-semibold ${selectedProgressValue >= 100 ? 'text-emerald-600' : selectedProgressValue > 0 ? 'text-amber-600' : 'text-slate-400'}">${selectedProgressValue}%</span>
+                    </div>
+                    <div class="mt-2 h-2 rounded-full bg-slate-200 overflow-hidden">
+                      <div class="h-full rounded-full ${selectedProgressValue >= 100 ? 'bg-emerald-500' : selectedProgressValue > 0 ? 'bg-amber-500' : 'bg-slate-300'}" style="width:${selectedProgressValue}%;"></div>
+                    </div>
+                    <p class="mt-2 text-[11px] text-slate-500">${_escapeHtml(selectedProgressCaption)}</p>
                   </div>
                   <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
                     <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Attendance</p>
-                    <p class="mt-1 text-[19px] font-semibold text-slate-900">${selectedAbsentCount}</p>
-                    <p class="text-[11px] text-slate-500">${selectedAbsentCount === 1 ? 'Student absent' : 'Students absent'}</p>
+                    <div class="mt-1 flex items-end justify-between gap-2">
+                      <p class="text-[19px] font-semibold text-slate-900">${selectedAbsentCount}</p>
+                      <span class="text-[11px] font-semibold ${selectedAbsentCount === 0 ? 'text-emerald-600' : 'text-amber-600'}">${selectedAbsentCount === 0 ? 'Clear' : 'Attention'}</span>
+                    </div>
+                    <p class="mt-2 text-[11px] text-slate-500">${_escapeHtml(selectedAttendanceCaption)}</p>
                   </div>
                   <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
                     <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Headlines</p>
-                    <p class="mt-1 text-[19px] font-semibold text-slate-900">${selectedHeadlineCount}</p>
-                    <p class="text-[11px] text-slate-500">${headlineBlocks.length ? `${headlineBlocks.length} teaching block${headlineBlocks.length === 1 ? '' : 's'}` : 'No structure saved'}</p>
+                    <div class="mt-1 flex items-end justify-between gap-2">
+                      <p class="text-[19px] font-semibold text-slate-900">${selectedHeadlineCount}</p>
+                      <span class="text-[11px] font-semibold ${selectedHeadlineCount > 0 ? 'text-blue-600' : 'text-slate-400'}">${selectedHeadlineCount > 0 ? 'Captured' : 'Empty'}</span>
+                    </div>
+                    <p class="mt-2 text-[11px] text-slate-500">${_escapeHtml(selectedHeadlinesCaption)}</p>
                   </div>
                   <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
                     <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Write-Up</p>
-                    <p class="mt-1 text-[15px] font-semibold text-slate-900">${_escapeHtml(selectedWriteupStateLabel)}</p>
-                    <p class="mt-1 text-[11px] text-slate-500">${selectedWriteup ? 'Session summary is saved below' : 'No saved lesson summary yet'}</p>
+                    <p class="mt-1 text-[15px] font-semibold ${selectedWriteupHeroToneClass}">${_escapeHtml(selectedWriteupStateLabel)}</p>
+                    <p class="mt-2 text-[11px] text-slate-500">${_escapeHtml(selectedWriteupHeroCaption)}</p>
                   </div>
                 </div>
               </div>
@@ -4532,13 +4589,13 @@ function _renderCalendar(el, classId) {
       const writeupGenerated = Boolean(result?.writeup_generated);
 
       const parts = [];
-      if (checkedCount > 0) parts.push(`${checkedCount} checklist item${checkedCount === 1 ? '' : 's'} checked`);
-      if (progressCount > 0) parts.push(`${progressCount} content row${progressCount === 1 ? '' : 's'} added`);
-      if (writeupGenerated) parts.push('textbook write-up generated');
+      if (checkedCount > 0) parts.push(`${checkedCount} checklist item${checkedCount === 1 ? '' : 's'} updated`);
+      if (progressCount > 0) parts.push(`${progressCount} content row${progressCount === 1 ? '' : 's'} saved`);
+      if (writeupGenerated) parts.push('textbook write-up saved');
       if (remainingCount > 0) parts.push(`${remainingCount} item${remainingCount === 1 ? '' : 's'} remaining`);
-      if (!parts.length) parts.push('no new checklist items to confirm');
+      if (!parts.length) parts.push('no additional session updates were needed');
       const suffix = unitClosed ? ' Unit closed automatically.' : '';
-      showToast(`Session confirmed: ${parts.join(', ')}.${suffix}`, unitClosed || checkedCount > 0 ? 'ok' : 'info');
+      showToast(`Session marked confirmed: ${parts.join(', ')}.${suffix}`, unitClosed || checkedCount > 0 ? 'ok' : 'info');
     } catch (err) {
       showToast(String(err?.message || 'Failed to confirm session.'), 'error');
     } finally {
