@@ -6501,3 +6501,168 @@ def test_owner_send_invite_success_with_mocked_mailer(client, monkeypatch):
     assert sent_payload["to_email"] == teacher_email
     assert "Teacher Platform Login Details" in sent_payload["subject"]
     assert "Temporary password: TeacherPass123" in sent_payload["body_text"]
+
+
+def _setup_unit_with_leaf(client, headers: dict) -> tuple[int, int, int]:
+    """Returns (class_id, unit_id, leaf_item_id) for a unit that has at least one leaf item."""
+    class_resp = client.post(
+        "/classes",
+        json={"name": f"LeafContent Class {uuid.uuid4().hex[:6]}", "subject": "Math"},
+        headers=headers,
+    )
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    start_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Chapitre Leaf Test",
+            "source_text": "Section 1\n1.1 Propriete\n1.2 Exemple\nSection 2\n2.1 Exercice",
+        },
+    )
+    assert start_resp.status_code == 201
+    unit = start_resp.json()
+    unit_id = unit["id"]
+
+    workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_resp.status_code == 200
+    checklist = workspace_resp.json()["active_unit"]["checklist"]
+    leaf = _first_leaf_checklist_item(checklist)
+    assert leaf is not None, "Unit must have at least one leaf item"
+    return class_id, unit_id, int(leaf["id"])
+
+
+def test_leaf_content_happy_path(client):
+    headers = _auth_headers(client)
+    class_id, unit_id, item_id = _setup_unit_with_leaf(client, headers)
+
+    # GET before any record exists returns 404
+    get_missing = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}",
+        headers=headers,
+    )
+    assert get_missing.status_code == 404
+
+    # PUT creates the record
+    put_resp = client.put(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}",
+        headers=headers,
+        json={
+            "teaching_goal_md": "Student will understand the property.",
+            "explanation_md": "An explanation in **Markdown** with $x^2$.",
+            "worked_example_md": "Example: $2x + 3 = 7$",
+            "provider": "manual",
+            "status": "draft",
+            "source_payload": {"requested_by": "test"},
+            "raw_provider_response": {"raw": True},
+        },
+    )
+    assert put_resp.status_code == 200
+    body = put_resp.json()
+    assert body["unit_id"] == unit_id
+    assert body["checklist_item_id"] == item_id
+    assert body["teaching_goal_md"] == "Student will understand the property."
+    assert body["explanation_md"] == "An explanation in **Markdown** with $x^2$."
+    assert body["worked_example_md"] == "Example: $2x + 3 = 7$"
+    assert body["provider"] == "manual"
+    assert body["status"] == "draft"
+    assert body["reviewed"] is False
+    assert body["source_payload_json"] == {"requested_by": "test"}
+    assert body["raw_provider_response_json"] == {"raw": True}
+    assert isinstance(body["item_path_json"], list) and body["item_path_json"]
+    assert isinstance(body["section_path_json"], list) and body["section_path_json"]
+
+    # GET now returns the same record
+    get_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}",
+        headers=headers,
+    )
+    assert get_resp.status_code == 200
+    fetched = get_resp.json()
+    assert fetched["id"] == body["id"]
+    assert fetched["teaching_goal_md"] == "Student will understand the property."
+    assert fetched["explanation_md"] == "An explanation in **Markdown** with $x^2$."
+    assert fetched["source_payload_json"] == {"requested_by": "test"}
+    assert fetched["raw_provider_response_json"] == {"raw": True}
+
+    # PUT again updates the existing record
+    put2_resp = client.put(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}",
+        headers=headers,
+        json={"practice_md": "Practice: solve $x^2 - 4 = 0$", "status": "ready"},
+    )
+    assert put2_resp.status_code == 200
+    updated = put2_resp.json()
+    assert updated["id"] == body["id"]
+    assert updated["practice_md"] == "Practice: solve $x^2 - 4 = 0$"
+    assert updated["status"] == "ready"
+    # Fields not in the second PUT remain unchanged
+    assert updated["teaching_goal_md"] == "Student will understand the property."
+
+
+def test_leaf_content_rejects_non_leaf_item(client):
+    headers = _auth_headers(client)
+    class_resp = client.post(
+        "/classes",
+        json={"name": f"NonLeaf Class {uuid.uuid4().hex[:6]}", "subject": "Math"},
+        headers=headers,
+    )
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    start_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Non-Leaf Unit",
+            "source_text": "Section 1\n1.1 Propriete\n1.2 Exemple",
+        },
+    )
+    assert start_resp.status_code == 201
+    unit_id = start_resp.json()["id"]
+
+    workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    checklist = workspace_resp.json()["active_unit"]["checklist"]
+    flat = _flatten_checklist(checklist)
+    # Find an item that has children (i.e., a parent/non-leaf)
+    parent_ids = {
+        int(row["parent_item_id"])
+        for row in flat
+        if isinstance(row, dict) and row.get("parent_item_id") is not None
+    }
+    non_leaf = next(
+        (row for row in flat if isinstance(row, dict) and int(row.get("id") or 0) in parent_ids),
+        None,
+    )
+    if non_leaf is None:
+        # All items are leaves (flat checklist) — add a child to make one non-leaf
+        parent_item = flat[0]
+        add_resp = client.post(
+            f"/workflow/classes/{class_id}/units/{unit_id}/items",
+            headers=headers,
+            json={"title": "Child item", "item_kind": "other", "parent_item_id": parent_item["id"]},
+        )
+        assert add_resp.status_code == 201
+        non_leaf = parent_item
+
+    non_leaf_id = int(non_leaf["id"])
+
+    # GET on non-leaf returns 400
+    get_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{non_leaf_id}",
+        headers=headers,
+    )
+    assert get_resp.status_code == 400
+    assert "leaf" in get_resp.json()["detail"].lower()
+
+    # PUT on non-leaf also returns 400
+    put_resp = client.put(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{non_leaf_id}",
+        headers=headers,
+        json={"explanation_md": "should be rejected"},
+    )
+    assert put_resp.status_code == 400
+    assert "leaf" in put_resp.json()["detail"].lower()

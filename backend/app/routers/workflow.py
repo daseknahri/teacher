@@ -36,6 +36,7 @@ from ..models import (
     SessionUpload,
     WorkflowChecklistItem,
     WorkflowChecklistItemKind,
+    WorkflowLeafContent,
     WorkflowSessionChecklistAction,
     WorkflowUnitAssistantArtifact,
     WorkflowUnitMaterial,
@@ -103,6 +104,8 @@ from ..schemas import (
     WorkflowUnitDeleteOut,
     WorkflowUnitOut,
     WorkflowWorkspaceOut,
+    WorkflowLeafContentOut,
+    WorkflowLeafContentUpsertIn,
 )
 from ..security import ensure_class_access, ensure_class_writable, get_current_user, require_owner, require_teacher
 from ..services.audit import log_audit
@@ -343,6 +346,51 @@ def _filter_actionable_check_item_ids(db: Session, *, unit_id: int, item_ids: li
             continue
         actionable_ids.append(int(item.id))
     return actionable_ids
+
+
+def _derive_leaf_item_paths(db: Session, *, unit_id: int, item_id: int) -> tuple[list[str] | None, list[str] | None]:
+    items = db.scalars(
+        select(WorkflowChecklistItem)
+        .where(WorkflowChecklistItem.unit_id == int(unit_id))
+        .order_by(WorkflowChecklistItem.position.asc(), WorkflowChecklistItem.id.asc())
+    ).all()
+    if not items:
+        return None, None
+
+    by_id = {int(row.id): row for row in items}
+    row = by_id.get(int(item_id))
+    if row is None:
+        return None, None
+
+    structural_kinds = {
+        WorkflowChecklistItemKind.CHAPTER.value,
+        WorkflowChecklistItemKind.SECTION.value,
+        WorkflowChecklistItemKind.SUBSECTION.value,
+    }
+
+    path_nodes: list[WorkflowChecklistItem] = []
+    seen_ids: set[int] = set()
+    current = row
+    while current is not None and int(current.id) not in seen_ids:
+        seen_ids.add(int(current.id))
+        path_nodes.append(current)
+        parent_id = int(current.parent_item_id) if current.parent_item_id is not None else 0
+        current = by_id.get(parent_id) if parent_id > 0 else None
+    path_nodes.reverse()
+
+    item_path = [str(node.title or "").strip() for node in path_nodes if str(node.title or "").strip()]
+    if not item_path:
+        return None, None
+
+    section_path = [
+        str(node.title or "").strip()
+        for node in path_nodes
+        if str(node.title or "").strip()
+        and str(getattr(node.item_kind, "value", node.item_kind) or "").strip().lower() in structural_kinds
+    ]
+    if not section_path:
+        section_path = item_path[:-1] or item_path
+    return item_path, section_path
 
 
 def _build_reorder_maps(
@@ -6540,3 +6588,123 @@ def download_workflow_unit_document(
         raise HTTPException(status_code=404, detail="Document file not found on server.")
     filename = unit.document_name or file_path.name
     return FileResponse(path=str(file_path), filename=filename)
+
+
+@router.get("/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}", response_model=WorkflowLeafContentOut)
+def get_leaf_content(
+    class_id: int,
+    unit_id: int,
+    item_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkflowLeafContent:
+    _ = ensure_class_access(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    item = db.get(WorkflowChecklistItem, int(item_id))
+    if item is None or int(item.unit_id) != int(unit_id):
+        raise HTTPException(status_code=404, detail="Checklist item not found in this unit.")
+    child_count = db.scalar(
+        select(func.count()).select_from(WorkflowChecklistItem).where(WorkflowChecklistItem.parent_item_id == int(item_id))
+    ) or 0
+    if child_count > 0:
+        raise HTTPException(status_code=400, detail="Only leaf checklist items can have content records.")
+    row = db.scalar(
+        select(WorkflowLeafContent).where(
+            WorkflowLeafContent.unit_id == int(unit_id),
+            WorkflowLeafContent.checklist_item_id == int(item_id),
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="No leaf content record found for this item.")
+    return row
+
+
+@router.put("/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}", response_model=WorkflowLeafContentOut)
+def upsert_leaf_content(
+    class_id: int,
+    unit_id: int,
+    item_id: int,
+    payload: WorkflowLeafContentUpsertIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkflowLeafContent:
+    _ = ensure_class_writable(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    if unit.status != WorkflowUnitStatus.ACTIVE:
+        raise HTTPException(status_code=409, detail="Leaf content can only be saved for an active unit.")
+    item = db.get(WorkflowChecklistItem, int(item_id))
+    if item is None or int(item.unit_id) != int(unit_id):
+        raise HTTPException(status_code=404, detail="Checklist item not found in this unit.")
+    child_count = db.scalar(
+        select(func.count()).select_from(WorkflowChecklistItem).where(WorkflowChecklistItem.parent_item_id == int(item_id))
+    ) or 0
+    if child_count > 0:
+        raise HTTPException(status_code=400, detail="Only leaf checklist items can have content records.")
+    row = db.scalar(
+        select(WorkflowLeafContent).where(
+            WorkflowLeafContent.unit_id == int(unit_id),
+            WorkflowLeafContent.checklist_item_id == int(item_id),
+        )
+    )
+    if row is None:
+        row = WorkflowLeafContent(unit_id=int(unit_id), checklist_item_id=int(item_id))
+        db.add(row)
+    normalized_item_path = (
+        [str(value).strip() for value in (payload.item_path or []) if str(value).strip()]
+        if payload.item_path is not None
+        else None
+    )
+    normalized_section_path = (
+        [str(value).strip() for value in (payload.section_path or []) if str(value).strip()]
+        if payload.section_path is not None
+        else None
+    )
+    if normalized_item_path is not None:
+        row.item_path_json = normalized_item_path or None
+    if normalized_section_path is not None:
+        row.section_path_json = normalized_section_path or None
+    if row.item_path_json is None or row.section_path_json is None:
+        derived_item_path, derived_section_path = _derive_leaf_item_paths(
+            db,
+            unit_id=int(unit_id),
+            item_id=int(item_id),
+        )
+        if row.item_path_json is None and derived_item_path:
+            row.item_path_json = derived_item_path
+        if row.section_path_json is None and derived_section_path:
+            row.section_path_json = derived_section_path
+    if payload.provider is not None:
+        row.provider = payload.provider
+    if payload.model is not None:
+        row.model = payload.model
+    if payload.status is not None:
+        row.status = payload.status
+    if payload.teaching_goal_md is not None:
+        row.teaching_goal_md = payload.teaching_goal_md
+    if payload.launch_activity_md is not None:
+        row.launch_activity_md = payload.launch_activity_md
+    if payload.explanation_md is not None:
+        row.explanation_md = payload.explanation_md
+    if payload.worked_example_md is not None:
+        row.worked_example_md = payload.worked_example_md
+    if payload.practice_md is not None:
+        row.practice_md = payload.practice_md
+    if payload.solution_md is not None:
+        row.solution_md = payload.solution_md
+    if payload.assessment_md is not None:
+        row.assessment_md = payload.assessment_md
+    if payload.teacher_notes_md is not None:
+        row.teacher_notes_md = payload.teacher_notes_md
+    if payload.source_excerpt_md is not None:
+        row.source_excerpt_md = payload.source_excerpt_md
+    if payload.source_payload is not None:
+        row.source_payload_json = payload.source_payload
+    if payload.raw_provider_response is not None:
+        row.raw_provider_response_json = payload.raw_provider_response
+    db.commit()
+    db.refresh(row)
+    return row

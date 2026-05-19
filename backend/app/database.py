@@ -164,3 +164,31 @@ def ensure_schema_compatibility() -> None:
         if "workflow_unit_materials" in table_names:
             conn.execute(text("UPDATE workflow_unit_materials SET provider = 'notebooklm' WHERE provider IS NULL"))
             conn.execute(text("UPDATE workflow_unit_materials SET status = 'ready' WHERE status IS NULL"))
+
+        # workflow_leaf_content: created by Base.metadata.create_all on first run.
+        # Add _ensure_column entries here when new columns are introduced in future slices.
+        _ensure_column("workflow_leaf_content", "item_path_json", f"{json_type} NULL")
+        _ensure_column("workflow_leaf_content", "section_path_json", f"{json_type} NULL")
+        _ensure_column("workflow_leaf_content", "provider", "VARCHAR(64) DEFAULT 'manual'")
+        _ensure_column("workflow_leaf_content", "model", "VARCHAR(128) NULL")
+        _ensure_column("workflow_leaf_content", "status", "VARCHAR(32) DEFAULT 'draft'")
+        _ensure_column("workflow_leaf_content", "reviewed", "BOOLEAN DEFAULT FALSE")
+        _ensure_column("workflow_leaf_content", "reviewed_at", f"{datetime_type} NULL")
+        _ensure_column("workflow_leaf_content", "reviewed_by_user_id", "INTEGER NULL")
+        _ensure_column("workflow_leaf_content", "source_payload_json", f"{json_type} NULL")
+        _ensure_column("workflow_leaf_content", "raw_provider_response_json", f"{json_type} NULL")
+        _ensure_column("workflow_leaf_content", "teaching_goal_md", "TEXT NULL")
+        _ensure_column("workflow_leaf_content", "launch_activity_md", "TEXT NULL")
+        _ensure_column("workflow_leaf_content", "explanation_md", "TEXT NULL")
+        _ensure_column("workflow_leaf_content", "worked_example_md", "TEXT NULL")
+        _ensure_column("workflow_leaf_content", "practice_md", "TEXT NULL")
+        _ensure_column("workflow_leaf_content", "solution_md", "TEXT NULL")
+        _ensure_column("workflow_leaf_content", "assessment_md", "TEXT NULL")
+        _ensure_column("workflow_leaf_content", "teacher_notes_md", "TEXT NULL")
+        _ensure_column("workflow_leaf_content", "source_excerpt_md", "TEXT NULL")
+        _ensure_column("workflow_leaf_content", "created_at", f"{datetime_type} NULL")
+        _ensure_column("workflow_leaf_content", "updated_at", f"{datetime_type} NULL")
+        if "workflow_leaf_content" in table_names:
+            conn.execute(text("UPDATE workflow_leaf_content SET provider = 'manual' WHERE provider IS NULL"))
+            conn.execute(text("UPDATE workflow_leaf_content SET status = 'draft' WHERE status IS NULL"))
+            conn.execute(text("UPDATE workflow_leaf_content SET reviewed = FALSE WHERE reviewed IS NULL"))
