@@ -350,7 +350,13 @@ function _renderSessionMatchedGuidance(items, { canImport = false, importedIds =
     if (kindFilter && kindFilter !== 'all' && itemKind !== kindFilter) return false;
     return true;
   });
-  const visible = filtered.slice(0, 4);
+  const sorted = filtered.slice().sort((a, b) => {
+    const aImported = importedIds.has(Number(a?.id || 0)) ? 1 : 0;
+    const bImported = importedIds.has(Number(b?.id || 0)) ? 1 : 0;
+    if (aImported !== bImported) return aImported - bImported;
+    return 0;
+  });
+  const visible = sorted.slice(0, 4);
   if (!visible.length) {
     if (hideImported && source.length) {
       return '<p class="text-[12px] text-slate-500">All matching saved guidance has already been imported. Use <span class="font-semibold">Show Imported</span> if you want to review it again.</p>';
@@ -383,8 +389,8 @@ function _renderSessionMatchedGuidance(items, { canImport = false, importedIds =
           ${item?.content_markdown ? `<p class="text-[12px] text-slate-600 leading-6 mt-2">${_escapeHtml(String(item.content_markdown).split('\n').slice(0, 3).join(' '))}</p>` : ''}
         </div>
       `;}).join('')}
-      ${filtered.length > visible.length
-        ? `<p class="text-[11px] text-slate-500">Showing ${visible.length} of ${filtered.length} matching saved guidance items${hideImported ? ' still available to import' : ''}.</p>`
+      ${sorted.length > visible.length
+        ? `<p class="text-[11px] text-slate-500">Showing ${visible.length} of ${sorted.length} matching saved guidance items${hideImported ? ' still available to import' : ''}.</p>`
         : ''}
     </div>
   `;
