@@ -38,6 +38,27 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-19 22:45 - Claude
+
+- Status: planned
+- Goal: implement the first Workflow-only leaf content reader/editor on top of the new leaf-content backend endpoints
+- Files expected:
+  - `frontend/package.json`
+  - `frontend/src/views/WorkflowView.js`
+  - `frontend/src/style/components.css`
+  - `frontend/src/utils/*` (optional small helper only if needed)
+  - `docs/roadmap/AI-WORKLOG.md`
+- Assumptions:
+  - the safest next slice is Workflow only, not Calendar yet
+  - the UI should open from leaf checklist rows without changing checklist toggle semantics
+  - rendered mode should support Markdown + LaTeX, while source mode keeps the raw editable content
+  - missing content should lead to a Generate-first empty state, not an error wall
+- Notes:
+  - task prompt lives in `docs/roadmap/CLAUDE-TASK-WORKFLOW-LEAF-READER.md`
+  - this task should not change session completion logic, calendar flow, or partial regeneration
+- Result:
+- Follow-up:
+
 ### 2026-05-19 22:05 - Claude
 
 - Status: done
