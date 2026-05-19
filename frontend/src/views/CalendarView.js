@@ -183,6 +183,25 @@ function _filterCalendarAssistantArtifactsForSection(artifacts, sectionPlan, fal
   });
 }
 
+function _sortCalendarAssistantArtifactsForTeaching(items) {
+  const kindRank = {
+    teacher_notes: 0,
+    guided_practice: 1,
+    quick_quiz_draft: 2,
+  };
+  const safeRows = Array.isArray(items) ? [...items] : [];
+  return safeRows.sort((a, b) => {
+    const aKind = String(a?.artifact_kind || '').trim().toLowerCase();
+    const bKind = String(b?.artifact_kind || '').trim().toLowerCase();
+    const kindDiff = Number(kindRank[aKind] ?? 99) - Number(kindRank[bKind] ?? 99);
+    if (kindDiff !== 0) return kindDiff;
+    const aUpdated = Date.parse(String(a?.updated_at || a?.created_at || '')) || 0;
+    const bUpdated = Date.parse(String(b?.updated_at || b?.created_at || '')) || 0;
+    if (aUpdated !== bUpdated) return bUpdated - aUpdated;
+    return String(a?.title || '').localeCompare(String(b?.title || ''));
+  });
+}
+
 function _filterCalendarAssistantArtifactsForPlannedTitles(artifacts, unitMap, plannedTitles) {
   const safeRows = Array.isArray(artifacts) ? artifacts : [];
   const titleKeys = new Set((Array.isArray(plannedTitles) ? plannedTitles : []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
@@ -197,12 +216,12 @@ function _filterCalendarAssistantArtifactsForPlannedTitles(artifacts, unitMap, p
       if (pathKey) pathKeys.add(pathKey);
     }
   });
-  return safeRows.filter(item => {
+  return _sortCalendarAssistantArtifactsForTeaching(safeRows.filter(item => {
     const itemTitle = String(item?.section_title || '').trim().toLowerCase();
     if (itemTitle && titleKeys.has(itemTitle)) return true;
     const itemPathKey = _normalizeSectionPathKey(item?.section_path);
     return itemPathKey ? pathKeys.has(itemPathKey) : false;
-  });
+  }));
 }
 
 function _setWorkflowViewIntent(intent) {
