@@ -846,6 +846,7 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
         </p>
         <div class="mt-3 flex gap-2 flex-wrap">
           ${remainingGuidanceCount === 1 ? '<button id="btn-calendar-next-import-best" class="btn btn-primary btn-sm">Import Best Match</button>' : ''}
+          ${remainingGuidanceCount > 1 ? '<button id="btn-calendar-next-import-all" class="btn btn-primary btn-sm">Import All Guidance</button>' : ''}
           <button id="btn-calendar-next-generate" class="btn btn-primary btn-sm">Generate now</button>
           <button id="btn-calendar-next-guidance" class="btn btn-secondary btn-sm">${remainingGuidanceCount === 1 && bestRemainingGuidanceTitle ? 'Choose Other Guidance' : 'Use Saved Guidance'}</button>
         </div>
@@ -864,6 +865,7 @@ function _renderCalendarWriteupNextStep(writeup, { isFuture = false, hasUnit = f
         <div class="mt-3 flex gap-2 flex-wrap">
           <button id="btn-calendar-next-edit" class="btn btn-primary btn-sm">Edit draft</button>
           ${remainingGuidanceCount === 1 ? '<button id="btn-calendar-next-import-best" class="btn btn-secondary btn-sm">Import Best Match</button>' : ''}
+          ${remainingGuidanceCount > 1 ? '<button id="btn-calendar-next-import-all" class="btn btn-secondary btn-sm">Import All Guidance</button>' : ''}
           ${remainingGuidanceCount > 0 ? '<button id="btn-calendar-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>' : ''}
           <button id="btn-calendar-next-approve" class="btn btn-secondary btn-sm">Approve now</button>
         </div>
@@ -4371,6 +4373,29 @@ function _renderCalendar(el, classId) {
       });
       _renderCalendar(el, classId);
       showToast('Best matching saved guidance imported.', 'ok');
+    } catch (err) {
+      showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
+    }
+  });
+  el.querySelector('#btn-calendar-next-import-all')?.addEventListener('click', async () => {
+    if (!selectedEvent || selectedEvent.unit_id == null || !selectedRemainingGuidance.length) return;
+    try {
+      let updated = null;
+      for (const item of selectedRemainingGuidance) {
+        updated = await api(`/workflow/classes/${classId}/sessions/${selectedEvent.session_id}/writeup/import-assistant-artifact`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ artifact_id: Number(item.id) }),
+        });
+      }
+      const current = _sessionDetailCache.get(Number(selectedEvent.session_id)) || {};
+      _sessionDetailCache.set(Number(selectedEvent.session_id), {
+        ...current,
+        workflow_writeup: updated || null,
+        workflow_writeup_error: null,
+      });
+      _renderCalendar(el, classId);
+      showToast(`${selectedRemainingGuidance.length} saved guidance item${selectedRemainingGuidance.length === 1 ? '' : 's'} imported.`, 'ok');
     } catch (err) {
       showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
     }

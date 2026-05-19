@@ -1194,6 +1194,7 @@ function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuid
         </p>
         <div class="mt-3 flex gap-2 flex-wrap">
           ${remainingGuidanceCount === 1 ? `<button id="btn-session-next-import-best" class="btn btn-primary btn-sm">Import Best Match</button>` : ''}
+          ${remainingGuidanceCount > 1 ? '<button id="btn-session-next-import-all" class="btn btn-primary btn-sm">Import All Guidance</button>' : ''}
           <button id="btn-session-next-generate" class="btn btn-primary btn-sm">Generate now</button>
           <button id="btn-session-next-guidance" class="btn btn-secondary btn-sm">${remainingGuidanceCount === 1 && bestRemainingGuidanceTitle ? `Choose Other Guidance` : 'Use Saved Guidance'}</button>
         </div>
@@ -1212,6 +1213,7 @@ function _renderSessionWriteupNextStep(writeup, { hasSession = true, matchedGuid
         <div class="mt-3 flex gap-2 flex-wrap">
           <button id="btn-session-next-edit" class="btn btn-primary btn-sm">Edit draft</button>
           ${remainingGuidanceCount === 1 ? '<button id="btn-session-next-import-best" class="btn btn-secondary btn-sm">Import Best Match</button>' : ''}
+          ${remainingGuidanceCount > 1 ? '<button id="btn-session-next-import-all" class="btn btn-secondary btn-sm">Import All Guidance</button>' : ''}
           ${remainingGuidanceCount > 0 ? '<button id="btn-session-next-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>' : ''}
           <button id="btn-session-next-approve" class="btn btn-secondary btn-sm">Approve now</button>
         </div>
@@ -5099,6 +5101,30 @@ function _bindWorkflowEvents(el, classId) {
       });
       _render(el, classId);
       showToast('Best matching saved guidance imported.', 'ok');
+    } catch (err) {
+      showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
+    }
+  });
+  el.querySelector('#btn-session-next-import-all')?.addEventListener('click', async () => {
+    const session = getActiveSession();
+    if (!session || !activeSessionRemainingGuidance.length) return;
+    try {
+      let updated = null;
+      for (const item of activeSessionRemainingGuidance) {
+        updated = await api(`/workflow/classes/${classId}/sessions/${session.id}/writeup/import-assistant-artifact`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ artifact_id: Number(item.id) }),
+        });
+      }
+      _setSessionWriteupState(session.id, {
+        loading: false,
+        loaded: true,
+        error: null,
+        item: updated || null,
+      });
+      _render(el, classId);
+      showToast(`${activeSessionRemainingGuidance.length} saved guidance item${activeSessionRemainingGuidance.length === 1 ? '' : 's'} imported.`, 'ok');
     } catch (err) {
       showToast(String(err?.message || 'Failed to import saved guidance.'), 'error');
     }
