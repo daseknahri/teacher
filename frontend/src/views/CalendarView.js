@@ -207,6 +207,7 @@ function _buildCalendarWorkflowIntent(selectedEvent, action = '', extra = {}) {
       : [],
     teacher_request: String(extra?.teacher_request || '').trim(),
     assistant_action: String(extra?.assistant_action || '').trim().toLowerCase(),
+    preview_hide_done: Boolean(extra?.preview_hide_done),
   };
 }
 
@@ -227,6 +228,7 @@ function _buildWorkflowSessionIntent(session, action = '') {
     section_path: [],
     teacher_request: '',
     assistant_action: '',
+    preview_hide_done: false,
   };
 }
 
@@ -3521,7 +3523,9 @@ function _renderCalendar(el, classId) {
   });
 
   el.querySelector('#btn-open-selected-workflow')?.addEventListener('click', () => {
-    const intent = _buildCalendarWorkflowIntent(selectedEvent, selectedMatchesActiveWorkflow ? 'session' : '');
+    const intent = _buildCalendarWorkflowIntent(selectedEvent, selectedMatchesActiveWorkflow ? 'session' : '', {
+      preview_hide_done: _calendarPlannedHideDone,
+    });
     if (intent) _setWorkflowViewIntent(intent);
     navigate('workflow');
   });
@@ -3533,7 +3537,9 @@ function _renderCalendar(el, classId) {
   });
 
   el.querySelector('#btn-open-selected-unit-assistant')?.addEventListener('click', () => {
-    const intent = _buildCalendarWorkflowIntent(selectedEvent, 'assistant');
+    const intent = _buildCalendarWorkflowIntent(selectedEvent, 'assistant', {
+      preview_hide_done: _calendarPlannedHideDone,
+    });
     if (!intent) return;
     _setWorkflowViewIntent(intent);
     navigate('workflow');
@@ -3554,6 +3560,7 @@ function _renderCalendar(el, classId) {
         section_path: sectionPath,
         teacher_request: String(button.dataset.teacherRequest || '').trim(),
         assistant_action: String(button.dataset.assistantAction || 'explain_section').trim().toLowerCase(),
+        preview_hide_done: _calendarPlannedHideDone,
       });
       if (!intent) return;
       _setWorkflowViewIntent(intent);
@@ -3562,14 +3569,18 @@ function _renderCalendar(el, classId) {
   });
 
   el.querySelector('#btn-open-selected-material-studio')?.addEventListener('click', () => {
-    const intent = _buildCalendarWorkflowIntent(selectedEvent, 'material_studio');
+    const intent = _buildCalendarWorkflowIntent(selectedEvent, 'material_studio', {
+      preview_hide_done: _calendarPlannedHideDone,
+    });
     if (!intent) return;
     _setWorkflowViewIntent(intent);
     navigate('workflow');
   });
 
   el.querySelector('#btn-open-selected-ai-details')?.addEventListener('click', () => {
-    const intent = _buildCalendarWorkflowIntent(selectedEvent, 'ai_details');
+    const intent = _buildCalendarWorkflowIntent(selectedEvent, 'ai_details', {
+      preview_hide_done: _calendarPlannedHideDone,
+    });
     if (!intent) return;
     _setWorkflowViewIntent(intent);
     navigate('workflow');

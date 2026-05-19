@@ -88,6 +88,7 @@ function _consumeWorkflowViewIntent(expectedUnitId) {
         : [],
       teacher_request: String(parsed.teacher_request || '').trim(),
       assistant_action: String(parsed.assistant_action || '').trim().toLowerCase(),
+      preview_hide_done: Boolean(parsed.preview_hide_done),
     };
   } catch {
     try { sessionStorage.removeItem(WORKFLOW_VIEW_INTENT_KEY); } catch {}
@@ -121,6 +122,7 @@ function _peekWorkflowViewIntent() {
         : [],
       teacher_request: String(parsed.teacher_request || '').trim(),
       assistant_action: String(parsed.assistant_action || '').trim().toLowerCase(),
+      preview_hide_done: Boolean(parsed.preview_hide_done),
     };
   } catch {
     try { sessionStorage.removeItem(WORKFLOW_VIEW_INTENT_KEY); } catch {}
@@ -2069,7 +2071,7 @@ export async function renderWorkflowView() {
       const intendedSessionId = Number(pendingWorkflowIntent.session_id || 0) || null;
       const activeSessionId = Number(ws?.active_session?.id || 0) || null;
       _workflowPreviewFocusOnly = pendingWorkflowIntent.action !== 'session';
-      _workflowPreviewHideDone = false;
+      _workflowPreviewHideDone = _workflowPreviewFocusOnly ? Boolean(pendingWorkflowIntent.preview_hide_done) : false;
       if (
         pendingWorkflowIntent.action === 'session'
         && activeSessionId
