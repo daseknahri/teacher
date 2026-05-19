@@ -3614,15 +3614,19 @@ function _renderCalendar(el, classId) {
             </h3>
             <p class="detail-meta mb-0 mt-0.5">${fmtTime(selectedEvent.start_time)}${selectedEvent.end_time ? ` -> ${fmtTime(selectedEvent.end_time)}` : ''}</p>
           </div>
-          <div class="flex flex-wrap gap-2 w-full sm:w-auto">
-            <button id="btn-confirm-selected-session" class="btn btn-success btn-sm w-full sm:w-auto" ${selectedCanConfirm ? '' : 'disabled'} title="${_escapeHtml(selectedConfirmTitle)}">${_escapeHtml(selectedConfirmLabel)}</button>
-            <button id="btn-edit-selected-session" class="btn btn-ghost btn-sm w-full sm:w-auto" ${selectedCanEdit ? '' : 'disabled'} title="${_escapeHtml(selectedEditTitle)}">Edit</button>
-            ${selectedMatchesActiveWorkflow
-              ? '<button id="btn-open-selected-workflow" class="btn btn-ghost btn-sm w-full sm:w-auto">Resume Live Session</button>'
-              : selectedEvent.unit_id != null
-                ? '<button id="btn-open-selected-workflow" class="btn btn-ghost btn-sm w-full sm:w-auto">Open Workflow</button>'
-                : ''}
-            <button id="btn-close-selected-session" class="btn btn-ghost btn-sm text-slate-400 w-full sm:w-auto">Close</button>
+          <div class="flex flex-col gap-2 w-full sm:w-auto">
+            <div class="flex flex-wrap gap-2 w-full sm:w-auto">
+              <button id="btn-confirm-selected-session" class="btn btn-success btn-sm w-full sm:w-auto" ${selectedCanConfirm ? '' : 'disabled'} title="${_escapeHtml(selectedConfirmTitle)}">${_escapeHtml(selectedConfirmLabel)}</button>
+              <button id="btn-edit-selected-session" class="btn btn-ghost btn-sm w-full sm:w-auto" ${selectedCanEdit ? '' : 'disabled'} title="${_escapeHtml(selectedEditTitle)}">Edit</button>
+              ${selectedMatchesActiveWorkflow
+                ? '<button id="btn-open-selected-workflow" class="btn btn-ghost btn-sm w-full sm:w-auto">Resume Live Session</button>'
+                : selectedEvent.unit_id != null
+                  ? '<button id="btn-open-selected-workflow" class="btn btn-ghost btn-sm w-full sm:w-auto">Open Workflow</button>'
+                  : ''}
+            </div>
+            <div class="flex justify-start sm:justify-end">
+              <button id="btn-close-selected-session" class="btn btn-ghost btn-sm text-slate-400 w-full sm:w-auto">Close</button>
+            </div>
           </div>
         </div>
         <div class="flex flex-col gap-4">
@@ -3844,7 +3848,7 @@ function _renderCalendar(el, classId) {
               </div>
               <div class="flex items-center gap-2 flex-wrap w-full lg:w-auto">
                 ${canShortcutToWorkflowTools
-                  ? `<div class="flex items-center gap-2 flex-wrap w-full lg:w-auto">
+                  ? `<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 w-full lg:w-auto">
                     <button id="btn-open-selected-unit-assistant" class="btn btn-ghost btn-sm w-full sm:w-auto">Ask This Unit</button>
                     <button id="btn-open-selected-material-studio" class="btn btn-ghost btn-sm w-full sm:w-auto">Material Studio</button>
                     <button id="btn-open-selected-ai-details" class="btn btn-ghost btn-sm w-full sm:w-auto">AI Details</button>
@@ -3879,7 +3883,7 @@ function _renderCalendar(el, classId) {
                 <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3 flex flex-col gap-2 w-full sm:min-w-[260px]">
                   <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Main actions</p>
-                    <div class="mt-2 flex items-center gap-2 flex-wrap">
+                    <div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                       ${selectedEvent.unit_id != null && !selectedIsFuture
                         ? `<button id="btn-generate-selected-writeup" class="btn ${selectedWriteup ? 'btn-secondary' : 'btn-primary'} btn-sm w-full sm:w-auto">${selectedWriteup ? 'Re-generate' : 'Generate'}</button>`
                         : ''}
@@ -3887,14 +3891,14 @@ function _renderCalendar(el, classId) {
                         ? `<button id="btn-import-selected-guidance" class="btn btn-secondary btn-sm w-full sm:w-auto">Use Saved Guidance</button>`
                         : ''}
                       ${selectedWriteup
-                        ? `<button id="btn-toggle-selected-writeup-approval" class="btn btn-ghost btn-sm w-full sm:w-auto">${selectedWriteup.approved === false ? 'Approve' : 'Mark Draft'}</button>`
+                        ? `<button id="btn-toggle-selected-writeup-approval" class="btn btn-ghost btn-sm w-full sm:w-auto sm:col-span-2">${selectedWriteup.approved === false ? 'Approve' : 'Mark Draft'}</button>`
                         : ''}
                     </div>
                   </div>
                   ${selectedWriteup
                     ? `<div class="pt-2 border-t border-slate-200">
                         <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Tools</p>
-                        <div class="mt-2 flex items-center gap-2 flex-wrap">
+                        <div class="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
                           <button id="btn-edit-selected-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto">Edit</button>
                           <button id="btn-copy-selected-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto">Copy</button>
                           <button id="btn-download-selected-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto">Download</button>

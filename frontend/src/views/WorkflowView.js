@@ -3519,7 +3519,7 @@ function _render(el, classId) {
                   <div class="rounded-2xl border border-white/80 bg-white/92 px-4 py-4 shadow-sm">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Live Tools</p>
                     <div class="mt-3 flex flex-col gap-3">
-                      <div class="flex gap-2 flex-wrap">
+                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         <label class="btn btn-secondary cursor-pointer">
                           Extract Session Image
                           <input id="session-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.bmp" class="hidden" />
@@ -3620,14 +3620,14 @@ function _render(el, classId) {
                 <div class="rounded-2xl border border-slate-200 bg-white px-3 py-3 flex flex-col gap-2 w-full sm:min-w-[250px]">
                   <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Main actions</p>
-                    <div class="mt-2 flex gap-2 flex-wrap">
+                    <div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <button id="btn-generate-session-writeup" class="btn btn-primary btn-sm w-full sm:w-auto">${session?.has_saved_writeup ? 'Re-generate' : 'Generate'}</button>
                       <button id="btn-import-session-guidance" class="btn btn-secondary btn-sm w-full sm:w-auto">Use Saved Guidance</button>
                     </div>
                   </div>
                   <div class="pt-2 border-t border-slate-200">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Tools</p>
-                    <div class="mt-2 flex gap-2 flex-wrap">
+                    <div class="mt-2 grid grid-cols-1 gap-2">
                       <button id="btn-edit-session-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto" ${sessionWriteupState.item ? '' : 'disabled'}>Edit</button>
                     </div>
                   </div>
