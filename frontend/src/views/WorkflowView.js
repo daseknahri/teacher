@@ -3487,7 +3487,7 @@ function _render(el, classId) {
                       <span class="badge ${activeWriteupStateClass}">${_escapeHtml(activeWriteupStateLabel)}</span>
                     </div>
                   </div>
-                  <div class="grid grid-cols-2 gap-2 xl:min-w-[360px] xl:max-w-[420px]">
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 xl:min-w-[360px] xl:max-w-[420px]">
                     <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
                       <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Route</p>
                       <p class="mt-1 text-[19px] font-semibold text-slate-900">${activeMatchedChecklist.length}</p>
@@ -3524,7 +3524,7 @@ function _render(el, classId) {
                           Extract Session Image
                           <input id="session-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.bmp" class="hidden" />
                         </label>
-                        <button id="btn-resume-extraction" class="btn btn-ghost btn-sm">Resume Last Extraction</button>
+                        <button id="btn-resume-extraction" class="btn btn-ghost btn-sm w-full sm:w-auto">Resume Last Extraction</button>
                       </div>
                       <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[12px] text-slate-600">
                         <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3">
@@ -3547,9 +3547,9 @@ function _render(el, classId) {
                   <h4 class="text-[13px] font-semibold text-slate-700">Planned Session Route</h4>
                   <p class="text-[12px] text-slate-500">What this unit session was planned to cover before live teaching started.</p>
                 </div>
-                <div class="flex items-center gap-2 flex-wrap">
+                <div class="flex items-center gap-2 flex-wrap w-full sm:w-auto">
                   ${session?.unit_session_number ? `<span class="badge badge-blue">Unit Session ${session.unit_session_number}</span>` : ''}
-                  <button id="btn-toggle-session-planned-route" class="btn btn-ghost btn-sm">${_workflowCollapsePlannedRoute ? 'Expand' : 'Collapse'}</button>
+                  <button id="btn-toggle-session-planned-route" class="btn btn-ghost btn-sm w-full sm:w-auto">${_workflowCollapsePlannedRoute ? 'Expand' : 'Collapse'}</button>
                 </div>
               </div>
               ${_workflowCollapsePlannedRoute
@@ -3576,10 +3576,10 @@ function _render(el, classId) {
                   <h4 class="text-[13px] font-semibold text-slate-700">Session Progress</h4>
                   <p class="text-[12px] text-slate-500">Confirmed extraction items saved in this session.</p>
                 </div>
-                <div class="flex gap-2 flex-wrap">
+                <div class="flex gap-2 flex-wrap w-full sm:w-auto">
                   ${!sessionProgressState.loaded ? '<button id="btn-load-session-progress" class="btn btn-ghost btn-sm">Load</button>' : ''}
                   <button id="btn-refresh-session-progress" class="btn btn-ghost btn-sm">Refresh</button>
-                  <button id="btn-toggle-session-progress" class="btn btn-ghost btn-sm">${_workflowCollapseSessionProgress ? 'Expand' : 'Collapse'}</button>
+                  <button id="btn-toggle-session-progress" class="btn btn-ghost btn-sm w-full sm:w-auto">${_workflowCollapseSessionProgress ? 'Expand' : 'Collapse'}</button>
                 </div>
               </div>
               ${_workflowCollapseSessionProgress
@@ -3615,20 +3615,20 @@ function _render(el, classId) {
                   <h4 class="text-[13px] font-semibold text-slate-700">Session Write-Up</h4>
                   <p class="text-[12px] text-slate-500">Generate and review the textbook text for this session.</p>
                 </div>
-                <div class="flex flex-col items-start sm:items-end gap-2">
-                  <button id="btn-toggle-session-writeup" class="btn btn-ghost btn-sm">${_workflowCollapseSessionWriteup ? 'Expand' : 'Collapse'}</button>
-                <div class="rounded-2xl border border-slate-200 bg-white px-3 py-3 flex flex-col gap-2 min-w-[250px]">
+                <div class="flex flex-col items-stretch sm:items-end gap-2 w-full lg:w-auto">
+                  <button id="btn-toggle-session-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto">${_workflowCollapseSessionWriteup ? 'Expand' : 'Collapse'}</button>
+                <div class="rounded-2xl border border-slate-200 bg-white px-3 py-3 flex flex-col gap-2 w-full sm:min-w-[250px]">
                   <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Main actions</p>
                     <div class="mt-2 flex gap-2 flex-wrap">
-                      <button id="btn-generate-session-writeup" class="btn btn-primary btn-sm">${session?.has_saved_writeup ? 'Re-generate' : 'Generate'}</button>
-                      <button id="btn-import-session-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>
+                      <button id="btn-generate-session-writeup" class="btn btn-primary btn-sm w-full sm:w-auto">${session?.has_saved_writeup ? 'Re-generate' : 'Generate'}</button>
+                      <button id="btn-import-session-guidance" class="btn btn-secondary btn-sm w-full sm:w-auto">Use Saved Guidance</button>
                     </div>
                   </div>
                   <div class="pt-2 border-t border-slate-200">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Tools</p>
                     <div class="mt-2 flex gap-2 flex-wrap">
-                      <button id="btn-edit-session-writeup" class="btn btn-ghost btn-sm" ${sessionWriteupState.item ? '' : 'disabled'}>Edit</button>
+                      <button id="btn-edit-session-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto" ${sessionWriteupState.item ? '' : 'disabled'}>Edit</button>
                     </div>
                   </div>
                 </div>

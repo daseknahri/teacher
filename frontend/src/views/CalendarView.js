@@ -3607,22 +3607,22 @@ function _renderCalendar(el, classId) {
 
       ${selectedEvent ? `
       <div class="cal-detail-panel mt-4 mb-6 mx-5">
-        <div class="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 mb-4">
           <div>
             <h3 class="detail-title mb-0">
               Session ${fmtDate(selectedEvent.session_date || selectedEvent.date)}${selectedSessionNumber ? ` - Unit Session ${selectedSessionNumber}` : ''}
             </h3>
             <p class="detail-meta mb-0 mt-0.5">${fmtTime(selectedEvent.start_time)}${selectedEvent.end_time ? ` -> ${fmtTime(selectedEvent.end_time)}` : ''}</p>
           </div>
-          <div class="flex items-center gap-2">
-            <button id="btn-confirm-selected-session" class="btn btn-success btn-sm" ${selectedCanConfirm ? '' : 'disabled'} title="${_escapeHtml(selectedConfirmTitle)}">${_escapeHtml(selectedConfirmLabel)}</button>
-            <button id="btn-edit-selected-session" class="btn btn-ghost btn-sm" ${selectedCanEdit ? '' : 'disabled'} title="${_escapeHtml(selectedEditTitle)}">Edit</button>
+          <div class="flex flex-wrap gap-2 w-full sm:w-auto">
+            <button id="btn-confirm-selected-session" class="btn btn-success btn-sm w-full sm:w-auto" ${selectedCanConfirm ? '' : 'disabled'} title="${_escapeHtml(selectedConfirmTitle)}">${_escapeHtml(selectedConfirmLabel)}</button>
+            <button id="btn-edit-selected-session" class="btn btn-ghost btn-sm w-full sm:w-auto" ${selectedCanEdit ? '' : 'disabled'} title="${_escapeHtml(selectedEditTitle)}">Edit</button>
             ${selectedMatchesActiveWorkflow
-              ? '<button id="btn-open-selected-workflow" class="btn btn-ghost btn-sm">Resume Live Session</button>'
+              ? '<button id="btn-open-selected-workflow" class="btn btn-ghost btn-sm w-full sm:w-auto">Resume Live Session</button>'
               : selectedEvent.unit_id != null
-                ? '<button id="btn-open-selected-workflow" class="btn btn-ghost btn-sm">Open Workflow</button>'
+                ? '<button id="btn-open-selected-workflow" class="btn btn-ghost btn-sm w-full sm:w-auto">Open Workflow</button>'
                 : ''}
-            <button id="btn-close-selected-session" class="btn btn-ghost btn-sm text-slate-400">Close</button>
+            <button id="btn-close-selected-session" class="btn btn-ghost btn-sm text-slate-400 w-full sm:w-auto">Close</button>
           </div>
         </div>
         <div class="flex flex-col gap-4">
@@ -3647,7 +3647,7 @@ function _renderCalendar(el, classId) {
                     <span class="badge ${selectedWriteupStateClass}">${selectedWriteup ? (selectedWriteup.approved === false ? 'Write-up Draft' : 'Write-up Approved') : _escapeHtml(selectedWriteupStateLabel)}</span>
                   </div>
                 </div>
-                <div class="grid grid-cols-2 gap-2 xl:min-w-[360px] xl:max-w-[420px]">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 xl:min-w-[360px] xl:max-w-[420px]">
                   <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
                     <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Progress</p>
                     <p class="mt-1 text-[19px] font-semibold text-slate-900">${selectedCompletedCount}</p>
@@ -3842,15 +3842,15 @@ function _renderCalendar(el, classId) {
                 <h4 class="mt-1 text-[15px] font-semibold text-slate-800">Teacher Prep Suggestions</h4>
                 <p class="mt-1 text-[12px] text-slate-500">NotebookLM-backed help for preparing this exact session route.</p>
               </div>
-              <div class="flex items-center gap-2 flex-wrap">
+              <div class="flex items-center gap-2 flex-wrap w-full lg:w-auto">
                 ${canShortcutToWorkflowTools
-                  ? `<div class="flex items-center gap-2 flex-wrap">
-                    <button id="btn-open-selected-unit-assistant" class="btn btn-ghost btn-sm">Ask This Unit</button>
-                    <button id="btn-open-selected-material-studio" class="btn btn-ghost btn-sm">Material Studio</button>
-                    <button id="btn-open-selected-ai-details" class="btn btn-ghost btn-sm">AI Details</button>
+                  ? `<div class="flex items-center gap-2 flex-wrap w-full lg:w-auto">
+                    <button id="btn-open-selected-unit-assistant" class="btn btn-ghost btn-sm w-full sm:w-auto">Ask This Unit</button>
+                    <button id="btn-open-selected-material-studio" class="btn btn-ghost btn-sm w-full sm:w-auto">Material Studio</button>
+                    <button id="btn-open-selected-ai-details" class="btn btn-ghost btn-sm w-full sm:w-auto">AI Details</button>
                   </div>`
                   : ''}
-                <button id="btn-calendar-toggle-teacher-prep" class="btn btn-ghost btn-sm">${_calendarCollapseTeacherPrep ? 'Expand' : 'Collapse'}</button>
+                <button id="btn-calendar-toggle-teacher-prep" class="btn btn-ghost btn-sm w-full sm:w-auto">${_calendarCollapseTeacherPrep ? 'Expand' : 'Collapse'}</button>
               </div>
             </div>
             ${_calendarCollapseTeacherPrep
@@ -3871,23 +3871,23 @@ function _renderCalendar(el, classId) {
                 <h4 class="mt-1 text-[15px] font-semibold text-slate-800">Textbook Write-Up</h4>
                 <p class="mt-1 text-[12px] text-slate-500">The saved teaching summary for what really happened in class.</p>
               </div>
-              <div class="flex flex-col items-start sm:items-end gap-2">
+              <div class="flex flex-col items-stretch sm:items-end gap-2 w-full lg:w-auto">
                 ${selectedWriteup
                   ? `<span class="badge ${selectedWriteup.approved === false ? 'badge-amber' : 'badge-green'}">${selectedWriteup.approved === false ? 'Draft' : 'Approved'}</span>`
                   : ''}
-                <button id="btn-calendar-toggle-writeup" class="btn btn-ghost btn-sm">${_calendarCollapseWriteup ? 'Expand' : 'Collapse'}</button>
-                <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3 flex flex-col gap-2 min-w-[260px]">
+                <button id="btn-calendar-toggle-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto">${_calendarCollapseWriteup ? 'Expand' : 'Collapse'}</button>
+                <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3 flex flex-col gap-2 w-full sm:min-w-[260px]">
                   <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Main actions</p>
                     <div class="mt-2 flex items-center gap-2 flex-wrap">
                       ${selectedEvent.unit_id != null && !selectedIsFuture
-                        ? `<button id="btn-generate-selected-writeup" class="btn ${selectedWriteup ? 'btn-secondary' : 'btn-primary'} btn-sm">${selectedWriteup ? 'Re-generate' : 'Generate'}</button>`
+                        ? `<button id="btn-generate-selected-writeup" class="btn ${selectedWriteup ? 'btn-secondary' : 'btn-primary'} btn-sm w-full sm:w-auto">${selectedWriteup ? 'Re-generate' : 'Generate'}</button>`
                         : ''}
                       ${selectedEvent.unit_id != null && !selectedIsFuture
-                        ? `<button id="btn-import-selected-guidance" class="btn btn-secondary btn-sm">Use Saved Guidance</button>`
+                        ? `<button id="btn-import-selected-guidance" class="btn btn-secondary btn-sm w-full sm:w-auto">Use Saved Guidance</button>`
                         : ''}
                       ${selectedWriteup
-                        ? `<button id="btn-toggle-selected-writeup-approval" class="btn btn-ghost btn-sm">${selectedWriteup.approved === false ? 'Approve' : 'Mark Draft'}</button>`
+                        ? `<button id="btn-toggle-selected-writeup-approval" class="btn btn-ghost btn-sm w-full sm:w-auto">${selectedWriteup.approved === false ? 'Approve' : 'Mark Draft'}</button>`
                         : ''}
                     </div>
                   </div>
@@ -3895,9 +3895,9 @@ function _renderCalendar(el, classId) {
                     ? `<div class="pt-2 border-t border-slate-200">
                         <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Tools</p>
                         <div class="mt-2 flex items-center gap-2 flex-wrap">
-                          <button id="btn-edit-selected-writeup" class="btn btn-ghost btn-sm">Edit</button>
-                          <button id="btn-copy-selected-writeup" class="btn btn-ghost btn-sm">Copy</button>
-                          <button id="btn-download-selected-writeup" class="btn btn-ghost btn-sm">Download</button>
+                          <button id="btn-edit-selected-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto">Edit</button>
+                          <button id="btn-copy-selected-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto">Copy</button>
+                          <button id="btn-download-selected-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto">Download</button>
                         </div>
                       </div>`
                     : ''}
