@@ -2546,16 +2546,10 @@ function _normalizeWriteupSourcePayload(payload) {
 function _renderWriteupSourcePayload(payload, { compact = false } = {}) {
   const meta = _normalizeWriteupSourcePayload(payload);
   if (!meta) return '';
-  const parts = [];
-  if (meta.requestedProvider || meta.providerUsed) {
-    parts.push(`
-      <div class="flex flex-wrap gap-2">
-        ${meta.requestedProvider ? `<span class="badge badge-gray">Requested ${_escapeHtml(meta.requestedProvider)}</span>` : ''}
-        ${meta.providerUsed ? `<span class="badge ${meta.providerUsed === 'notebooklm' ? 'badge-green' : meta.providerUsed === 'openai' ? 'badge-blue' : 'badge-amber'}">Used ${_escapeHtml(meta.providerUsed)}</span>` : ''}
-        ${meta.unitBrainUsed ? '<span class="badge badge-green">Unit brain matched</span>' : '<span class="badge badge-gray">Generic session context</span>'}
-      </div>
-    `);
-  }
+  const summaryBadges = [];
+  if (meta.requestedProvider) summaryBadges.push(`Requested ${_escapeHtml(meta.requestedProvider)}`);
+  if (meta.providerUsed) summaryBadges.push(`Used ${_escapeHtml(meta.providerUsed)}`);
+  summaryBadges.push(meta.unitBrainUsed ? 'Unit brain matched' : 'Generic session context');
 
   const groups = [
     ['Matched sections', meta.matchedSections],
@@ -2564,12 +2558,12 @@ function _renderWriteupSourcePayload(payload, { compact = false } = {}) {
     ['Saved guidance used', meta.matchedGuidance],
   ].filter(([, rows]) => Array.isArray(rows) && rows.length);
 
-  if (!groups.length && !parts.length) return '';
+  if (!groups.length) return '';
 
-  parts.push(`
+  const grid = `
     <div class="grid grid-cols-1 ${compact ? '' : 'lg:grid-cols-2'} gap-3">
       ${groups.map(([label, rows]) => `
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div class="rounded-xl border border-slate-200 bg-white px-3 py-3">
           <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">${_escapeHtml(label)}</p>
           <ul class="mt-2 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
             ${rows.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
@@ -2577,7 +2571,7 @@ function _renderWriteupSourcePayload(payload, { compact = false } = {}) {
         </div>
       `).join('')}
       ${meta.importedAssistantArtifacts.length ? `
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div class="rounded-xl border border-slate-200 bg-white px-3 py-3">
           <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Imported saved guidance</p>
           <ul class="mt-2 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
             ${meta.importedAssistantArtifacts.map(item => `
@@ -2591,15 +2585,18 @@ function _renderWriteupSourcePayload(payload, { compact = false } = {}) {
         </div>
       ` : ''}
     </div>
-  `);
+  `;
 
   return `
-    <div class="flex flex-col gap-3">
+    <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 flex flex-col gap-3">
       <div>
-        <p class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">AI Context Used</p>
+        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">AI Context Used</p>
         <p class="text-[12px] text-slate-500 mt-1">This shows which saved unit sections and guidance the write-up matched before generation.</p>
+        <div class="mt-2 flex flex-wrap gap-2">
+          ${summaryBadges.map(label => `<span class="badge badge-gray">${label}</span>`).join('')}
+        </div>
       </div>
-      ${parts.join('')}
+      ${grid}
     </div>
   `;
 }
@@ -2609,11 +2606,12 @@ function _renderImportedGuidanceSummary(payload) {
   const items = Array.isArray(meta?.importedAssistantArtifacts) ? meta.importedAssistantArtifacts : [];
   if (!items.length) return '';
   return `
-    <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-3 flex flex-col gap-2">
+    <div class="rounded-2xl border border-emerald-200 bg-emerald-50/90 p-3 flex flex-col gap-2">
       <div class="flex items-center justify-between gap-2 flex-wrap">
         <p class="text-[12px] font-semibold text-emerald-800">Imported guidance in this write-up</p>
         <span class="badge badge-green">${items.length} imported</span>
       </div>
+      <p class="text-[12px] text-emerald-700">Saved teacher help already merged into this lesson record.</p>
       <div class="flex flex-wrap gap-2">
         ${items.map(item => `
           <span class="badge badge-white border border-emerald-200 !text-emerald-800">
@@ -3523,29 +3521,50 @@ function _render(el, classId) {
             ? `
               <div class="rounded-xl border border-slate-200 bg-white p-3 flex flex-col gap-3">
                 <div class="flex items-center justify-between gap-2 flex-wrap">
-                  <p class="text-[13px] font-semibold text-slate-700">${_escapeHtml(sessionWriteupState.item.title || 'Session write-up')}</p>
+                  <div>
+                    <p class="text-[15px] font-semibold text-slate-800">${_escapeHtml(sessionWriteupState.item.title || 'Session write-up')}</p>
+                    <p class="mt-1 text-[12px] text-slate-500">A classroom-facing summary of what was taught, reinforced, and practiced.</p>
+                  </div>
                   <div class="flex items-center gap-2 flex-wrap">
                     <span class="badge ${sessionWriteupState.item.approved === false ? 'badge-amber' : 'badge-green'}">${sessionWriteupState.item.approved === false ? 'Draft' : 'Approved'}</span>
                     <button id="btn-copy-session-writeup" class="btn btn-ghost btn-sm">Copy</button>
                     <button id="btn-download-session-writeup" class="btn btn-ghost btn-sm">Download</button>
                   </div>
                 </div>
+                <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                  <div class="flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                      <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Lesson Brief</p>
+                      <p class="mt-1 text-[12px] text-slate-500">The write-up is organized so you can quickly review focus, delivery, and practice.</p>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                      <span class="badge badge-gray">${Array.isArray(sessionWriteupState.item.learning_focus) ? sessionWriteupState.item.learning_focus.length : 0} focus</span>
+                      <span class="badge badge-gray">${Array.isArray(sessionWriteupState.item.teaching_content) ? sessionWriteupState.item.teaching_content.length : 0} content</span>
+                      <span class="badge badge-gray">${Array.isArray(sessionWriteupState.item.practice_items) ? sessionWriteupState.item.practice_items.length : 0} practice</span>
+                    </div>
+                  </div>
+                </div>
                 ${_renderImportedGuidanceSummary(sessionWriteupState.item.source_payload)}
                 ${Array.isArray(sessionWriteupState.item.learning_focus) && sessionWriteupState.item.learning_focus.length ? `
-                  <div>
-                    <p class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Learning Focus</p>
+                  <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                    <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Learning Focus</p>
+                    <p class="mt-1 text-[12px] text-slate-500">The main ideas or objectives that shaped the lesson.</p>
                     <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
                       ${sessionWriteupState.item.learning_focus.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
                     </ul>
                   </div>` : ''}
                 ${Array.isArray(sessionWriteupState.item.teaching_content) && sessionWriteupState.item.teaching_content.length ? `
-                  <div class="flex flex-col gap-2">
-                    <p class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Teaching Content</p>
-                    ${sessionWriteupState.item.teaching_content.map(row => `<p class="text-[13px] text-slate-700 leading-relaxed">${_escapeHtml(row)}</p>`).join('')}
+                  <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4 flex flex-col gap-2">
+                    <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Teaching Content</p>
+                    <p class="text-[12px] text-slate-500">What was explained, modeled, or discussed with students.</p>
+                    <div class="flex flex-col gap-3">
+                      ${sessionWriteupState.item.teaching_content.map(row => `<div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3"><p class="text-[13px] text-slate-700 leading-relaxed">${_escapeHtml(row)}</p></div>`).join('')}
+                    </div>
                   </div>` : ''}
                 ${Array.isArray(sessionWriteupState.item.practice_items) && sessionWriteupState.item.practice_items.length ? `
-                  <div>
-                    <p class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Practice</p>
+                  <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                    <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Practice</p>
+                    <p class="mt-1 text-[12px] text-slate-500">Exercises, reinforcement, or checks for understanding used in class.</p>
                     <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
                       ${sessionWriteupState.item.practice_items.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
                     </ul>
