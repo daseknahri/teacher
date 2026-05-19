@@ -2826,6 +2826,11 @@ function _sessionTeachingPhaseLabel(phase) {
   return 'Other';
 }
 
+function _isStructuralChecklistItem(item) {
+  const kind = String(item?.item_kind || item?.kind || '').trim().toLowerCase();
+  return kind === 'chapter' || kind === 'section' || kind === 'subsection';
+}
+
 function _findSectionPlanForChecklistContext(unitMap, context, item = null) {
   const plans = Array.isArray(unitMap?.section_plans) ? unitMap.section_plans.filter(Boolean) : [];
   if (!plans.length) return null;
@@ -2864,6 +2869,7 @@ function _buildSessionTeachingChecklistGroups(items, unitMap, allChecklistItems 
   rows.forEach(row => {
     const itemId = Number(row?.id || 0);
     if (!itemId) return;
+    if (_isStructuralChecklistItem(row)) return;
     const context = contextMap.get(itemId) || {
       itemPath: [String(row?.title || '').trim()].filter(Boolean),
       sectionPath: [],
@@ -4262,22 +4268,24 @@ function _render(el, classId) {
       const hasChildren = Number(checklistChildrenCount.get(itemId) || 0) > 0;
       const isCollapsed = hasChildren && _collapsedChecklistIds.has(itemId);
       const depthPad = _checklistDepthPadding(item.depth);
+      const isStructural = _isStructuralChecklistItem(item) || hasChildren;
       return `
-              <div class="todo-node group ${item.is_completed || item.done ? 'done' : ''}"
+              <div class="todo-node group ${item.is_completed || item.done ? 'done' : ''} ${isStructural ? 'cursor-default' : ''}"
                    data-item-id="${item.id}" data-session-id="${session.id}" data-class-id="${classId}"
                    style="padding-left:${depthPad}px"
-                   role="button" tabindex="0"
-                   aria-pressed="${item.is_completed || item.done ? 'true' : 'false'}"
-                   aria-label="Toggle checklist item: ${_escapeHtmlAttr(item.title)}">
+                   role="${isStructural ? 'group' : 'button'}" tabindex="${isStructural ? '-1' : '0'}"
+                   aria-pressed="${isStructural ? 'false' : (item.is_completed || item.done ? 'true' : 'false')}"
+                   aria-label="${isStructural ? _escapeHtmlAttr(`Checklist heading: ${item.title}`) : _escapeHtmlAttr(`Toggle checklist item: ${item.title}`)}">
                 ${hasChildren
       ? `<button class="btn btn-ghost btn-sm !text-slate-500 btn-checklist-toggle" data-item-id="${item.id}" title="${isCollapsed ? 'Expand branch' : 'Collapse branch'}" aria-label="${isCollapsed ? 'Expand branch' : 'Collapse branch'}">${isCollapsed ? '+' : '-'}</button>`
       : '<span class="inline-block w-6 h-6 flex-shrink-0"></span>'}
                 <div class="w-[18px] h-[18px] rounded-[4px] border-2 flex-shrink-0 flex items-center justify-center
                      transition-all mt-px text-[10px] cursor-pointer
-                     ${item.is_completed || item.done ? 'bg-green-600 border-green-600 text-white' : 'border-slate-300 bg-white hover:border-green-400'}">
-                  ${item.is_completed || item.done ? 'Y' : ''}
+                     ${item.is_completed || item.done ? 'bg-green-600 border-green-600 text-white' : isStructural ? 'border-slate-200 bg-slate-50 text-slate-300' : 'border-slate-300 bg-white hover:border-green-400'}">
+                  ${item.is_completed || item.done ? 'Y' : (isStructural ? '·' : '')}
                 </div>
                 <span class="todo-title text-[13px] leading-snug flex-1">${item.title}</span>
+                ${isStructural ? '<span class="text-[10px] text-slate-400 whitespace-nowrap">Auto-completes when all child rows are done</span>' : ''}
               </div>`;
     }).join('')}
               </div>
@@ -4952,13 +4960,17 @@ function _bindWorkflowEvents(el, classId) {
       const items = _checklist(unit);
       const item = items.find(i => Number(i.id) === numericItemId);
       if (!item) return;
+      const itemHasChildren = items.some(candidate => Number(candidate?.parent_item_id || 0) === numericItemId);
+      if (_isStructuralChecklistItem(item) || itemHasChildren) {
+        showToast('Section headings stay open until their child rows are completed. Check the lesson steps under this heading instead.', 'info');
+        return;
+      }
       if (item.is_completed || item.done) {
         showToast('Unchecking is disabled to keep unit progress flow.', 'info');
         return;
       }
 
-      const descendants = _findDescendantItems(items, numericItemId);
-      const affected = [item, ...descendants];
+      const affected = [item];
       const previousStates = affected.map(row => ({
         row,
         checked: row.is_completed !== undefined ? Boolean(row.is_completed) : Boolean(row.done),
@@ -5783,6 +5795,7 @@ function _bindWorkflowEvents(el, classId) {
     await _withActionLock(`workflow:session-mutate:${classId}`, async () => {
       const session = getActiveSession();
       if (!session) return;
+      const previousUnitId = Number(session?.unit_id || getActiveUnit()?.id || 0);
       const payload = await _editWorkflowSessionEndModal(session);
       if (!payload) return;
       payload.absent_student_ids = _resolveSessionAbsentIds(session);
@@ -5800,7 +5813,9 @@ function _bindWorkflowEvents(el, classId) {
         await _refreshWorkflowCalendarSnapshot(classId);
         _activeTab = 0;
         _render(el, classId);
-        showToast('Session ended.', 'ok');
+        const activeUnitId = Number(ws?.active_unit?.id || 0);
+        const unitClosed = previousUnitId > 0 && activeUnitId !== previousUnitId;
+        showToast(unitClosed ? 'Session ended. Unit completed and closed.' : 'Session ended.', 'ok');
       } catch (err) {
         _setBusy(triggerBtn, false);
         if (_isClosedSessionConflict(err)) {

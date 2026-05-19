@@ -220,6 +220,36 @@ def _refresh_item_completion(db: Session, item_id: int) -> None:
     item = db.get(WorkflowChecklistItem, item_id)
     if item is None:
         return
+    children = db.scalars(
+        select(WorkflowChecklistItem).where(WorkflowChecklistItem.parent_item_id == item_id).order_by(WorkflowChecklistItem.position.asc())
+    ).all()
+    if children:
+        all_done = all(bool(child.is_completed) for child in children)
+        if all_done:
+            latest_child_session_id = next(
+                (
+                    int(child.completed_session_id)
+                    for child in reversed(children)
+                    if child.completed_session_id is not None
+                ),
+                None,
+            )
+            latest_child_completed_at = next(
+                (
+                    child.completed_at
+                    for child in reversed(children)
+                    if child.completed_at is not None
+                ),
+                None,
+            )
+            item.is_completed = True
+            item.completed_session_id = latest_child_session_id
+            item.completed_at = latest_child_completed_at
+        else:
+            item.is_completed = False
+            item.completed_session_id = None
+            item.completed_at = None
+        return
     latest = db.scalar(
         select(WorkflowSessionChecklistAction)
         .where(WorkflowSessionChecklistAction.item_id == item_id)
@@ -282,6 +312,36 @@ def _refresh_ancestors_completion(db: Session, item_id: int, session_id: int) ->
             parent.completed_session_id = None
             parent.completed_at = None
         current = parent
+
+
+def _filter_actionable_check_item_ids(db: Session, *, unit_id: int, item_ids: list[int]) -> list[int]:
+    normalized_ids = sorted({int(value) for value in (item_ids or []) if int(value) > 0})
+    if not normalized_ids:
+        return []
+
+    rows = db.scalars(
+        select(WorkflowChecklistItem).where(WorkflowChecklistItem.unit_id == int(unit_id))
+    ).all()
+    if not rows:
+        return []
+
+    child_counts: dict[int, int] = {}
+    by_id: dict[int, WorkflowChecklistItem] = {}
+    for row in rows:
+        by_id[int(row.id)] = row
+        if row.parent_item_id is not None:
+            parent_id = int(row.parent_item_id)
+            child_counts[parent_id] = child_counts.get(parent_id, 0) + 1
+
+    actionable_ids: list[int] = []
+    for item_id in normalized_ids:
+        item = by_id.get(int(item_id))
+        if item is None:
+            continue
+        if child_counts.get(int(item.id), 0) > 0:
+            continue
+        actionable_ids.append(int(item.id))
+    return actionable_ids
 
 
 def _build_reorder_maps(
@@ -894,7 +954,11 @@ def _apply_checked_items_to_session(
     session_id: int,
     checked_item_ids: list[int],
 ) -> int:
-    selected_ids = sorted({int(value) for value in (checked_item_ids or []) if int(value) > 0})
+    selected_ids = _filter_actionable_check_item_ids(
+        db,
+        unit_id=int(unit_id),
+        item_ids=[int(value) for value in (checked_item_ids or []) if int(value) > 0],
+    )
     if not selected_ids:
         return 0
 
@@ -906,12 +970,7 @@ def _apply_checked_items_to_session(
     if invalid_checked_ids:
         raise HTTPException(status_code=400, detail=f"Unknown checklist item ids for this unit: {invalid_checked_ids}")
 
-    affected_ids: set[int] = set()
-    for item_id in selected_ids:
-        affected_ids.add(int(item_id))
-        descendants = _descendant_ids(db, int(unit_id), int(item_id))
-        for child_id in descendants:
-            affected_ids.add(int(child_id))
+    affected_ids: set[int] = {int(item_id) for item_id in selected_ids}
 
     for item_id in sorted(affected_ids):
         _upsert_session_action(db, session_id=int(session_id), item_id=int(item_id), checked=True)
@@ -5155,11 +5214,17 @@ def toggle_workflow_item(
     item = db.get(WorkflowChecklistItem, item_id)
     if item is None or item.unit_id != session.unit_id:
         raise HTTPException(status_code=404, detail="Checklist item not found for this session.")
-
+    has_children = db.scalar(
+        select(WorkflowChecklistItem.id)
+        .where(WorkflowChecklistItem.parent_item_id == int(item.id))
+        .limit(1)
+    )
+    if has_children is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Checklist headings auto-complete after their child rows are completed.",
+        )
     target_ids = [item.id]
-    descendant_ids = _descendant_ids(db, item.unit_id, item.id)
-    if descendant_ids:
-        target_ids.extend(descendant_ids)
 
     for target_id in target_ids:
         _upsert_session_action(db, session_id=session.id, item_id=target_id, checked=payload.checked)

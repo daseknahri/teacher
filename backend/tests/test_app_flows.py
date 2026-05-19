@@ -144,6 +144,25 @@ def _flatten_checklist(nodes: list[dict]) -> list[dict]:
     return output
 
 
+def _first_leaf_checklist_item(nodes: list[dict]) -> dict | None:
+    flat = _flatten_checklist(nodes)
+    if not flat:
+        return None
+    parent_ids = {
+        int(row["parent_item_id"])
+        for row in flat
+        if isinstance(row, dict) and row.get("parent_item_id") is not None
+    }
+    return next(
+        (
+            row
+            for row in flat
+            if isinstance(row, dict) and int(row.get("id") or 0) > 0 and int(row["id"]) not in parent_ids
+        ),
+        None,
+    )
+
+
 def _auth_headers(client) -> dict[str, str]:
     owner_payload = {"email": "owner@app.local", "password": "OwnerPass123", "full_name": "Owner"}
     bootstrap_resp = client.post("/auth/bootstrap-owner", json=owner_payload)
@@ -385,12 +404,15 @@ def test_workflow_unit_session_lifecycle(client):
         "2. Identites remarquables",
         "Definition: (a+b)^2",
     ]
-    source_pdf = _build_pdf_file(source_text_lines)
     start_unit_resp = client.post(
         f"/workflow/classes/{class_id}/units/start",
         headers=headers,
-        data={"unit_type": "chapter", "title": "Chapitre 1", "planned_hours": "6"},
-        files={"file": ("chapter.pdf", source_pdf, "application/pdf")},
+        data={
+            "unit_type": "chapter",
+            "title": "Chapitre 1",
+            "planned_hours": "6",
+            "source_text": "\n".join(source_text_lines),
+        },
     )
     assert start_unit_resp.status_code == 201
     unit = start_unit_resp.json()
@@ -447,7 +469,18 @@ def test_workflow_unit_session_lifecycle(client):
     assert sorted(session["absent_student_ids"]) == sorted(absent_ids)
     assert session["unit_session_number"] == 1
 
-    item_id = workspace["active_unit"]["checklist"][0]["id"]
+    parent_item_id = workspace["active_unit"]["checklist"][0]["id"]
+    toggle_parent_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/{session_id}/items/{parent_item_id}/toggle",
+        headers=headers,
+        json={"checked": True},
+    )
+    assert toggle_parent_resp.status_code == 409
+    assert toggle_parent_resp.json()["detail"] == "Checklist headings auto-complete after their child rows are completed."
+
+    leaf_item = _first_leaf_checklist_item(workspace["active_unit"]["checklist"])
+    assert leaf_item is not None
+    item_id = int(leaf_item["id"])
     toggle_resp = client.post(
         f"/workflow/classes/{class_id}/sessions/{session_id}/items/{item_id}/toggle",
         headers=headers,
@@ -455,6 +488,11 @@ def test_workflow_unit_session_lifecycle(client):
     )
     assert toggle_resp.status_code == 200
     assert toggle_resp.json()["is_completed"] is True
+
+    workspace_after_leaf_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_after_leaf_resp.status_code == 200
+    workspace_after_leaf = workspace_after_leaf_resp.json()
+    assert workspace_after_leaf["active_unit"]["checklist"][0]["is_completed"] is False
 
     # Forward-only checklist flow: unchecking is blocked even while session is open.
     toggle_uncheck_open_resp = client.post(
@@ -693,8 +731,8 @@ def test_workflow_slot_actions_create_new_unit_and_continue(client):
     assert new_unit_payload["unit"]["title"] == "Slot Unit"
     assert new_unit_payload["session"]["unit_id"] == new_unit_payload["unit"]["id"]
     assert new_unit_payload["session"]["unit_session_number"] == 1
-    checklist_rows = _flatten_checklist(new_unit_payload["unit"].get("checklist") or [])
-    first_check_id = int(checklist_rows[0]["id"]) if checklist_rows else None
+    first_leaf = _first_leaf_checklist_item(new_unit_payload["unit"].get("checklist") or [])
+    first_check_id = int(first_leaf["id"]) if isinstance(first_leaf, dict) and first_leaf.get("id") else None
 
     continue_resp = client.post(
         f"/workflow/classes/{class_id}/slot-actions",
