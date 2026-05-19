@@ -3559,9 +3559,13 @@ function _render(el, classId) {
                   : !session?.unit_session_number ? '<p class="text-[12px] text-slate-500">This session has no saved unit-session number yet.</p>'
                     : `
                       <div class="flex flex-col gap-3">
-                        ${_renderSessionPlannedTree(activeSessionPlanTree)}
-                        <div>
+                        <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                          <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">Planned Route</p>
+                          ${_renderSessionPlannedTree(activeSessionPlanTree)}
+                        </div>
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
                           <p class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Teacher Prep</p>
+                          <p class="text-[12px] text-slate-500 mb-3">Notebook-backed suggestions tied to this planned route.</p>
                           ${_renderSessionPlaybookPreview(activeUnitMap, activeSessionPlanTitles)}
                         </div>
                       </div>`}
@@ -3586,14 +3590,22 @@ function _render(el, classId) {
           ? `<p class="text-[12px] text-red-600">${_escapeHtml(sessionProgressState.error)}</p>`
           : sessionProgressState.loaded
             ? sessionProgressState.items.length
-              ? `<div class="flex flex-col gap-1">
+              ? `<div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
+                  <div>
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Confirmed Progress</p>
+                    <p class="mt-1 text-[12px] text-slate-500">Items that were already saved as confirmed session progress.</p>
+                  </div>
+                  <span class="badge badge-gray">${sessionProgressState.items.length} saved</span>
+                </div>
+                <div class="flex flex-col gap-1">
                 ${sessionProgressState.items.map(item => `
                   <div class="session-progress-item-row">
                     <span class="session-progress-type-badge type-${String(item.item_type || 'lesson').toLowerCase()}">${_progressItemTypeLabel(item.item_type)}</span>
                     <span class="session-progress-item-text">${_escapeHtml(_progressItemLabel(item))}</span>
                   </div>
                 `).join('')}
-              </div>`
+              </div></div>`
               : '<p class="text-[12px] text-slate-500">No confirmed progress items yet. Extract and apply session notes to populate this list.</p>'
             : '<p class="text-[12px] text-slate-500">Load to preview confirmed progress items for this session.</p>'}
             </div>

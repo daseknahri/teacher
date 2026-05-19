@@ -3716,17 +3716,21 @@ function _renderCalendar(el, classId) {
               <div>
                 <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Classroom Snapshot</p>
                 <p class="mt-1 text-[15px] font-semibold text-slate-800">Attendance, delivered structure, and session note</p>
+                <p class="mt-1 text-[12px] text-slate-500">A quick record of who was absent, what structure was captured, and any session note.</p>
               </div>
-              <div class="flex gap-2 flex-wrap">
-                <span class="badge badge-gray">${selectedAbsentCount} absent</span>
-                <span class="badge badge-gray">${selectedHeadlineCount} headlines</span>
+              <div class="flex gap-2 flex-wrap text-[11px]">
+                <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600">${selectedAbsentCount} absent</span>
+                <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600">${selectedHeadlineCount} headlines</span>
                 <span class="badge ${selectedSessionNotePreview ? 'badge-blue' : 'badge-gray'}">${selectedSessionNotePreview ? 'Note saved' : 'No note yet'}</span>
               </div>
             </div>
             <div class="mt-4 grid grid-cols-1 lg:grid-cols-2 gap-3">
-              <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+              <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                 <div class="flex items-center justify-between gap-2">
-                  <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Absent Students</h4>
+                  <div>
+                    <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Absent Students</h4>
+                    <p class="mt-1 text-[12px] text-slate-500">Students marked absent for this session.</p>
+                  </div>
                   <button id="btn-edit-selected-attendance" class="btn btn-ghost btn-sm" ${selectedCanAttendanceEdit ? '' : 'disabled'} title="${_escapeHtml(selectedAttendanceTitle)}">Edit Attendance</button>
                 </div>
                 ${_selectedSessionLoading
@@ -3747,8 +3751,9 @@ function _renderCalendar(el, classId) {
           : '<p class="text-[12px] text-slate-500 mt-2">No absent students for this session.</p>'}
               </div>
 
-              <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+              <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
                 <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Headlines Structure</h4>
+                <p class="mt-1 text-[12px] text-slate-500">The recorded structure captured for the delivered lesson.</p>
                 ${_selectedSessionLoading
       ? '<p class="text-[12px] text-slate-500 mt-2">Loading session progress...</p>'
       : _selectedSessionError
@@ -3767,8 +3772,9 @@ function _renderCalendar(el, classId) {
       : '<p class="text-[12px] text-slate-500 mt-2">No headlines recorded for this session.</p>'}
               </div>
             </div>
-            <div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+            <div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
               <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Session Note</h4>
+              <p class="mt-1 text-[12px] text-slate-500">Teacher note saved for this lesson.</p>
               ${selectedSessionNotePreview
       ? `<p class="mt-2 text-[13px] text-slate-700 whitespace-pre-wrap leading-relaxed">${_escapeHtml(selectedSessionNotePreview)}</p>${selectedSessionNote.length > selectedSessionNotePreview.length ? '<p class="mt-2 text-[11px] text-slate-400">The note is longer in full edit view.</p>' : ''}`
       : '<p class="text-[12px] text-slate-500 mt-2">No note for this session.</p>'}
@@ -3800,7 +3806,7 @@ function _renderCalendar(el, classId) {
                   ? '<p class="text-[12px] text-slate-500 mt-2">This workflow session has no saved unit-session number yet.</p>'
                     : `
                       <div class="mt-3 flex flex-col gap-3">
-                        <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-3">
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
                           <p class="text-[12px] font-semibold text-slate-700">Unit Session ${Number(selectedSessionNumber)}</p>
                           <div class="mt-2 flex items-center gap-2 flex-wrap">
                             <span class="badge ${plannedSessionStatus.className}">${_escapeHtml(plannedSessionStatus.label)}</span>
@@ -3817,11 +3823,12 @@ function _renderCalendar(el, classId) {
                         ${_calendarPlannedHideDone && plannedSessionDoneCount > 0 && !visiblePlannedSessionTree.length
                           ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">All planned rows for this session are already completed. Use <span class="font-semibold">Show Completed Rows</span> if you want to review them.</div>'
                           : ''}
-                        <div class="rounded-2xl border border-slate-200 bg-white px-3 py-3">
+                        <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                          <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">Planned Route</p>
                           ${_renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId })}
                         </div>
                         ${plannedResumeNode ? _renderCalendarNextFocusActions(plannedResumeSectionPlan, plannedResumePlaybookEntry, plannedResumeNode.title, { classId, unitId: selectedEvent?.unit_id }) : ''}
-                        <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-3">
+                        <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
                           <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Matched Section Plans</p>
                           ${_renderCalendarSectionPlans(selectedSectionPlans, plannedSessionTitles)}
                         </div>
