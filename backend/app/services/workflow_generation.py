@@ -766,6 +766,7 @@ def generate_session_writeup_package(
     session_number: int | None,
     checked_item_ids: list[int],
     checked_item_titles: list[str],
+    checked_item_contexts: list[dict[str, Any]] | None = None,
     note_text: str,
     source_text: str,
     provider: str | None = None,
@@ -782,6 +783,7 @@ def generate_session_writeup_package(
     )
     session_context = _build_session_writeup_context(
         checked_item_titles=checked_item_titles,
+        checked_item_contexts=checked_item_contexts,
         unit_map=unit_map,
         content_blocks=content_blocks,
         saved_guidance=saved_guidance,
@@ -803,6 +805,7 @@ def generate_session_writeup_package(
             session_number=session_number,
             checked_item_ids=checked_item_ids,
             checked_item_titles=checked_item_titles,
+            checked_item_contexts=checked_item_contexts,
             note_text=note_text,
             source_text=source_text,
             unit_map=unit_map,
@@ -817,6 +820,7 @@ def generate_session_writeup_package(
             session_number=session_number,
             checked_item_ids=checked_item_ids,
             checked_item_titles=checked_item_titles,
+            checked_item_contexts=checked_item_contexts,
             note_text=note_text,
             source_text=source_text,
             document_path=document_path,
@@ -832,6 +836,7 @@ def generate_session_writeup_package(
         session_number=session_number,
         checked_item_ids=checked_item_ids,
         checked_item_titles=checked_item_titles,
+        checked_item_contexts=checked_item_contexts,
         note_text=note_text,
         source_text=source_text,
         unit_map=unit_map,
@@ -849,6 +854,8 @@ def generate_session_writeup_package(
         "document_path": str(document_path or "").strip() or None,
         "provider_context": provider_context if isinstance(provider_context, dict) else None,
         "unit_brain_used": bool(session_context.get("matched_section_paths") or session_context.get("matched_block_titles") or session_context.get("matched_guidance_titles")),
+        "checked_item_paths": session_context.get("checked_item_paths") or [],
+        "checked_section_paths": session_context.get("checked_section_paths") or [],
         "matched_section_titles": session_context.get("matched_section_titles") or [],
         "matched_section_paths": session_context.get("matched_section_paths") or [],
         "matched_block_titles": session_context.get("matched_block_titles") or [],
@@ -1368,6 +1375,7 @@ def _notebooklm_generate_session_writeup(
     session_number: int | None,
     checked_item_ids: list[int],
     checked_item_titles: list[str],
+    checked_item_contexts: list[dict[str, Any]] | None,
     note_text: str,
     source_text: str,
     document_path: str | None,
@@ -1384,6 +1392,7 @@ def _notebooklm_generate_session_writeup(
                 session_number=session_number,
                 checked_item_ids=checked_item_ids,
                 checked_item_titles=checked_item_titles,
+                checked_item_contexts=checked_item_contexts,
                 note_text=note_text,
                 source_text=source_text,
                 document_path=document_path,
@@ -1428,6 +1437,7 @@ async def _notebooklm_generate_session_writeup_async(
     session_number: int | None,
     checked_item_ids: list[int],
     checked_item_titles: list[str],
+    checked_item_contexts: list[dict[str, Any]] | None,
     note_text: str,
     source_text: str,
     document_path: str | None,
@@ -1457,6 +1467,7 @@ async def _notebooklm_generate_session_writeup_async(
     source_ids = [str(value).strip() for value in ((provider_context or {}).get("source_ids") or []) if str(value).strip()]
     session_context = _build_session_writeup_context(
         checked_item_titles=checked_item_titles,
+        checked_item_contexts=checked_item_contexts,
         unit_map=unit_map,
         content_blocks=content_blocks,
         saved_guidance=saved_guidance,
@@ -1657,6 +1668,7 @@ def _extract_saved_guidance_excerpt(artifact: dict[str, Any] | None, *, limit: i
 def _build_session_writeup_context(
     *,
     checked_item_titles: list[str],
+    checked_item_contexts: list[dict[str, Any]] | None = None,
     unit_map: dict[str, Any] | None,
     content_blocks: list[dict[str, Any]] | None,
     saved_guidance: list[dict[str, Any]] | None,
@@ -1666,6 +1678,60 @@ def _build_session_writeup_context(
         for value in checked_item_titles
         if _semantic_title_key(value)
     }
+    normalized_checked_contexts: list[dict[str, Any]] = []
+    checked_path_keys: set[str] = set()
+    checked_section_path_keys: set[str] = set()
+    checked_item_paths: list[list[str]] = []
+    checked_section_paths: list[list[str]] = []
+    for raw_context in checked_item_contexts or []:
+        if not isinstance(raw_context, dict):
+            continue
+        item_path = [
+            _normalize_outline_title(value)
+            for value in (raw_context.get("item_path") if isinstance(raw_context.get("item_path"), list) else [])
+            if _normalize_outline_title(value)
+        ]
+        section_path = [
+            _normalize_outline_title(value)
+            for value in (raw_context.get("section_path") if isinstance(raw_context.get("section_path"), list) else [])
+            if _normalize_outline_title(value)
+        ]
+        title = _normalize_outline_title(raw_context.get("title"))
+        if not title and not item_path and not section_path:
+            continue
+        item_path_key = "|".join(_semantic_title_key(value) for value in item_path if _semantic_title_key(value))
+        section_path_key = "|".join(_semantic_title_key(value) for value in section_path if _semantic_title_key(value))
+        if title and _semantic_title_key(title):
+            checked_keys.add(_semantic_title_key(title))
+        if item_path_key:
+            checked_path_keys.add(item_path_key)
+            checked_item_paths.append(item_path)
+        if section_path_key:
+            checked_section_path_keys.add(section_path_key)
+            checked_section_paths.append(section_path)
+        normalized_checked_contexts.append(
+            {
+                "title": title or (item_path[-1] if item_path else None),
+                "item_kind": str(raw_context.get("item_kind") or "").strip().lower() or None,
+                "item_path": item_path,
+                "section_path": section_path,
+                "item_path_key": item_path_key,
+                "section_path_key": section_path_key,
+            }
+        )
+
+    def _path_contains_checked_prefix(path_key: str, *, allow_item_path: bool = True) -> bool:
+        if not path_key:
+            return False
+        if path_key in checked_section_path_keys:
+            return True
+        if allow_item_path and path_key in checked_path_keys:
+            return True
+        for checked_key in checked_path_keys:
+            if checked_key.startswith(f"{path_key}|"):
+                return True
+        return False
+
     section_plans = unit_map.get("section_plans") if isinstance(unit_map, dict) and isinstance(unit_map.get("section_plans"), list) else []
     matched_plans: list[dict[str, Any]] = []
     matched_path_keys: set[str] = set()
@@ -1693,10 +1759,10 @@ def _build_session_writeup_context(
                 if _semantic_title_key(value)
             ),
         }
-        if not checked_keys.intersection(candidate_keys):
+        path_key = "|".join(_semantic_title_key(value) for value in section_path if _semantic_title_key(value))
+        if not checked_keys.intersection(candidate_keys) and not _path_contains_checked_prefix(path_key):
             continue
         matched_plans.append(raw_plan)
-        path_key = "|".join(_semantic_title_key(value) for value in section_path if _semantic_title_key(value))
         if path_key:
             matched_path_keys.add(path_key)
         matched_section_titles.append(section_title)
@@ -1724,6 +1790,7 @@ def _build_session_writeup_context(
             title_key in checked_keys
             or section_key in checked_keys
             or path_key in matched_path_keys
+            or _path_contains_checked_prefix(path_key)
             or any(_semantic_title_key(value) in checked_keys for value in section_path)
         ):
             continue
@@ -1765,6 +1832,7 @@ def _build_session_writeup_context(
         if not (
             _semantic_title_key(section_title) in checked_keys
             or artifact_path_key in matched_path_keys
+            or _path_contains_checked_prefix(artifact_path_key, allow_item_path=False)
             or any(_semantic_title_key(value) in checked_keys for value in section_path)
         ):
             continue
@@ -1775,6 +1843,8 @@ def _build_session_writeup_context(
         matched_guidance_titles.append(title or section_title or f"Saved guidance {len(matched_guidance)}")
 
     return {
+        "checked_item_paths": checked_item_paths[:12],
+        "checked_section_paths": checked_section_paths[:12],
         "matched_plans": matched_plans[:8],
         "matched_blocks": matched_blocks[:18],
         "matched_guidance": matched_guidance[:6],
@@ -4622,6 +4692,7 @@ def _openai_generate_session_writeup(
     session_number: int | None,
     checked_item_ids: list[int],
     checked_item_titles: list[str],
+    checked_item_contexts: list[dict[str, Any]] | None,
     note_text: str,
     source_text: str,
     unit_map: dict[str, Any] | None,
@@ -4634,6 +4705,7 @@ def _openai_generate_session_writeup(
     checked_titles = [str(value or "").strip() for value in checked_item_titles if str(value or "").strip()]
     session_context = _build_session_writeup_context(
         checked_item_titles=checked_item_titles,
+        checked_item_contexts=checked_item_contexts,
         unit_map=unit_map,
         content_blocks=content_blocks,
         saved_guidance=saved_guidance,
@@ -4734,6 +4806,7 @@ def _fallback_session_writeup_package(
     session_number: int | None,
     checked_item_ids: list[int],
     checked_item_titles: list[str],
+    checked_item_contexts: list[dict[str, Any]] | None,
     note_text: str,
     source_text: str,
     unit_map: dict[str, Any] | None,
@@ -4744,6 +4817,7 @@ def _fallback_session_writeup_package(
     _ = source_text
     session_context = _build_session_writeup_context(
         checked_item_titles=checked_item_titles,
+        checked_item_contexts=checked_item_contexts,
         unit_map=unit_map,
         content_blocks=content_blocks,
         saved_guidance=saved_guidance,

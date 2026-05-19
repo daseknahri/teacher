@@ -336,6 +336,16 @@ function _normalizeCalendarWriteupSourcePayload(payload) {
     requestedProvider: payload.requested_provider ? String(payload.requested_provider).trim() : '',
     providerUsed: payload.provider_used ? String(payload.provider_used).trim() : '',
     unitBrainUsed: Boolean(payload.unit_brain_used),
+    checkedPaths: Array.isArray(payload.checked_item_paths)
+      ? payload.checked_item_paths
+        .map(path => Array.isArray(path) ? path.map(part => String(part || '').trim()).filter(Boolean).join(' > ') : '')
+        .filter(Boolean)
+      : [],
+    checkedSectionPaths: Array.isArray(payload.checked_section_paths)
+      ? payload.checked_section_paths
+        .map(path => Array.isArray(path) ? path.map(part => String(part || '').trim()).filter(Boolean).join(' > ') : '')
+        .filter(Boolean)
+      : [],
     matchedSections: Array.isArray(payload.matched_section_titles)
       ? payload.matched_section_titles.map(row => String(row || '').trim()).filter(Boolean)
       : [],
@@ -362,6 +372,24 @@ function _renderCalendarWriteupSourcePayload(payload) {
   if (normalized.providerUsed) summaryBadges.push(`Used ${_escapeHtml(normalized.providerUsed)}`);
   summaryBadges.push(normalized.unitBrainUsed ? 'Unit brain matched' : 'Generic session context');
   const rows = [];
+  if (normalized.checkedPaths.length) {
+    rows.push(`
+      <div class="rounded-xl border border-slate-200 bg-white px-3 py-3">
+        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Checked Route</p>
+        <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+          ${normalized.checkedPaths.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
+        </ul>
+      </div>`);
+  }
+  if (normalized.checkedSectionPaths.length) {
+    rows.push(`
+      <div class="rounded-xl border border-slate-200 bg-white px-3 py-3">
+        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Checked Teaching Sections</p>
+        <ul class="mt-1 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
+          ${normalized.checkedSectionPaths.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
+        </ul>
+      </div>`);
+  }
   if (normalized.matchedSections.length) {
     rows.push(`
       <div class="rounded-xl border border-slate-200 bg-white px-3 py-3">

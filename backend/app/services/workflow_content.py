@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from ..models import (
     ClassSession,
     WorkflowChecklistItem,
+    WorkflowChecklistItemKind,
     WorkflowSessionChecklistAction,
     WorkflowSessionWriteup,
     WorkflowUnit,
@@ -117,6 +118,69 @@ def _serialize_unit_assistant_artifact_context(unit: WorkflowUnit | None) -> lis
     return output
 
 
+def _serialize_checked_item_contexts(
+    db: Session,
+    *,
+    unit_id: int,
+    checked_item_ids: list[int],
+) -> list[dict]:
+    selected_ids = [int(value) for value in checked_item_ids if int(value) > 0]
+    if not selected_ids:
+        return []
+
+    items = db.scalars(
+        select(WorkflowChecklistItem)
+        .where(WorkflowChecklistItem.unit_id == int(unit_id))
+        .order_by(WorkflowChecklistItem.position.asc(), WorkflowChecklistItem.id.asc())
+    ).all()
+    if not items:
+        return []
+
+    by_id = {int(row.id): row for row in items}
+    structural_kinds = {
+        WorkflowChecklistItemKind.CHAPTER.value,
+        WorkflowChecklistItemKind.SECTION.value,
+        WorkflowChecklistItemKind.SUBSECTION.value,
+    }
+
+    output: list[dict] = []
+    for item_id in selected_ids:
+        row = by_id.get(int(item_id))
+        if row is None:
+            continue
+        path_nodes: list[WorkflowChecklistItem] = []
+        seen_ids: set[int] = set()
+        current = row
+        while current is not None and int(current.id) not in seen_ids:
+            seen_ids.add(int(current.id))
+            path_nodes.append(current)
+            parent_id = int(current.parent_item_id) if current.parent_item_id is not None else 0
+            current = by_id.get(parent_id) if parent_id > 0 else None
+        path_nodes.reverse()
+
+        item_path = [str(node.title or "").strip() for node in path_nodes if str(node.title or "").strip()]
+        if not item_path:
+            continue
+        structural_path = [
+            str(node.title or "").strip()
+            for node in path_nodes
+            if str(node.title or "").strip()
+            and str(getattr(node.item_kind, "value", node.item_kind) or "").strip().lower() in structural_kinds
+        ]
+        if not structural_path:
+            structural_path = item_path[:-1] or item_path
+        output.append(
+            {
+                "item_id": int(row.id),
+                "title": str(row.title or "").strip(),
+                "item_kind": str(getattr(row.item_kind, "value", row.item_kind) or "").strip().lower() or WorkflowChecklistItemKind.OTHER.value,
+                "item_path": item_path,
+                "section_path": structural_path,
+            }
+        )
+    return output
+
+
 def generate_and_store_session_writeup(
     db: Session,
     *,
@@ -166,6 +230,15 @@ def generate_and_store_session_writeup(
         content_blocks_json = unit.blueprint.content_blocks_json
     if unit is not None:
         assistant_artifacts_json = _serialize_unit_assistant_artifact_context(unit)
+    checked_item_contexts = (
+        _serialize_checked_item_contexts(
+            db,
+            unit_id=int(unit.id),
+            checked_item_ids=checked_item_ids,
+        )
+        if unit is not None and checked_item_ids
+        else []
+    )
 
     package = generate_session_writeup_package(
         unit_title=str(unit.title or "").strip() if unit is not None else "",
@@ -173,6 +246,7 @@ def generate_and_store_session_writeup(
         session_number=session_number if session_number > 0 else None,
         checked_item_ids=checked_item_ids,
         checked_item_titles=checked_titles,
+        checked_item_contexts=checked_item_contexts,
         note_text=note_text,
         source_text=source_text,
         provider=provider,

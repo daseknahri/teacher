@@ -2522,6 +2522,16 @@ function _normalizeWriteupSourcePayload(payload) {
   const matchedSections = Array.isArray(payload.matched_section_titles)
     ? payload.matched_section_titles.map(row => String(row || '').trim()).filter(Boolean)
     : [];
+  const checkedPaths = Array.isArray(payload.checked_item_paths)
+    ? payload.checked_item_paths
+      .map(path => Array.isArray(path) ? path.map(row => String(row || '').trim()).filter(Boolean).join(' > ') : '')
+      .filter(Boolean)
+    : [];
+  const checkedSectionPaths = Array.isArray(payload.checked_section_paths)
+    ? payload.checked_section_paths
+      .map(path => Array.isArray(path) ? path.map(row => String(row || '').trim()).filter(Boolean).join(' > ') : '')
+      .filter(Boolean)
+    : [];
   const matchedPaths = Array.isArray(payload.matched_section_paths)
     ? payload.matched_section_paths
       .map(path => Array.isArray(path) ? path.map(row => String(row || '').trim()).filter(Boolean).join(' > ') : '')
@@ -2551,6 +2561,8 @@ function _normalizeWriteupSourcePayload(payload) {
     requestedProvider: String(payload.requested_provider || '').trim() || null,
     providerUsed: String(payload.provider_used || '').trim() || null,
     unitBrainUsed: Boolean(payload.unit_brain_used),
+    checkedPaths,
+    checkedSectionPaths,
     matchedSections,
     matchedPaths,
     matchedBlocks,
@@ -2568,6 +2580,8 @@ function _renderWriteupSourcePayload(payload, { compact = false } = {}) {
   summaryBadges.push(meta.unitBrainUsed ? 'Unit brain matched' : 'Generic session context');
 
   const groups = [
+    ['Checked route', meta.checkedPaths],
+    ['Checked teaching sections', meta.checkedSectionPaths],
     ['Matched sections', meta.matchedSections],
     ['Matched paths', meta.matchedPaths],
     ['Matched blocks', meta.matchedBlocks],
