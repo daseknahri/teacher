@@ -2694,6 +2694,26 @@ function _renderSessionPlannedTree(nodes, depth = 0) {
     </ul>`;
 }
 
+function _renderSessionFallbackRouteRows(rows) {
+  const items = Array.isArray(rows) ? rows : [];
+  if (!items.length) {
+    return '<p class="text-[12px] text-slate-500">No checked checklist items are recorded for this session yet.</p>';
+  }
+  return `
+    <div class="flex flex-col gap-2">
+      ${items.map(row => `
+        <div class="rounded-xl border border-slate-200 bg-white px-3 py-2" style="margin-left:${Math.max(0, Number(row?.depth || 0)) * 14}px">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-[12px] text-slate-700">${_escapeHtml(String(row?.title || 'Checklist item'))}</span>
+            <span class="badge badge-green">Checked</span>
+            ${row?.item_kind ? `<span class="badge badge-gray">${_escapeHtml(String(row.item_kind))}</span>` : ''}
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
 function _renderSessionPlaybookPreview(unitMap, plannedTitles) {
   const playbook = Array.isArray(unitMap?.teacher_playbook) ? unitMap.teacher_playbook.filter(Boolean) : [];
   const titleKeys = new Set((Array.isArray(plannedTitles) ? plannedTitles : []).map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
@@ -2927,6 +2947,7 @@ function _render(el, classId) {
   const activeUnitMap = activeBlueprint?.unit_map_json && typeof activeBlueprint.unit_map_json === 'object'
     ? activeBlueprint.unit_map_json
     : {};
+  const checklist = _checklist(unit);
   const previewSessionNumber = !session && _workflowEntryContext?.source === 'calendar'
     ? Number(_workflowEntryContext.unit_session_number || 0) || null
     : null;
@@ -2935,7 +2956,20 @@ function _render(el, classId) {
   const previewSessionTitleKeys = new Set(previewSessionPlanTitles.map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
   const activeSessionPlanTree = session?.unit_session_number ? _collectSessionPlannedNodes(activeBlueprintTree, session.unit_session_number) : [];
   const activeSessionPlanTitles = _flattenSessionPlannedTitles(activeSessionPlanTree, []);
-  const activeSessionMatchedGuidance = unit?.id ? _filterAssistantArtifactsForPlannedTitles(_unitAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(unit.id || 0)}`) || [], activeUnitMap, activeSessionPlanTitles) : [];
+  const activeSessionCheckedChecklist = session
+    ? checklist.filter(item => Number(item?.completed_session_id || 0) === Number(session.id || 0))
+    : [];
+  const activeSessionCheckedTitles = activeSessionCheckedChecklist.map(item => String(item?.title || '').trim()).filter(Boolean);
+  const activeEffectiveRouteTitles = activeSessionPlanTitles.length ? activeSessionPlanTitles : activeSessionCheckedTitles;
+  const activeEffectiveTitleKeys = new Set(activeEffectiveRouteTitles.map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
+  const activeEffectiveChecklist = session
+    ? checklist.filter(item => activeEffectiveTitleKeys.has(String(item?.title || '').trim().toLowerCase()))
+    : [];
+  const activeFallbackFocusIds = _collectPreviewFocusIds(checklist, activeEffectiveTitleKeys);
+  const activeFallbackRouteRows = activeSessionPlanTitles.length
+    ? []
+    : _visibleChecklistRows(checklist.filter(item => activeFallbackFocusIds.has(Number(item?.id || 0))), new Set());
+  const activeSessionMatchedGuidance = unit?.id ? _filterAssistantArtifactsForPlannedTitles(_unitAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(unit.id || 0)}`) || [], activeUnitMap, activeEffectiveRouteTitles) : [];
   const activeSessionImportedGuidanceIds = _getImportedAssistantArtifactIds(sessionWriteupState.item);
   const activeSessionRemainingGuidance = activeSessionMatchedGuidance.filter(item => !activeSessionImportedGuidanceIds.has(Number(item?.id || 0)));
   const activeSessionRemainingGuidanceCount = activeSessionRemainingGuidance.length;
@@ -2947,7 +2981,6 @@ function _render(el, classId) {
   const activeSessionBestRemainingGuidance = activeSessionRemainingGuidanceCount === 1 ? activeSessionRemainingGuidance[0] : null;
 
   // Progress ring
-  const checklist = _checklist(unit);
   _syncChecklistCollapseState(unit, checklist);
   _ensureChecklistFocusVisible(checklist, previewSessionTitleKeys);
   const checklistChildrenCount = _buildChecklistChildrenCount(checklist);
@@ -2983,20 +3016,24 @@ function _render(el, classId) {
     previewKindCounts.definition ? `${previewKindCounts.definition} definitions` : '',
     previewKindCounts.property ? `${previewKindCounts.property} properties` : '',
   ].filter(Boolean);
-  const activeSessionTitleKeys = new Set(activeSessionPlanTitles.map(value => String(value || '').trim().toLowerCase()).filter(Boolean));
-  const activeMatchedChecklist = session
-    ? checklist.filter(item => activeSessionTitleKeys.has(String(item?.title || '').trim().toLowerCase()))
-    : [];
+  const activeMatchedChecklist = activeEffectiveChecklist;
   const activeMatchedDone = activeMatchedChecklist.filter(item => Boolean(item?.is_completed || item?.done)).length;
   const activeMatchedRemaining = Math.max(0, activeMatchedChecklist.length - activeMatchedDone);
-  const activeCompletionPct = activeMatchedChecklist.length ? Math.round((activeMatchedDone / activeMatchedChecklist.length) * 100) : 0;
-  const activeRouteStatus = !activeMatchedChecklist.length
+  const activeHasPlannedRoute = activeSessionPlanTitles.length > 0;
+  const activeCompletionPct = activeHasPlannedRoute
+    ? (activeMatchedChecklist.length ? Math.round((activeMatchedDone / activeMatchedChecklist.length) * 100) : 0)
+    : (activeMatchedChecklist.length ? 100 : 0);
+  const activeRouteStatus = activeHasPlannedRoute
+    ? (!activeMatchedChecklist.length
     ? { label: 'No route saved', className: 'badge-gray', hint: 'No planned checklist route is saved for this live session yet.' }
     : activeMatchedDone === 0
       ? { label: 'Not started', className: 'badge-blue', hint: 'This planned route has not been covered yet.' }
       : activeMatchedRemaining === 0
       ? { label: 'Fully covered', className: 'badge-green', hint: 'All planned rows for this session are already completed.' }
-      : { label: 'Partly covered', className: 'badge-amber', hint: `${activeMatchedRemaining} planned row${activeMatchedRemaining === 1 ? '' : 's'} still remain.` };
+      : { label: 'Partly covered', className: 'badge-amber', hint: `${activeMatchedRemaining} planned row${activeMatchedRemaining === 1 ? '' : 's'} still remain.` })
+    : (activeMatchedChecklist.length
+      ? { label: 'Recorded in session', className: 'badge-blue', hint: `${activeMatchedChecklist.length} checked checklist row${activeMatchedChecklist.length === 1 ? '' : 's'} already recorded for this live session.` }
+      : { label: 'No route saved', className: 'badge-gray', hint: 'No planned checklist route or checked checklist rows are saved for this live session yet.' });
   const activeKindCounts = activeMatchedChecklist.reduce((acc, item) => {
     const kind = String(item?.item_kind || '').trim().toLowerCase();
     if (!kind || kind === 'other') return acc;
@@ -3004,9 +3041,9 @@ function _render(el, classId) {
     return acc;
   }, {});
   const activeSummaryBadges = [
-    activeMatchedChecklist.length ? `${activeMatchedChecklist.length} planned items` : '',
-    activeMatchedChecklist.length ? `${activeMatchedDone}/${activeMatchedChecklist.length} done` : '',
-    activeMatchedChecklist.length ? `${activeMatchedRemaining} remaining` : '',
+    activeMatchedChecklist.length ? `${activeMatchedChecklist.length} ${activeHasPlannedRoute ? 'planned' : 'checked'} items` : '',
+    activeHasPlannedRoute && activeMatchedChecklist.length ? `${activeMatchedDone}/${activeMatchedChecklist.length} done` : '',
+    activeHasPlannedRoute && activeMatchedChecklist.length ? `${activeMatchedRemaining} remaining` : '',
     activeMatchedChecklist.length ? `${activeCompletionPct}% covered` : '',
     activeKindCounts.activity ? `${activeKindCounts.activity} activities` : '',
     activeKindCounts.example ? `${activeKindCounts.example} examples` : '',
@@ -3014,7 +3051,11 @@ function _render(el, classId) {
     activeKindCounts.definition ? `${activeKindCounts.definition} definitions` : '',
     activeKindCounts.property ? `${activeKindCounts.property} properties` : '',
   ].filter(Boolean);
-  const activeProgressCount = sessionProgressState.loaded ? Number(sessionProgressState.items?.length || 0) : 0;
+  const activeSavedProgressCount = Number(sessionProgressState.items?.length || 0);
+  const activeFallbackProgressCount = activeSessionCheckedChecklist.length;
+  const activeProgressCount = activeSavedProgressCount > 0
+    ? activeSavedProgressCount
+    : activeFallbackProgressCount;
   const activeWriteupStateLabel = !sessionWriteupState.item
     ? 'Not saved'
     : sessionWriteupState.item.approved === false
@@ -3034,24 +3075,30 @@ function _render(el, classId) {
         ? 'Review the draft, import any remaining saved guidance, then approve it when it matches the lesson.'
         : 'Review the draft write-up and approve it when it matches what happened in class.'
       : 'The write-up is approved. Keep teaching from the planned route and reopen it only if the lesson changes.';
-  const activeRouteValueLabel = activeMatchedChecklist.length ? `${activeMatchedDone}/${activeMatchedChecklist.length}` : '0';
-  const activeRouteProgressCaption = activeMatchedChecklist.length
-    ? (activeMatchedRemaining === 0
-      ? 'All planned rows for this live session are covered'
-      : `${activeMatchedRemaining} planned row${activeMatchedRemaining === 1 ? '' : 's'} still remain`)
-    : 'No planned checklist route saved for this live session yet';
+  const activeRouteValueLabel = activeHasPlannedRoute
+    ? (activeMatchedChecklist.length ? `${activeMatchedDone}/${activeMatchedChecklist.length}` : '0')
+    : `${activeMatchedChecklist.length}`;
+  const activeRouteProgressCaption = activeHasPlannedRoute
+    ? (activeMatchedChecklist.length
+      ? (activeMatchedRemaining === 0
+        ? 'All planned rows for this live session are covered'
+        : `${activeMatchedRemaining} planned row${activeMatchedRemaining === 1 ? '' : 's'} still remain`)
+      : 'No planned checklist route saved for this live session yet')
+    : (activeMatchedChecklist.length
+      ? `${activeMatchedChecklist.length} checked checklist row${activeMatchedChecklist.length === 1 ? '' : 's'} already captured in this live session`
+      : 'No checked checklist rows have been captured in this live session yet');
   const activeGuidanceCaption = activeSessionRemainingGuidanceCount === 0
     ? 'No reusable saved guidance left'
     : activeSessionRemainingGuidanceCount === 1
       ? '1 saved item still reusable'
       : `${activeSessionRemainingGuidanceCount} saved items still reusable`;
-  const activeProgressCaption = sessionProgressState.loaded
-    ? (activeProgressCount === 0
-      ? 'No confirmed progress rows saved yet'
-      : activeProgressCount === 1
-        ? '1 confirmed progress row saved'
-        : `${activeProgressCount} confirmed progress rows saved`)
-    : 'Load to review saved rows';
+  const activeProgressCaption = activeSavedProgressCount > 0
+    ? (activeSavedProgressCount === 1
+      ? '1 confirmed progress row saved'
+      : `${activeSavedProgressCount} confirmed progress rows saved`)
+    : activeFallbackProgressCount > 0
+      ? `${activeFallbackProgressCount} checked checklist row${activeFallbackProgressCount === 1 ? '' : 's'} already recorded in this session`
+      : (sessionProgressState.loaded ? 'No confirmed progress rows or checked checklist rows saved yet' : 'Load to review saved rows');
   const activeWriteupToneClass = !sessionWriteupState.item
     ? 'text-slate-900'
     : sessionWriteupState.item.approved === false
@@ -3619,7 +3666,7 @@ function _render(el, classId) {
               <div class="flex items-center justify-between gap-2 flex-wrap">
                 <div>
                   <h4 class="text-[13px] font-semibold text-slate-700">Planned Session Route</h4>
-                  <p class="text-[12px] text-slate-500">What this unit session was planned to cover before live teaching started.</p>
+                  <p class="text-[12px] text-slate-500">${activeHasPlannedRoute ? 'What this unit session was planned to cover before live teaching started.' : 'Using the checklist work already recorded in this live session as the route context.'}</p>
                 </div>
                 <div class="flex items-center gap-2 flex-wrap w-full sm:w-auto">
                   ${session?.unit_session_number ? `<span class="badge badge-blue">Unit Session ${session.unit_session_number}</span>` : ''}
@@ -3630,17 +3677,17 @@ function _render(el, classId) {
                 ? '<p class="text-[12px] text-slate-500">Planned session route is collapsed. Expand it when you want to review the saved route and teacher prep for this lesson.</p>'
                 : unitBlueprintState.loading && !activeBlueprint ? '<p class="text-[12px] text-slate-500">Loading planned route...</p>'
                 : unitBlueprintState.error ? `<p class="text-[12px] text-red-600">${_escapeHtml(unitBlueprintState.error)}</p>`
-                  : !session?.unit_session_number ? '<p class="text-[12px] text-slate-500">This session has no saved unit-session number yet.</p>'
+                  : !session?.unit_session_number && !activeFallbackRouteRows.length ? '<p class="text-[12px] text-slate-500">This session has no saved unit-session number yet.</p>'
                     : `
                       <div class="flex flex-col gap-3">
                         <div class="grid grid-cols-1 lg:grid-cols-[0.85fr_1.15fr] gap-3">
                           <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                            <p class="text-[12px] font-semibold text-slate-700">Unit Session ${Number(session.unit_session_number)}</p>
+                            <p class="text-[12px] font-semibold text-slate-700">${session?.unit_session_number ? `Unit Session ${Number(session.unit_session_number)}` : 'Live session route'}</p>
                             <div class="mt-2 flex items-center gap-2 flex-wrap">
                               <span class="badge ${activeRouteStatus.className}">${_escapeHtml(activeRouteStatus.label)}</span>
                             </div>
                             <p class="mt-2 text-[12px] text-slate-600 leading-relaxed">${_escapeHtml(activeRouteStatus.hint)}</p>
-                            <p class="mt-2 text-[11px] text-slate-400">Saved checklist route for this live unit session.</p>
+                            <p class="mt-2 text-[11px] text-slate-400">${activeSessionPlanTitles.length ? 'Saved checklist route for this live unit session.' : 'Using the checklist rows already checked in this session as the live route context.'}</p>
                           </div>
                           <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                             <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">Session Route Brief</p>
@@ -3653,13 +3700,13 @@ function _render(el, classId) {
                         </div>
                         <div class="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-3">
                           <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                            <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">Planned Route</p>
-                            ${_renderSessionPlannedTree(activeSessionPlanTree)}
+                            <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">${activeSessionPlanTitles.length ? 'Planned Route' : 'Checked In This Session'}</p>
+                            ${activeSessionPlanTitles.length ? _renderSessionPlannedTree(activeSessionPlanTree) : _renderSessionFallbackRouteRows(activeFallbackRouteRows)}
                           </div>
                           <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
                             <p class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Teacher Prep</p>
-                            <p class="text-[12px] text-slate-500 mb-3">Notebook-backed suggestions tied to this planned route.</p>
-                            ${_renderSessionPlaybookPreview(activeUnitMap, activeSessionPlanTitles)}
+                            <p class="text-[12px] text-slate-500 mb-3">${activeSessionPlanTitles.length ? 'Notebook-backed suggestions tied to this planned route.' : 'Notebook-backed suggestions tied to the checklist work already captured in this session.'}</p>
+                            ${_renderSessionPlaybookPreview(activeUnitMap, activeEffectiveRouteTitles)}
                           </div>
                         </div>
                       </div>`}
@@ -3682,15 +3729,14 @@ function _render(el, classId) {
         ? '<p class="text-[12px] text-slate-500">Loading session progress...</p>'
         : sessionProgressState.error
           ? `<p class="text-[12px] text-red-600">${_escapeHtml(sessionProgressState.error)}</p>`
-          : sessionProgressState.loaded
-            ? sessionProgressState.items.length
+          : activeSavedProgressCount > 0
               ? `<div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                 <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
                   <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Confirmed Progress</p>
                     <p class="mt-1 text-[12px] text-slate-500">Items that were already saved as confirmed session progress.</p>
                   </div>
-                  <span class="badge badge-gray">${sessionProgressState.items.length} saved</span>
+                  <span class="badge badge-gray">${activeSavedProgressCount} saved</span>
                 </div>
                 <div class="flex flex-col gap-1">
                 ${sessionProgressState.items.map(item => `
@@ -3700,8 +3746,26 @@ function _render(el, classId) {
                   </div>
                 `).join('')}
               </div></div>`
-              : '<p class="text-[12px] text-slate-500">No confirmed progress items yet. Extract and apply session notes to populate this list.</p>'
-            : '<p class="text-[12px] text-slate-500">Load to preview confirmed progress items for this session.</p>'}
+            : activeSessionCheckedChecklist.length
+              ? `<div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
+                  <div>
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Checked Checklist Progress</p>
+                    <p class="mt-1 text-[12px] text-slate-500">Using the checklist rows already checked in this live session.</p>
+                  </div>
+                  <span class="badge badge-blue">${activeSessionCheckedChecklist.length} recorded</span>
+                </div>
+                <div class="flex flex-col gap-1">
+                ${activeSessionCheckedChecklist.map(item => `
+                  <div class="session-progress-item-row">
+                    <span class="session-progress-type-badge type-${String(item.item_kind || 'lesson').toLowerCase()}">${_progressItemTypeLabel(item.item_kind)}</span>
+                    <span class="session-progress-item-text">${_escapeHtml(String(item.title || 'Checklist item'))}</span>
+                  </div>
+                `).join('')}
+              </div></div>`
+              : sessionProgressState.loaded
+                ? '<p class="text-[12px] text-slate-500">No confirmed progress items yet. Check checklist rows or extract and apply session notes to populate this list.</p>'
+                : '<p class="text-[12px] text-slate-500">Load to preview confirmed progress items for this session.</p>'}
             </div>
             <div class="bg-slate-50 rounded-2xl border border-slate-200 p-4 flex flex-col gap-3">
               <div class="flex items-center justify-between gap-2 flex-wrap">
@@ -3732,9 +3796,9 @@ function _render(el, classId) {
                 : `
               <div class="rounded-xl border border-slate-200 bg-white p-3 flex flex-col gap-2">
                 <div class="flex items-start justify-between gap-3 flex-wrap">
-                  <div>
-                    <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
-                    <p class="text-[12px] text-slate-500 mt-1">Reusable section help that matches this planned session route.</p>
+                <div>
+                  <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
+                  <p class="text-[12px] text-slate-500 mt-1">${activeHasPlannedRoute ? 'Reusable section help that matches this planned session route.' : 'Reusable section help that matches the checklist work already recorded in this session.'}</p>
                     ${_renderSessionGuidanceSummary(activeSessionMatchedGuidance.length, activeSessionImportedGuidanceIds.size, _sessionGuidanceHideImported)}
                     ${_sessionGuidanceKindFilter !== 'all' ? `<div class="mt-2"><span class="badge badge-blue">Filtered: ${_escapeHtml(_assistantArtifactKindLabel(_sessionGuidanceKindFilter))}</span></div>` : ''}
                     ${_renderSessionGuidanceKindFilters(activeSessionMatchedGuidance, _sessionGuidanceKindFilter)}

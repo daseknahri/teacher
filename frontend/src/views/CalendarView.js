@@ -582,6 +582,25 @@ function _flattenCalendarBlueprintTitles(nodes, output = []) {
   return output;
 }
 
+function _renderCalendarFallbackRouteRows(items) {
+  const rows = Array.isArray(items) ? items.map(value => String(value || '').trim()).filter(Boolean) : [];
+  if (!rows.length) {
+    return '<p class="text-[12px] text-slate-500">No checked checklist items are recorded for this session yet.</p>';
+  }
+  return `
+    <div class="flex flex-col gap-2">
+      ${rows.map(value => `
+        <div class="rounded-xl border border-slate-200 bg-white px-3 py-3">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="text-[12px] text-slate-700">${_escapeHtml(value)}</span>
+            <span class="badge badge-green">Checked</span>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
 function _flattenCalendarBlueprintNodes(nodes, output = []) {
   const rows = Array.isArray(nodes) ? nodes : [];
   rows.forEach(node => {
@@ -3294,9 +3313,18 @@ function _renderCalendar(el, classId) {
   const selectedBlueprintTree = selectedBlueprint?.blueprint_json && typeof selectedBlueprint.blueprint_json === 'object' && Array.isArray(selectedBlueprint.blueprint_json.items)
     ? selectedBlueprint.blueprint_json.items
     : [];
+  const selectedCheckedItems = Array.isArray(selectedEvent?.checked_items)
+    ? selectedEvent.checked_items.map(value => String(value || '').trim()).filter(Boolean)
+    : [];
   const plannedSessionTree = selectedSessionNumber ? _collectSessionBlueprintNodes(selectedBlueprintTree, selectedSessionNumber) : [];
   const plannedSessionTitles = _flattenCalendarBlueprintTitles(plannedSessionTree, []);
-  const plannedSessionSummary = _buildCalendarPlannedSessionSummary(plannedSessionTree);
+  const selectedEffectiveRouteTitles = plannedSessionTitles.length ? plannedSessionTitles : selectedCheckedItems;
+  const plannedSessionSummary = plannedSessionTitles.length
+    ? _buildCalendarPlannedSessionSummary(plannedSessionTree)
+    : [
+        selectedCheckedItems.length ? `${selectedCheckedItems.length} checked items` : '',
+        selectedCheckedItems.length ? '100% covered' : '',
+      ].filter(Boolean);
   const plannedSessionFlat = _flattenCalendarBlueprintNodes(plannedSessionTree, []);
   const plannedSessionDoneCount = plannedSessionFlat.filter(node => Boolean(node?.is_completed)).length;
   const plannedSessionRemainingCount = Math.max(0, plannedSessionFlat.length - plannedSessionDoneCount);
@@ -3306,7 +3334,9 @@ function _renderCalendar(el, classId) {
     ? plannedSessionFlat.find(node => Number(node?.id || 0) === plannedResumeNodeId) || null
     : null;
   const plannedSessionStatus = !plannedSessionFlat.length
-    ? { label: 'No route saved', className: 'badge-gray', hint: 'No planned checklist route is saved for this session yet.' }
+    ? (selectedCheckedItems.length
+      ? { label: 'Recorded in session', className: 'badge-blue', hint: `${selectedCheckedItems.length} checked checklist row${selectedCheckedItems.length === 1 ? '' : 's'} already recorded for this session.` }
+      : { label: 'No route saved', className: 'badge-gray', hint: 'No planned checklist route is saved for this session yet.' })
     : plannedSessionDoneCount === 0
       ? { label: 'Not started', className: 'badge-blue', hint: 'This planned route has not been covered yet.' }
       : plannedSessionRemainingCount === 0
@@ -3318,7 +3348,7 @@ function _renderCalendar(el, classId) {
     : {};
   const selectedSectionPlans = Array.isArray(selectedUnitMap?.section_plans) ? selectedUnitMap.section_plans : [];
   const selectedMatchedGuidance = selectedEvent?.unit_id != null
-    ? _filterCalendarAssistantArtifactsForPlannedTitles(_calendarAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(selectedEvent.unit_id || 0)}`) || [], selectedUnitMap, plannedSessionTitles)
+    ? _filterCalendarAssistantArtifactsForPlannedTitles(_calendarAssistantArtifactCache.get(`${Number(classId || 0)}:${Number(selectedEvent.unit_id || 0)}`) || [], selectedUnitMap, selectedEffectiveRouteTitles)
     : [];
   const selectedImportedGuidanceIds = _getCalendarImportedAssistantArtifactIds(selectedWriteup);
   const selectedRemainingGuidance = selectedMatchedGuidance.filter(item => !selectedImportedGuidanceIds.has(Number(item?.id || 0)));
@@ -3879,18 +3909,18 @@ function _renderCalendar(el, classId) {
                 ? '<p class="text-[12px] text-slate-500 mt-2">This session is not linked to a workflow unit.</p>'
                 : selectedBlueprintError
                   ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedBlueprintError)}</p>`
-                : !selectedSessionNumber
+                : !selectedSessionNumber && !selectedCheckedItems.length
                   ? '<p class="text-[12px] text-slate-500 mt-2">This workflow session has no saved unit-session number yet.</p>'
                     : `
                       <div class="mt-3 flex flex-col gap-3">
                         <div class="grid grid-cols-1 lg:grid-cols-[0.85fr_1.15fr] gap-3">
                           <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                            <p class="text-[12px] font-semibold text-slate-700">Unit Session ${Number(selectedSessionNumber)}</p>
+                            <p class="text-[12px] font-semibold text-slate-700">${selectedSessionNumber ? `Unit Session ${Number(selectedSessionNumber)}` : 'Recorded Session Route'}</p>
                             <div class="mt-2 flex items-center gap-2 flex-wrap">
                               <span class="badge ${plannedSessionStatus.className}">${_escapeHtml(plannedSessionStatus.label)}</span>
                             </div>
                             <p class="mt-2 text-[12px] text-slate-600 leading-relaxed">${_escapeHtml(plannedSessionStatus.hint)}</p>
-                            <p class="mt-2 text-[11px] text-slate-400">Planned checklist path for this saved unit session.</p>
+                            <p class="mt-2 text-[11px] text-slate-400">${plannedSessionTitles.length ? 'Planned checklist path for this saved unit session.' : 'Using the checklist rows already recorded for this session as the route context.'}</p>
                           </div>
                           <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                             <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">Session Route Brief</p>
@@ -3908,14 +3938,14 @@ function _renderCalendar(el, classId) {
                           : ''}
                         <div class="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-3">
                           <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                            <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">Planned Route</p>
-                            ${_renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId })}
+                            <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">${plannedSessionTitles.length ? 'Planned Route' : 'Checked In This Session'}</p>
+                            ${plannedSessionTitles.length ? _renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId }) : _renderCalendarFallbackRouteRows(selectedCheckedItems)}
                           </div>
                           <div class="flex flex-col gap-3">
                             ${plannedResumeNode ? _renderCalendarNextFocusActions(plannedResumeSectionPlan, plannedResumePlaybookEntry, plannedResumeNode.title, { classId, unitId: selectedEvent?.unit_id }) : ''}
                             <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
                               <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Matched Section Plans</p>
-                              ${_renderCalendarSectionPlans(selectedSectionPlans, plannedSessionTitles)}
+                              ${_renderCalendarSectionPlans(selectedSectionPlans, selectedEffectiveRouteTitles)}
                             </div>
                           </div>
                         </div>
@@ -3952,7 +3982,7 @@ function _renderCalendar(el, classId) {
                 : selectedBlueprintError
                   ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedBlueprintError)}</p>`
                   : `<div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                      ${_renderCalendarTeacherPrep(selectedUnitMap, plannedSessionTitles)}
+                      ${_renderCalendarTeacherPrep(selectedUnitMap, selectedEffectiveRouteTitles)}
                     </div>`}
           </div>
 
@@ -4003,7 +4033,7 @@ function _renderCalendar(el, classId) {
               <div class="flex items-start justify-between gap-3 flex-wrap">
                 <div>
                   <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
-                  <p class="text-[12px] text-slate-500 mt-1">Reusable unit help that matches this planned session route.</p>
+                  <p class="text-[12px] text-slate-500 mt-1">${plannedSessionTitles.length ? 'Reusable unit help that matches this planned session route.' : 'Reusable unit help that matches the checklist work already recorded in this session.'}</p>
                   ${_renderCalendarSessionGuidanceSummary(selectedMatchedGuidance.length, selectedImportedGuidanceIds.size, _calendarSessionGuidanceHideImported)}
                   ${_calendarSessionGuidanceKindFilter !== 'all' ? `<div class="mt-2"><span class="badge badge-blue">Filtered: ${_escapeHtml(_assistantArtifactKindLabel(_calendarSessionGuidanceKindFilter))}</span></div>` : ''}
                   ${_renderCalendarSessionGuidanceKindFilters(selectedMatchedGuidance, _calendarSessionGuidanceKindFilter)}
