@@ -6471,8 +6471,9 @@ def _build_calendar_events(db: Session, class_id: int) -> list[WorkflowCalendarE
                 end_time=session.end_time,
                 absent_count=absent_count,
                 absent_student_ids=sorted(int(value) for value in absent_ids),
-                checked_items_count=len(checked_items),
+                checked_items_count=len(sorted_checked_rows),
                 checked_items=outline_rows or checked_items,
+                checked_item_ids=[int(row.id) for row in sorted_checked_rows],
                 checked_item_paths=[
                     [str(part).strip() for part in (row.get("item_path") or []) if str(part).strip()]
                     for row in checked_item_contexts

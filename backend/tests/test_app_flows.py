@@ -4837,7 +4837,7 @@ def test_workflow_checklist_reorder_supports_reparent_and_reposition(client):
     assert child_id in root_b_children
 
 
-def test_workflow_parent_toggle_checks_children_and_calendar(client):
+def test_workflow_leaf_toggle_updates_calendar_checked_item_ids(client):
     headers = _auth_headers(client)
     class_resp = client.post("/classes", json={"name": "Workflow Cascade 2APIC", "subject": "Math"}, headers=headers)
     assert class_resp.status_code == 201
@@ -4882,25 +4882,32 @@ def test_workflow_parent_toggle_checks_children_and_calendar(client):
     assert start_session_resp.status_code == 201
     session_id = start_session_resp.json()["id"]
 
-    toggle_resp = client.post(
+    toggle_parent_resp = client.post(
         f"/workflow/classes/{class_id}/sessions/{session_id}/items/{parent_id}/toggle",
         headers=headers,
         json={"checked": True},
     )
-    assert toggle_resp.status_code == 200
-    assert toggle_resp.json()["is_completed"] is True
+    assert toggle_parent_resp.status_code == 409
+
+    toggle_child_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/{session_id}/items/{child_id}/toggle",
+        headers=headers,
+        json={"checked": True},
+    )
+    assert toggle_child_resp.status_code == 200
+    assert toggle_child_resp.json()["is_completed"] is True
 
     workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
     assert workspace_resp.status_code == 200
     flat = _flatten_checklist(workspace_resp.json()["active_unit"]["checklist"])
     by_id = {int(row["id"]): row for row in flat}
-    assert by_id[parent_id]["is_completed"] is True
     assert by_id[child_id]["is_completed"] is True
+    assert by_id[parent_id]["is_completed"] is True
 
     end_resp = client.post(
         f"/workflow/classes/{class_id}/sessions/{session_id}/end",
         headers=headers,
-        json={"end_time": "10:00:00"},
+        json={"end_time": "23:00:00"},
     )
     assert end_resp.status_code == 200
 
@@ -4910,7 +4917,9 @@ def test_workflow_parent_toggle_checks_children_and_calendar(client):
     assert event is not None
     checked_items = [str(value or "") for value in event.get("checked_items", [])]
     checked_text = " | ".join(checked_items).lower()
-    assert event.get("checked_items_count", 0) >= 2
+    assert event.get("checked_items_count", 0) == 1
+    assert len(event.get("checked_item_ids", [])) >= 1
+    assert all(int(value) > 0 for value in event.get("checked_item_ids", []))
     assert "parent topic" in checked_text
     assert "child practice" in checked_text
 

@@ -1676,6 +1676,7 @@ function _coerceCalendarEvent(row) {
     absent_student_ids: Array.isArray(row?.absent_student_ids) ? row.absent_student_ids.map(Number).filter(Number.isFinite) : [],
     checked_items_count: Number(row?.checked_items_count || 0),
     checked_items: Array.isArray(row?.checked_items) ? row.checked_items.map(v => String(v || '').trim()).filter(Boolean) : [],
+    checked_item_ids: Array.isArray(row?.checked_item_ids) ? row.checked_item_ids.map(Number).filter(Number.isFinite) : [],
     checked_item_paths: Array.isArray(row?.checked_item_paths)
       ? row.checked_item_paths.map(path => Array.isArray(path) ? path.map(v => String(v || '').trim()).filter(Boolean) : []).filter(path => path.length)
       : [],
@@ -3639,6 +3640,9 @@ function _renderCalendar(el, classId) {
   const selectedCheckedItems = Array.isArray(selectedEvent?.checked_items)
     ? selectedEvent.checked_items.map(value => String(value || '').trim()).filter(Boolean)
     : [];
+  const selectedCheckedItemIds = Array.isArray(selectedEvent?.checked_item_ids)
+    ? selectedEvent.checked_item_ids.map(value => Number(value)).filter(Number.isFinite)
+    : [];
   const selectedCheckedItemPaths = Array.isArray(selectedEvent?.checked_item_paths)
     ? selectedEvent.checked_item_paths.map(path => Array.isArray(path) ? path.map(value => String(value || '').trim()).filter(Boolean) : []).filter(path => path.length)
     : [];
@@ -3648,12 +3652,36 @@ function _renderCalendar(el, classId) {
   const plannedSessionTree = selectedSessionNumber ? _collectSessionBlueprintNodes(selectedBlueprintTree, selectedSessionNumber) : [];
   const plannedSessionPaths = _collectCalendarBlueprintPaths(plannedSessionTree, [], []);
   const plannedSessionTitles = _flattenCalendarBlueprintTitles(plannedSessionTree, []);
-  const selectedEffectiveRouteTitles = plannedSessionTitles.length ? plannedSessionTitles : selectedCheckedItems;
+  const selectedFallbackRouteItems = selectedCheckedItemPaths.length
+    ? selectedCheckedItemPaths.map((path, index) => ({
+      id: Number(selectedCheckedItemIds[index] || 0) || null,
+      title: path[path.length - 1] || selectedCheckedItems[index] || 'Checklist item',
+      kind: '',
+      is_completed: true,
+      path,
+      sectionPath: Array.isArray(selectedCheckedSectionPaths[index]) && selectedCheckedSectionPaths[index].length
+        ? selectedCheckedSectionPaths[index]
+        : (path.length > 1 ? path.slice(0, -1) : [path[path.length - 1] || 'Checklist item']),
+    }))
+    : selectedCheckedItems.map((title, index) => ({
+      id: Number(selectedCheckedItemIds[index] || 0) || null,
+      title,
+      kind: '',
+      is_completed: true,
+      path: Array.isArray(selectedCheckedItemPaths[index]) && selectedCheckedItemPaths[index].length ? selectedCheckedItemPaths[index] : [title],
+      sectionPath: Array.isArray(selectedCheckedSectionPaths[index]) && selectedCheckedSectionPaths[index].length
+        ? selectedCheckedSectionPaths[index]
+        : (Array.isArray(selectedCheckedItemPaths[index]) && selectedCheckedItemPaths[index].length > 1 ? selectedCheckedItemPaths[index].slice(0, -1) : [title]),
+    }));
+  const selectedEffectiveRouteTitles = plannedSessionTitles.length
+    ? plannedSessionTitles
+    : (selectedFallbackRouteItems.length ? selectedFallbackRouteItems.map(item => item.title).filter(Boolean) : selectedCheckedItems);
+  const selectedRecordedRouteCount = selectedFallbackRouteItems.length || selectedCheckedItems.length;
   const plannedSessionSummary = plannedSessionTitles.length
     ? _buildCalendarPlannedSessionSummary(plannedSessionTree)
     : [
-        selectedCheckedItems.length ? `${selectedCheckedItems.length} checked items` : '',
-        selectedCheckedItems.length ? '100% covered' : '',
+        selectedRecordedRouteCount ? `${selectedRecordedRouteCount} checked item${selectedRecordedRouteCount === 1 ? '' : 's'}` : '',
+        selectedRecordedRouteCount ? '100% covered' : '',
       ].filter(Boolean);
   const plannedSessionFlat = _flattenCalendarBlueprintNodes(plannedSessionTree, []);
   const plannedSessionDoneCount = plannedSessionFlat.filter(node => Boolean(node?.is_completed)).length;
@@ -3664,8 +3692,8 @@ function _renderCalendar(el, classId) {
     ? plannedSessionFlat.find(node => Number(node?.id || 0) === plannedResumeNodeId) || null
     : null;
   const plannedSessionStatus = !plannedSessionFlat.length
-    ? (selectedCheckedItems.length
-      ? { label: 'Recorded in session', className: 'badge-blue', hint: `${selectedCheckedItems.length} checked checklist row${selectedCheckedItems.length === 1 ? '' : 's'} already recorded for this session.` }
+    ? (selectedRecordedRouteCount
+      ? { label: 'Recorded in session', className: 'badge-blue', hint: `${selectedRecordedRouteCount} checked checklist row${selectedRecordedRouteCount === 1 ? '' : 's'} already recorded for this session.` }
       : { label: 'No route saved', className: 'badge-gray', hint: 'No planned checklist route is saved for this session yet.' })
     : plannedSessionDoneCount === 0
       ? { label: 'Not started', className: 'badge-blue', hint: 'This planned route has not been covered yet.' }
@@ -3677,16 +3705,6 @@ function _renderCalendar(el, classId) {
     ? selectedBlueprint.unit_map_json
     : {};
   const selectedSectionPlans = Array.isArray(selectedUnitMap?.section_plans) ? selectedUnitMap.section_plans : [];
-  const selectedFallbackRouteItems = selectedCheckedItems.map((title, index) => ({
-    id: null,
-    title,
-    kind: '',
-    is_completed: true,
-    path: Array.isArray(selectedCheckedItemPaths[index]) && selectedCheckedItemPaths[index].length ? selectedCheckedItemPaths[index] : [title],
-    sectionPath: Array.isArray(selectedCheckedSectionPaths[index]) && selectedCheckedSectionPaths[index].length
-      ? selectedCheckedSectionPaths[index]
-      : (Array.isArray(selectedCheckedItemPaths[index]) && selectedCheckedItemPaths[index].length > 1 ? selectedCheckedItemPaths[index].slice(0, -1) : [title]),
-  }));
   const selectedTeachingFlowGroups = _buildCalendarTeachingFlowGroups(
     plannedSessionPaths.length
       ? plannedSessionPaths.map(row => ({

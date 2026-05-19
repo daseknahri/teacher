@@ -654,6 +654,7 @@ class WorkflowSessionOut(BaseModel):
     absent_count: int = 0
     absent_student_ids: list[int] = Field(default_factory=list)
     checked_items_count: int = 0
+    checked_item_ids: list[int] = Field(default_factory=list)
     checked_item_paths: list[list[str]] = Field(default_factory=list)
     checked_section_paths: list[list[str]] = Field(default_factory=list)
     has_saved_writeup: bool = False
@@ -832,6 +833,7 @@ class WorkflowCalendarEventOut(BaseModel):
     absent_student_ids: list[int] = Field(default_factory=list)
     checked_items_count: int
     checked_items: list[str] = Field(default_factory=list)
+    checked_item_ids: list[int] = Field(default_factory=list)
     checked_item_paths: list[list[str]] = Field(default_factory=list)
     checked_section_paths: list[list[str]] = Field(default_factory=list)
     note: str | None = None
