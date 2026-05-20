@@ -2939,7 +2939,7 @@ function _buildSessionTeachingChecklistGroups(items, unitMap, allChecklistItems 
   return groups;
 }
 
-function _renderSessionTeachingChecklistGroups(groups, { hasPlannedRoute = false } = {}) {
+function _renderSessionTeachingChecklistGroups(groups, { hasPlannedRoute = false, classId = null, unitId = null } = {}) {
   const rows = Array.isArray(groups) ? groups : [];
   if (!rows.length) {
     return `<p class="text-[12px] text-slate-500">${hasPlannedRoute ? 'No matched teaching route rows are ready for this session yet.' : 'Start checking checklist rows to build the live teaching flow for this session.'}</p>`;
@@ -2994,7 +2994,7 @@ function _renderSessionTeachingChecklistGroups(groups, { hasPlannedRoute = false
                                     ${Array.isArray(entry?.context?.itemPath) && entry.context.itemPath.length > 1
                                       ? `<span class="text-[11px] text-slate-400">${_escapeHtml(entry.context.itemPath.slice(0, -1).join(' > '))}</span>`
                                       : ''}
-                                    ${renderLeafStatusBadge(item.id, classId, Number(unit?.id || 0))}
+                                    ${renderLeafStatusBadge(item.id, classId, unitId)}
                                   </div>
                                 </div>
                               </div>
@@ -4299,7 +4299,7 @@ function _render(el, classId) {
                     ${activeMatchedChecklist.length ? `<span class="badge badge-gray">${activeMatchedChecklist.length} route row${activeMatchedChecklist.length === 1 ? '' : 's'}</span>` : ''}
                   </div>
                 </div>
-                ${_renderSessionTeachingChecklistGroups(activeTeachingFlowGroups, { hasPlannedRoute: activeHasPlannedRoute })}
+                ${_renderSessionTeachingChecklistGroups(activeTeachingFlowGroups, { hasPlannedRoute: activeHasPlannedRoute, classId, unitId: Number(unit?.id || 0) || null })}
               </div>
               <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                 <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
