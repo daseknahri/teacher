@@ -1072,7 +1072,7 @@ def _build_exact_source_segments_from_blocks(
         if kind not in {"activity", "example", "exercise", "evaluation", "lesson", "definition", "property"}:
             return []
         lines = [line.rstrip() for line in str(content_md or "").split("\n")]
-        marker_pattern = re.compile(r"^(?:\d+\s*[\).:-]|[-*\u2022])\s+")
+        marker_pattern = re.compile(r"^(?:(?:\d+|[A-Za-z])\s*[\).:-]|[-*\u2022])\s+")
         marker_indexes = [index for index, line in enumerate(lines) if marker_pattern.match(line.strip())]
         compact_lines = [line.strip() for line in lines if line.strip()]
         short_math_mode = len(compact_lines) >= 2 and sum(1 for line in compact_lines if looks_like_short_math_line(line)) >= 2
@@ -3967,7 +3967,7 @@ def _normalize_content_block_markdown(value: Any, *, limit: int) -> str:
         return ""
     lines = [line.strip(" \t") for line in text.split("\n")]
     expanded_lines: list[str] = []
-    inline_number_pattern = re.compile(r"(^|\s)\d+\s*[\).:-](?=\s|$)")
+    inline_number_pattern = re.compile(r"(^|\s)(?:\d+|[A-Za-z])\s*[\).:-](?=\s|$)")
     for line in lines:
         if not line:
             expanded_lines.append("")

@@ -38,6 +38,25 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-20 17:00 - Codex
+
+- Status: done
+- Goal: preserve lettered workbook-style rows so exercise leaves keep source content that uses `a)`, `b)`, `c)` instead of only numbered steps
+- Files expected:
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/test_app_flows.py`
+- Assumptions:
+  - lettered exercise rows should behave like numbered rows for exact-source preservation
+  - this should improve textbook-style practice leaves without affecting long prose
+- Notes:
+  - reused the same conservative splitting path as numbered rows to keep behavior predictable
+- Result:
+  - markdown normalization now splits inline lettered rows like `a) ... b) ... c) ...`
+  - exact-source segment building now splits lettered rows into separate teachable source blocks
+  - added regression coverage for a lettered practice block
+- Follow-up:
+  - next fidelity pass should focus on layout-only structures like table-style rows or visually indented substeps
+
 ### 2026-05-20 16:35 - Codex
 
 - Status: done
