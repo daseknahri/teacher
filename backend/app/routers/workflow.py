@@ -7106,13 +7106,26 @@ def get_section_lesson(
             WorkflowPreparedSection.section_key == section_key,
         )
     )
-    if row is None or str(row.status or "").strip().lower() != "prepared":
-        raise HTTPException(status_code=409, detail="Prepare this section first from Unit Setup.")
-    return _serialize_section_lesson_from_record(
-        row,
+    if row is not None and str(row.status or "").strip().lower() == "prepared":
+        return _serialize_section_lesson_from_record(
+            row,
+            item_path=normalized_item_path,
+            item_title=payload.item_title,
+        ).model_dump()
+
+    blueprint = db.scalar(select(WorkflowUnitBlueprint).where(WorkflowUnitBlueprint.unit_id == int(unit_id)))
+    if blueprint is None or not isinstance(blueprint.content_blocks_json, list) or not blueprint.content_blocks_json:
+        raise HTTPException(status_code=409, detail="Unit extracted content is required before opening a section lesson.")
+    lesson = build_source_section_lesson_package(
+        section_title=normalized_section_path[-1] if normalized_section_path else None,
+        section_path=normalized_section_path,
         item_path=normalized_item_path,
         item_title=payload.item_title,
-    ).model_dump()
+        content_blocks=blueprint.content_blocks_json,
+    )
+    if int(lesson.get("source_block_count") or 0) <= 0 and not str(lesson.get("source_excerpt_md") or "").strip():
+        raise HTTPException(status_code=404, detail="No extracted section content found for this lesson.")
+    return lesson
 
 
 @router.get("/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}", response_model=WorkflowLeafContentOut)

@@ -7801,7 +7801,7 @@ def test_section_lesson_endpoint_returns_matching_section_content(client):
     assert "3/7 + 2/7" not in combined
 
 
-def test_section_lesson_requires_prepared_section(client):
+def test_section_lesson_falls_back_to_blueprint_content_when_unprepared(client):
     headers = _auth_headers(client)
     class_resp = client.post(
         "/classes",
@@ -7841,8 +7841,11 @@ def test_section_lesson_requires_prepared_section(client):
         headers=headers,
         json={"section_path": ["Rationnels", "Produit et division"]},
     )
-    assert resp.status_code == 409
-    assert "prepare this section first" in resp.json()["detail"].lower()
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["section_title"] == "Produit et division"
+    combined = "\n".join(row["content_md"] for row in payload["source_blocks"])
+    assert "2/3 x 4/5" in combined
 
 
 def test_prepare_unit_section_stores_persisted_section_record(client):
@@ -7920,6 +7923,78 @@ def test_prepare_unit_section_stores_persisted_section_record(client):
     combined = "\n".join(row["content_md"] for row in fetched["source_blocks_json"])
     assert "2/3 x 4/5" in combined
     assert "3/7 x 2/7" in combined
+
+
+def test_section_lesson_prefers_prepared_section_record_when_available(client):
+    headers = _auth_headers(client)
+    class_resp = client.post(
+        "/classes",
+        json={"name": f"PreparedLessonFirst {uuid.uuid4().hex[:6]}", "subject": "Math"},
+        headers=headers,
+    )
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    start_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={"unit_type": "chapter", "title": "Prepared Wins Unit", "source_text": "Produit et division\nExemples\nExercices"},
+    )
+    assert start_resp.status_code == 201
+    unit_id = start_resp.json()["id"]
+
+    from app.database import SessionLocal
+    from app.models import WorkflowPreparedSection, WorkflowUnitBlueprint
+    from app.services.workflow_generation import build_section_key
+
+    with SessionLocal() as db_session:
+        blueprint = db_session.query(WorkflowUnitBlueprint).filter(WorkflowUnitBlueprint.unit_id == unit_id).one()
+        blueprint.content_blocks_json = [
+            {
+                "section_title": "Produit et division",
+                "section_path": ["Rationnels", "Produit et division"],
+                "title": "Source fallback",
+                "kind": "example",
+                "teaching_material": "Fallback text from blueprint.",
+                "source_excerpt": "Fallback text from blueprint.",
+            },
+        ]
+        db_session.add(
+            WorkflowPreparedSection(
+                unit_id=unit_id,
+                section_key=build_section_key(["Rationnels", "Produit et division"], fallback_title="Produit et division"),
+                section_title="Produit et division",
+                section_path_json=["Rationnels", "Produit et division"],
+                order_index=0,
+                source_blocks_json=[
+                    {
+                        "title": "Prepared block",
+                        "kind": "example",
+                        "kind_label": "Example",
+                        "teaching_phase": "example",
+                        "content_md": "Prepared text should win.",
+                        "content_source": "source_extract",
+                    }
+                ],
+                source_excerpt_md="Prepared text should win.",
+                latex_source="Prepared latex",
+                provider="notebooklm",
+                status="prepared",
+                benchmark_status="pending",
+            )
+        )
+        db_session.commit()
+
+    resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/section-lesson",
+        headers=headers,
+        json={"section_path": ["Rationnels", "Produit et division"]},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    combined = "\n".join(row["content_md"] for row in payload["source_blocks"])
+    assert "Prepared text should win." in combined
+    assert "Fallback text from blueprint." not in combined
 
 
 def test_leaf_content_generate_requires_blueprint(client):

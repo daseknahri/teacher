@@ -185,7 +185,7 @@ export async function openLeafContentModal(classId, unitId, item) {
         <p class="text-[13px] text-slate-400 py-8 text-center">Loading section content...</p>
       </div>
       <div class="lcm-footer">
-        <div class="text-[12px] text-slate-400">Exact prepared section content</div>
+        <div class="text-[12px] text-slate-400">Exact section content</div>
         <button id="lcm-btn-close2" class="btn btn-ghost btn-sm">Close</button>
       </div>
     </div>
@@ -223,8 +223,8 @@ export async function openLeafContentModal(classId, unitId, item) {
     if (!blocks.length && !excerpt) {
       body.innerHTML = `
         <div class="lcm-teach-empty">
-          <p class="lcm-teach-empty-title">No prepared section content found</p>
-          <p class="lcm-teach-empty-detail">Prepare this section from Unit Setup first, then open Lesson again.</p>
+          <p class="lcm-teach-empty-title">No section content found</p>
+          <p class="lcm-teach-empty-detail">This section does not have usable extracted content yet. We should improve extraction for this section before adding anything else.</p>
         </div>`;
       return;
     }
@@ -284,14 +284,6 @@ export async function openLeafContentModal(classId, unitId, item) {
     });
   } catch (err) {
     const message = String(err?.message || 'Failed to open section lesson');
-    if (message.toLowerCase().includes('prepare this section first')) {
-      body.innerHTML = `
-        <div class="lcm-teach-empty">
-          <p class="lcm-teach-empty-title">Prepare this section first</p>
-          <p class="lcm-teach-empty-detail">Use the Prepare Sections action in Unit Setup, then open Lesson again.</p>
-        </div>`;
-      return;
-    }
     showToast(message, 'error');
     close();
   }
