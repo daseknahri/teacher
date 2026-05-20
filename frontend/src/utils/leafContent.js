@@ -99,6 +99,17 @@ function _cleanTeachContent(contentMd, { itemTitle = '', blockTitle = '', pathVa
   return lines.join('\n').trim() || raw;
 }
 
+function _semanticContentKey(text) {
+  return String(text || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[*_`>#-]+/g, ' ')
+    .replace(/\$+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 const EMPTY_LEAF_CONTENT = Object.freeze({
   id: null,
   unit_id: null,
@@ -397,11 +408,23 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
     const readyCount = _countReadySections(draft);
     const totalCount = CONTENT_FIELDS.length;
     const mainFields = CONTENT_FIELDS.filter(field => field.key !== 'source_excerpt_md');
-    const sections = mainFields.filter(field => draft[field.key]);
+    const exactSourceKeys = new Set(
+      _normalizeExactSourceSegments(draft)
+        .map(segment => _semanticContentKey(segment.contentMd))
+        .filter(Boolean)
+    );
+    const sections = mainFields.filter(field => {
+      const value = String(draft[field.key] || '').trim();
+      if (!value) return false;
+      const valueKey = _semanticContentKey(value);
+      return !valueKey || !exactSourceKeys.has(valueKey);
+    });
     const excerpt = draft.source_excerpt_md;
     const exactSourceSegments = _normalizeExactSourceSegments(draft);
+    const excerptKey = _semanticContentKey(excerpt);
+    const showExcerpt = Boolean(excerpt) && (!excerptKey || !exactSourceKeys.has(excerptKey));
 
-    if (!sections.length && !excerpt && !exactSourceSegments.length) {
+    if (!sections.length && !showExcerpt && !exactSourceSegments.length) {
       body.innerHTML = `
         <p class="text-[13px] text-slate-400 py-8 text-center">
           No content fields filled in yet.
@@ -452,7 +475,7 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
             <div class="lcm-prose">${renderMarkdownLatex(draft[field.key], { preserveLineBreaks: true })}</div>
           </div>
         `).join('')}
-        ${excerpt ? `
+        ${showExcerpt ? `
           <details class="rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
             <summary class="text-[11px] font-semibold text-slate-400 cursor-pointer select-none">Source Excerpt</summary>
             <div class="lcm-prose text-[12px] text-slate-500 mt-3">${renderMarkdownLatex(excerpt, { preserveLineBreaks: true })}</div>

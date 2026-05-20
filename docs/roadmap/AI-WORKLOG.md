@@ -55,6 +55,7 @@ Keep entries short and factual.
   - exact-source blocks for activities/examples/exercises/assessments now split into multiple stored source segments when the text contains multiple numbered rows
   - teach mode outline now shows shorter labels like `Part 1`, `Part 2` when the backend split titles would otherwise repeat the leaf title
   - added regression coverage proving one numbered exercise block becomes three exact source segments
+  - review mode now hides duplicated structured sections when the same content is already shown in the exact source layer
 - Follow-up:
   - next fidelity pass should preserve short symbolic math lines and compact statement groups even when they are not numbered
 
