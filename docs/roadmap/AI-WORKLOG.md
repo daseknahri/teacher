@@ -343,3 +343,20 @@ Keep entries short and factual.
   - `npm run build`
 - Follow-up:
   - next step is improving the exact source extraction quality for harder PDFs, not adding more UI noise
+### 2026-05-20 15:05 - Codex
+
+- Status: done
+- Goal: preserve fuller exact source text for leaf lessons instead of flattening everything into short one-line summaries
+- Files changed:
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/test_app_flows.py`
+- Notes:
+  - added multiline-preserving normalization for content block markdown
+  - exact source segments now prefer richer raw teaching material when available
+  - source-derived leaf markdown now preserves line breaks better for exercises and worked content
+  - kept the existing lighter summary fields, but stopped degrading the exact-source teaching layer so heavily
+- Validation:
+  - `python -m compileall -q backend/app`
+  - `PYTHONPATH=backend python -m pytest -p no:cacheprovider backend/tests/test_app_flows.py -k "leaf_content or source_derived_leaf_content_preserves_multiline_exact_source"`
+- Follow-up:
+  - next extraction-quality step is to preserve more PDF structure like short lists and numbered steps without over-splitting a leaf that represents one full exercise series

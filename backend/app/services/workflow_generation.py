@@ -1013,8 +1013,8 @@ def _build_leaf_content_markdown_from_blocks(
         if not isinstance(block, dict):
             continue
         title = _normalize_outline_title(block.get("title"))
-        material = _normalize_content_block_text(block.get("teaching_material"), limit=520)
-        excerpt = _normalize_content_block_text(block.get("source_excerpt"), limit=320)
+        material = _normalize_content_block_markdown(block.get("teaching_material_raw") or block.get("teaching_material"), limit=2400)
+        excerpt = _normalize_content_block_markdown(block.get("source_excerpt_raw") or block.get("source_excerpt"), limit=1800)
         primary = excerpt if prefer_excerpt else (material or excerpt)
         secondary = material if prefer_excerpt else excerpt
         if not primary:
@@ -1050,8 +1050,8 @@ def _build_exact_source_segments_from_blocks(
         title = _normalize_outline_title(block.get("title"))
         kind = _normalize_content_block_kind(block.get("kind"))
         phase = str(block.get("teaching_phase") or "").strip() or _normalize_content_block_phase(None, kind=kind, title=title)
-        excerpt = _normalize_content_block_text(block.get("source_excerpt"), limit=1200)
-        material = _normalize_content_block_text(block.get("teaching_material"), limit=1200)
+        excerpt = _normalize_content_block_markdown(block.get("source_excerpt_raw") or block.get("source_excerpt"), limit=4000)
+        material = _normalize_content_block_markdown(block.get("teaching_material_raw") or block.get("teaching_material"), limit=6000)
         use_material = bool(material) and len(material) >= len(excerpt)
         content_md = material if use_material else (excerpt or material)
         if not content_md:
@@ -3849,6 +3849,18 @@ def _normalize_content_block_text(value: Any, *, limit: int) -> str:
     return text
 
 
+def _normalize_content_block_markdown(value: Any, *, limit: int) -> str:
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        return ""
+    lines = [line.strip(" \t") for line in text.split("\n")]
+    text = "\n".join(lines)
+    text = re.sub(r"\n{3,}", "\n\n", text).strip(" \t\r\n;")
+    if len(text) > limit:
+        text = text[:limit].rstrip() + "..."
+    return text
+
+
 def _kind_from_split_label(label: Any, *, fallback: str) -> str:
     folded = _fold_text_key(label)
     if not folded:
@@ -3865,7 +3877,7 @@ def _split_content_block_source_text(
     current_kind: str,
     source_text: str,
 ) -> list[dict[str, str]]:
-    normalized_source = re.sub(r"\s+", " ", str(source_text or "")).strip(" \t\r\n;")
+    normalized_source = _normalize_content_block_markdown(source_text, limit=8000)
     if not normalized_source:
         return []
     matches = list(CONTENT_BLOCK_SPLIT_LABEL_PATTERN.finditer(normalized_source))
@@ -3873,7 +3885,7 @@ def _split_content_block_source_text(
         return []
 
     segments: list[dict[str, str]] = []
-    leading_text = normalized_source[: matches[0].start()].strip(" ;,-")
+    leading_text = _normalize_content_block_markdown(normalized_source[: matches[0].start()], limit=4000)
     if leading_text:
         segments.append(
             {
@@ -3885,7 +3897,7 @@ def _split_content_block_source_text(
 
     for idx, match in enumerate(matches):
         next_start = matches[idx + 1].start() if idx + 1 < len(matches) else len(normalized_source)
-        segment_text = normalized_source[match.start() : next_start].strip(" ;,-")
+        segment_text = _normalize_content_block_markdown(normalized_source[match.start() : next_start], limit=4000)
         if not segment_text:
             continue
         label = _normalize_content_block_text(match.group("label"), limit=180) or title
@@ -3934,6 +3946,8 @@ def _expand_raw_content_block_rows(
             clone["kind"] = segment["kind"] or current_kind
             clone["teaching_material"] = segment["content"]
             clone["source_excerpt"] = segment["content"]
+            clone["teaching_material_raw"] = segment["content"]
+            clone["source_excerpt_raw"] = segment["content"]
             clone["order_index"] = None
             expanded.append(clone)
     return expanded
@@ -4112,10 +4126,12 @@ def _normalize_content_blocks_payload(
             section_title = section_path[-1]
         source_excerpt = _normalize_content_block_text(row.get("source_excerpt"), limit=320)
         teaching_material = _normalize_content_block_text(row.get("teaching_material"), limit=520)
+        source_excerpt_raw = _normalize_content_block_markdown(row.get("source_excerpt"), limit=4000)
+        teaching_material_raw = _normalize_content_block_markdown(row.get("teaching_material"), limit=6000)
         kind = _infer_content_block_kind_from_text(
             title=title,
-            teaching_material=teaching_material,
-            source_excerpt=source_excerpt,
+            teaching_material=teaching_material_raw or teaching_material,
+            source_excerpt=source_excerpt_raw or source_excerpt,
             current_kind=kind,
         )
         student_visible = bool(row.get("student_visible", True))
@@ -4136,6 +4152,8 @@ def _normalize_content_blocks_payload(
             "title": title,
             "source_excerpt": source_excerpt or title,
             "teaching_material": teaching_material or source_excerpt or title,
+            "source_excerpt_raw": source_excerpt_raw or source_excerpt or title,
+            "teaching_material_raw": teaching_material_raw or source_excerpt_raw or teaching_material or source_excerpt or title,
             "student_visible": student_visible,
             "teacher_only": teacher_only,
             "order_index": max(1, order_index),

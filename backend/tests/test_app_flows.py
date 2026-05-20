@@ -7223,6 +7223,48 @@ def test_source_derived_leaf_content_uses_split_exact_block_for_matching():
     assert "3/8 + 1/8 = 4/8" in exact_blocks[0]["content_md"]
 
 
+def test_source_derived_leaf_content_preserves_multiline_exact_source():
+    from app.services import workflow_generation
+    from app.models import WorkflowChecklistItemKind
+
+    content_blocks = workflow_generation._normalize_content_blocks_payload(
+        {
+            "content_blocks": [
+                {
+                    "section_title": "Produit et division",
+                    "section_path": ["Rationnels", "Produit et division"],
+                    "title": "Serie d'exercices de multiplication",
+                    "kind": "exercise",
+                    "teaching_material": (
+                        "Effectuer les calculs suivants : -11/5 × 2/3 ; 8/9 × -4/9.\n"
+                        "Donner le resultat sous forme simplifiee.\n\n"
+                        "Surveiller la gestion des signes des produits."
+                    ),
+                    "source_excerpt": "Bloc d'exercices de multiplication.",
+                }
+            ]
+        },
+        unit_map=None,
+        fallback_outline=None,
+    )
+
+    payload = workflow_generation.build_source_derived_leaf_content_package(
+        item_title="Serie d'exercices de multiplication",
+        item_kind=WorkflowChecklistItemKind.EXERCISE,
+        item_path=["Rationnels", "Produit et division", "Serie d'exercices de multiplication"],
+        section_path=["Rationnels", "Produit et division"],
+        content_blocks=content_blocks,
+    )
+
+    assert "Effectuer les calculs suivants" in (payload["practice_md"] or "")
+    assert "Donner le resultat sous forme simplifiee" in (payload["practice_md"] or "")
+    assert "\n" in (payload["practice_md"] or "")
+    exact_blocks = payload["source_payload"]["extracted_blocks"]
+    assert exact_blocks
+    assert "\n" in exact_blocks[0]["content_md"]
+    assert "Donner le resultat sous forme simplifiee" in exact_blocks[0]["content_md"]
+
+
 def test_leaf_content_generate_requires_blueprint(client):
     headers = _auth_headers(client)
     class_resp = client.post(
