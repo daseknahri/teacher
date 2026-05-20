@@ -38,6 +38,25 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-20 17:45 - Codex
+
+- Status: done
+- Goal: recover column-style exercise rows that flatten into one source line with wide spaces or tabs
+- Files expected:
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/test_app_flows.py`
+- Assumptions:
+  - worksheet-style rows separated by large spaces should become separate lesson rows when at least two parts look like action or math fragments
+  - this should help projector readability without inventing structure
+- Notes:
+  - used a narrow column split on tabs or repeated spaces to avoid breaking ordinary sentences
+- Result:
+  - source markdown normalization now splits column-style rows into separate lines
+  - the existing exact-source segment builder then turns those rows into separate teachable source blocks
+  - added regression coverage for a single-line column-style exercise block
+- Follow-up:
+  - next fidelity pass should target indentation-based substeps and table-like layouts that still lose meaning during text extraction
+
 ### 2026-05-20 17:25 - Codex
 
 - Status: done

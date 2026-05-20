@@ -3997,6 +3997,35 @@ def _normalize_content_block_markdown(value: Any, *, limit: int) -> str:
         has_formula_tokens = any(token in normalized for token in ("\\frac", "(", ")", "[", "]"))
         return operator_count >= 1 and (digit_count >= 1 or has_formula_tokens)
 
+    def looks_like_actionish_fragment(fragment: str) -> bool:
+        normalized = str(fragment or "").strip()
+        if not normalized or len(normalized) > 140:
+            return False
+        words = [token for token in re.split(r"\s+", normalized) if token]
+        if not words or len(words) > 16:
+            return False
+        first = _fold_text_key(words[0]).strip(".:;,-")
+        action_starts = {
+            "calculer",
+            "simplifier",
+            "comparer",
+            "donner",
+            "completer",
+            "verifier",
+            "verifie",
+            "determiner",
+            "developper",
+            "factoriser",
+            "resoudre",
+            "encadrer",
+            "montrer",
+            "deduire",
+            "identifier",
+            "placer",
+            "ordonner",
+        }
+        return first in action_starts
+
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     if not text:
         return ""
@@ -4022,6 +4051,12 @@ def _normalize_content_block_markdown(value: Any, *, limit: int) -> str:
         semicolon_parts = [part.strip(" ;") for part in re.split(r"\s*;\s*", line) if part.strip(" ;")]
         if len(semicolon_parts) >= 2 and sum(1 for part in semicolon_parts if looks_like_mathish_fragment(part)) >= 2:
             expanded_lines.extend(semicolon_parts)
+            continue
+        column_parts = [part.strip() for part in re.split(r"(?:\t+|\s{2,})", line) if part.strip()]
+        if len(column_parts) >= 2 and sum(
+            1 for part in column_parts if looks_like_mathish_fragment(part) or looks_like_actionish_fragment(part)
+        ) >= 2:
+            expanded_lines.extend(column_parts)
             continue
         expanded_lines.append(line)
     text = "\n".join(expanded_lines)
