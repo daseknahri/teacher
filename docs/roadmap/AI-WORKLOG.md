@@ -360,3 +360,18 @@ Keep entries short and factual.
   - `PYTHONPATH=backend python -m pytest -p no:cacheprovider backend/tests/test_app_flows.py -k "leaf_content or source_derived_leaf_content_preserves_multiline_exact_source"`
 - Follow-up:
   - next extraction-quality step is to preserve more PDF structure like short lists and numbered steps without over-splitting a leaf that represents one full exercise series
+### 2026-05-20 15:20 - Codex
+
+- Status: done
+- Goal: reduce duplicated title/path noise inside leaf teach mode so the same exact source block reads like one clean teaching page
+- Files changed:
+  - `frontend/src/utils/leafContent.js`
+  - `frontend/src/style/components.css`
+- Notes:
+  - teach mode now hides the repeated modal title/path in the header
+  - the teaching stage keeps one main title and one compact path only
+  - added content cleaning for teach mode to strip duplicated first-line heading/path echoes before rendering exact source blocks
+- Validation:
+  - `npm run build`
+- Follow-up:
+  - next likely step is preserving numbered step structure from extraction even better when the PDF block is good but the OCR/text extraction is coarse

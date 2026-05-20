@@ -1906,9 +1906,16 @@ code {
     padding-bottom: 0.9rem;
 }
 
+.leaf-content-modal--teach .lcm-header .min-w-0.flex-1 {
+    min-width: 0;
+}
+
 .leaf-content-modal--teach .lcm-header h2 {
-    font-size: 24px;
-    line-height: 1.15;
+    display: none;
+}
+
+.leaf-content-modal--teach .lcm-header-path {
+    display: none;
 }
 
 .leaf-content-modal--teach .lcm-footer {

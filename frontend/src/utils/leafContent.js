@@ -46,6 +46,43 @@ function _labelKey(value) {
     .trim();
 }
 
+function _compactTeachPath(pathValues) {
+  const rows = Array.isArray(pathValues)
+    ? pathValues.map(value => String(value || '').trim()).filter(Boolean)
+    : [];
+  if (!rows.length) return '';
+  const compact = rows.length > 2 ? rows.slice(-2) : rows;
+  return compact.join(' > ');
+}
+
+function _cleanTeachContent(contentMd, { itemTitle = '', blockTitle = '', pathValues = [] } = {}) {
+  const raw = String(contentMd || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+  if (!raw) return '';
+  const lines = raw.split('\n');
+  const titleKeys = new Set(
+    [
+      _labelKey(itemTitle),
+      _labelKey(blockTitle),
+      _labelKey((Array.isArray(pathValues) ? pathValues : []).join(' > ')),
+      _labelKey(_compactTeachPath(pathValues)),
+    ].filter(Boolean)
+  );
+  while (lines.length) {
+    const first = lines[0].trim();
+    const firstKey = _labelKey(first);
+    if (!firstKey) {
+      lines.shift();
+      continue;
+    }
+    if (titleKeys.has(firstKey) || first.includes(' > ')) {
+      lines.shift();
+      continue;
+    }
+    break;
+  }
+  return lines.join('\n').trim() || raw;
+}
+
 const EMPTY_LEAF_CONTENT = Object.freeze({
   id: null,
   unit_id: null,
@@ -256,7 +293,7 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
             <span id="lcm-status-badge"></span>
           </div>
           <h2 class="text-[15px] font-bold text-slate-800 leading-tight">${_esc(itemTitle)}</h2>
-          ${pathBreadcrumb ? `<p class="text-[11px] text-slate-400 mt-0.5">${_esc(pathBreadcrumb)}</p>` : ''}
+          ${pathBreadcrumb ? `<p class="lcm-header-path text-[11px] text-slate-400 mt-0.5">${_esc(pathBreadcrumb)}</p>` : ''}
         </div>
         <div class="flex items-center gap-1 flex-shrink-0">
           <button id="lcm-btn-teach" class="btn btn-sm btn-ghost lcm-mode-btn">Teach</button>
@@ -445,6 +482,12 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
     const blockTitle = _labelKey(current.title) && _labelKey(current.title) !== _labelKey(itemTitle)
       ? current.title
       : '';
+    const stagePath = _compactTeachPath(itemPath.length > 1 ? itemPath.slice(0, -1) : itemPath);
+    const cleanedContent = _cleanTeachContent(current.contentMd, {
+      itemTitle,
+      blockTitle: current.title,
+      pathValues: itemPath,
+    });
     body.innerHTML = `
       <div class="lcm-teach">
         <div class="lcm-teach-topbar">
@@ -457,9 +500,9 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
         <div class="lcm-teach-stage">
           <div class="lcm-teach-stage-head">
             <h3 class="lcm-teach-stage-title">${_esc(itemTitle)}</h3>
-            ${pathBreadcrumb ? `<p class="lcm-teach-stage-path">${_esc(pathBreadcrumb)}</p>` : ''}
+            ${stagePath ? `<p class="lcm-teach-stage-path">${_esc(stagePath)}</p>` : ''}
           </div>
-          <div class="lcm-teach-prose">${renderMarkdownLatex(current.contentMd)}</div>
+          <div class="lcm-teach-prose">${renderMarkdownLatex(cleanedContent)}</div>
         </div>
         ${blocks.length > 1 ? `
         <div class="lcm-teach-nav">
