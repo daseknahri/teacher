@@ -7020,6 +7020,102 @@ def test_leaf_content_source_extract_seeds_on_unit_start(client, monkeypatch):
     assert body["source_payload_json"]["matched_block_count"] >= 1
 
 
+def test_leaf_content_source_extract_assigns_examples_by_sequence(client, monkeypatch):
+    from app.routers import workflow as workflow_router
+
+    headers = _auth_headers(client)
+    class_resp = client.post(
+        "/classes",
+        json={"name": f"SeededExampleOrder {uuid.uuid4().hex[:6]}", "subject": "Math"},
+        headers=headers,
+    )
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    def _fake_generate_unit_checklist(unit_type, title, source_text, session_count=None, document_path=None):
+        return {
+            "source": "notebooklm",
+            "requested_provider": "notebooklm",
+            "model": "notebooklm-py",
+            "status": "ready",
+            "items": [
+                {
+                    "title": "Fractions",
+                    "kind": "chapter",
+                    "children": [
+                        {
+                            "title": "Somme de fractions",
+                            "kind": "section",
+                            "children": [
+                                {"title": "Exemple 1", "kind": "example", "children": []},
+                                {"title": "Exemple 2", "kind": "example", "children": []},
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "unit_map": {"unit_title": title, "source": "notebooklm"},
+            "content_blocks": [
+                {
+                    "section_title": "Somme de fractions",
+                    "section_path": ["Fractions", "Somme de fractions"],
+                    "title": "Addition simple",
+                    "kind": "example",
+                    "teaching_material": "Exemple: 1/5 + 2/5 = 3/5.",
+                    "source_excerpt": "Premier exemple avec meme denominateur.",
+                },
+                {
+                    "section_title": "Somme de fractions",
+                    "section_path": ["Fractions", "Somme de fractions"],
+                    "title": "Soustraction simple",
+                    "kind": "example",
+                    "teaching_material": "Exemple: 4/9 - 1/9 = 3/9.",
+                    "source_excerpt": "Deuxieme exemple avec meme denominateur.",
+                },
+            ],
+            "raw_provider_response": {"seeded": True},
+            "error_message": None,
+            "provider_context": {"notebook_id": "test-seeded-examples"},
+        }
+
+    monkeypatch.setattr(workflow_router, "generate_unit_checklist", _fake_generate_unit_checklist)
+
+    start_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Chapitre Exemples",
+            "source_text": "placeholder source text",
+        },
+    )
+    assert start_resp.status_code == 201
+    unit_id = start_resp.json()["id"]
+
+    workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_resp.status_code == 200
+    checklist = workspace_resp.json()["active_unit"]["checklist"]
+    flat = _flatten_checklist(checklist)
+    example1 = next(row for row in flat if isinstance(row, dict) and row.get("title") == "Exemple 1")
+    example2 = next(row for row in flat if isinstance(row, dict) and row.get("title") == "Exemple 2")
+
+    first_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{example1['id']}",
+        headers=headers,
+    )
+    second_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{example2['id']}",
+        headers=headers,
+    )
+    assert first_resp.status_code == 200
+    assert second_resp.status_code == 200
+    first_body = first_resp.json()
+    second_body = second_resp.json()
+    assert "1/5 + 2/5 = 3/5" in (first_body["worked_example_md"] or "")
+    assert "4/9 - 1/9 = 3/9" in (second_body["worked_example_md"] or "")
+    assert first_body["worked_example_md"] != second_body["worked_example_md"]
+
+
 def test_leaf_content_generate_requires_blueprint(client):
     headers = _auth_headers(client)
     class_resp = client.post(

@@ -38,6 +38,26 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-20 02:35 - Codex
+
+- Status: done
+- Goal: make source-derived leaf-content seeding more order-aware inside a section so repeated examples/exercises map to the right leaf instead of duplicating
+- Files expected:
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/test_app_flows.py`
+- Assumptions:
+  - exact title match should still win first
+  - when exact match fails, repeated example/exercise leaves should use section order as a fallback
+  - narrower source assignment is better than duplicating all same-kind blocks across multiple leaves
+- Notes:
+  - focused only on source-derived seeding quality; no frontend changes needed
+- Result:
+  - added order-aware source block selection for leaf seeding
+  - sequence hints like `Exemple 1`, `Exemple 2` now map to the corresponding content block within the same section
+  - added regression coverage proving two example leaves receive different extracted examples in order
+- Follow-up:
+  - next extraction-quality step is better classification of activity vs explanation vs practice when the PDF structure is weak or implicit
+
 ### 2026-05-20 02:05 - Codex
 
 - Status: done

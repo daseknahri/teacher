@@ -1039,6 +1039,87 @@ def _build_leaf_content_markdown_from_blocks(
     return "\n\n".join(rows[:4]).strip() or None
 
 
+def _extract_leaf_sequence_hint(title: str) -> int | None:
+    normalized = _normalize_outline_title(title)
+    if not normalized:
+        return None
+    numbered_match = re.match(r"^\s*\D*?(\d+)\s*$", normalized)
+    if numbered_match:
+        try:
+            value = int(numbered_match.group(1))
+        except Exception:
+            value = 0
+        return value if value > 0 else None
+    trailing_match = re.search(r"(?:^|\s)(\d+)\s*$", normalized)
+    if trailing_match:
+        try:
+            value = int(trailing_match.group(1))
+        except Exception:
+            value = 0
+        return value if value > 0 else None
+    return None
+
+
+def _semantic_overlap_score(left: str, right: str) -> int:
+    left_tokens = {token for token in _semantic_title_key(left).split() if token}
+    right_tokens = {token for token in _semantic_title_key(right).split() if token}
+    if not left_tokens or not right_tokens:
+        return 0
+    return len(left_tokens & right_tokens)
+
+
+def _select_source_blocks_for_leaf(
+    *,
+    item_title: str,
+    item_kind: Any,
+    selected_blocks: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    normalized_item_title = _normalize_outline_title(item_title)
+    item_title_key = _semantic_title_key(normalized_item_title)
+    exact_blocks = [
+        block for block in selected_blocks
+        if isinstance(block, dict) and _semantic_title_key(block.get("title")) == item_title_key
+    ]
+    exact_meaningful = [block for block in exact_blocks if _content_block_has_meaningful_source_material(block)]
+    if exact_meaningful:
+        return exact_meaningful
+
+    expected_kinds = _expected_content_block_kinds_for_leaf(item_kind=item_kind, item_title=normalized_item_title)
+    kind_blocks = [
+        block for block in selected_blocks
+        if isinstance(block, dict)
+        and _normalize_content_block_kind(block.get("kind")) in expected_kinds
+        and _content_block_has_meaningful_source_material(block)
+    ]
+    if not kind_blocks and len(selected_blocks) == 1 and _content_block_has_meaningful_source_material(selected_blocks[0]):
+        return [selected_blocks[0]]
+    if len(kind_blocks) <= 1:
+        return kind_blocks
+
+    sequence_hint = _extract_leaf_sequence_hint(normalized_item_title)
+    if sequence_hint is not None:
+        hinted_index = sequence_hint - 1
+        if 0 <= hinted_index < len(kind_blocks):
+            return [kind_blocks[hinted_index]]
+
+    normalized_kind = str(getattr(item_kind, "value", item_kind) or "").strip().lower()
+    enum_kind = next((kind for kind in WorkflowChecklistItemKind if kind.value == normalized_kind), WorkflowChecklistItemKind.OTHER)
+    if not _is_generic_kind_label(normalized_item_title, enum_kind):
+        scored = sorted(
+            (
+                (_semantic_overlap_score(normalized_item_title, _normalize_outline_title(block.get("title"))), block)
+                for block in kind_blocks
+            ),
+            key=lambda row: row[0],
+            reverse=True,
+        )
+        if scored and scored[0][0] > 0:
+            top_score = scored[0][0]
+            return [block for score, block in scored if score == top_score][:1]
+
+    return [kind_blocks[0]]
+
+
 def build_source_derived_leaf_content_package(
     *,
     item_title: str,
@@ -1063,20 +1144,11 @@ def build_source_derived_leaf_content_package(
         section_title=normalized_section_path[-1] if normalized_section_path else normalized_item_title,
         section_path=normalized_section_path or None,
     )
-    item_title_key = _semantic_title_key(normalized_item_title)
-    exact_blocks = [
-        block for block in selected_blocks
-        if isinstance(block, dict) and _semantic_title_key(block.get("title")) == item_title_key
-    ]
-    expected_kinds = _expected_content_block_kinds_for_leaf(item_kind=item_kind, item_title=normalized_item_title)
-    kind_blocks = [
-        block for block in selected_blocks
-        if isinstance(block, dict) and _normalize_content_block_kind(block.get("kind")) in expected_kinds
-    ]
-    focus_blocks = exact_blocks or kind_blocks
-    meaningful_blocks = [block for block in focus_blocks if _content_block_has_meaningful_source_material(block)]
-    if not meaningful_blocks and len(selected_blocks) == 1 and _content_block_has_meaningful_source_material(selected_blocks[0]):
-        meaningful_blocks = [selected_blocks[0]]
+    meaningful_blocks = _select_source_blocks_for_leaf(
+        item_title=normalized_item_title,
+        item_kind=item_kind,
+        selected_blocks=selected_blocks,
+    )
 
     grouped: dict[str, list[dict[str, Any]]] = {
         "activity": [],
