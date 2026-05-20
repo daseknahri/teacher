@@ -1042,6 +1042,71 @@ def _build_leaf_content_markdown_from_blocks(
 def _build_exact_source_segments_from_blocks(
     blocks: list[dict[str, Any]] | None,
 ) -> list[dict[str, Any]]:
+    def split_exact_source_rows(
+        *,
+        title: str,
+        kind: str,
+        phase: str,
+        content_md: str,
+        content_source: str,
+    ) -> list[dict[str, Any]]:
+        if kind not in {"activity", "example", "exercise", "evaluation"}:
+            return []
+        lines = [line.rstrip() for line in str(content_md or "").split("\n")]
+        marker_pattern = re.compile(r"^(?:\d+\s*[\).:-]|[-*•])\s+")
+        marker_indexes = [index for index, line in enumerate(lines) if marker_pattern.match(line.strip())]
+        if len(marker_indexes) < 2:
+            return []
+
+        preamble = [line.strip() for line in lines[: marker_indexes[0]] if line.strip()]
+        groups: list[list[str]] = []
+        current_group: list[str] = []
+        for line in lines[marker_indexes[0] :]:
+            stripped = line.strip()
+            if not stripped:
+                if current_group and current_group[-1] != "":
+                    current_group.append("")
+                continue
+            if marker_pattern.match(stripped):
+                if current_group:
+                    groups.append(current_group)
+                current_group = [stripped]
+            elif current_group:
+                current_group.append(stripped)
+            elif preamble:
+                preamble.append(stripped)
+        if current_group:
+            groups.append(current_group)
+        if len(groups) < 2:
+            return []
+
+        split_segments: list[dict[str, Any]] = []
+        base_label = title or (SOURCE_SEGMENT_LABELS.get(kind) or "Source")
+        if preamble:
+            split_segments.append(
+                {
+                    "title": title or None,
+                    "kind": kind,
+                    "teaching_phase": phase,
+                    "content_md": "\n".join(preamble).strip(),
+                    "content_source": content_source,
+                }
+            )
+        for index, group in enumerate(groups, start=1):
+            content_value = "\n".join(line for line in group if line is not None).strip()
+            if not content_value:
+                continue
+            split_segments.append(
+                {
+                    "title": f"{base_label} {index}",
+                    "kind": kind,
+                    "teaching_phase": phase,
+                    "content_md": content_value,
+                    "content_source": content_source,
+                }
+            )
+        return split_segments
+
     segments: list[dict[str, Any]] = []
     seen_keys: set[str] = set()
     for block in blocks or []:
@@ -1056,27 +1121,36 @@ def _build_exact_source_segments_from_blocks(
         content_md = material if use_material else (excerpt or material)
         if not content_md:
             continue
-        segment_key = "|".join(
-            value
-            for value in (
-                _semantic_title_key(title),
-                _semantic_title_key(content_md),
-            )
-            if value
-        )
-        if segment_key and segment_key in seen_keys:
-            continue
-        if segment_key:
-            seen_keys.add(segment_key)
-        segments.append(
+        content_source = "teaching_material" if use_material else "source_excerpt"
+        candidate_segments = split_exact_source_rows(
+            title=title,
+            kind=kind,
+            phase=phase,
+            content_md=content_md,
+            content_source=content_source,
+        ) or [
             {
                 "title": title or None,
                 "kind": kind,
                 "teaching_phase": phase,
                 "content_md": content_md,
-                "content_source": "teaching_material" if use_material else "source_excerpt",
+                "content_source": content_source,
             }
-        )
+        ]
+        for candidate in candidate_segments:
+            segment_key = "|".join(
+                value
+                for value in (
+                    _semantic_title_key(candidate.get("title")),
+                    _semantic_title_key(candidate.get("content_md")),
+                )
+                if value
+            )
+            if segment_key and segment_key in seen_keys:
+                continue
+            if segment_key:
+                seen_keys.add(segment_key)
+            segments.append(candidate)
     return segments[:8]
 
 

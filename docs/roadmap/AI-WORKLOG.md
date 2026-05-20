@@ -38,6 +38,26 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-20 15:05 - Codex
+
+- Status: done
+- Goal: split dense exact-source exercise blocks into separate teachable source segments so one leaf can behave more like a small slide deck without inventing content
+- Files expected:
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/test_app_flows.py`
+  - `frontend/src/utils/leafContent.js`
+- Assumptions:
+  - if one exact source block clearly contains multiple numbered tasks, we should preserve them as separate source segments
+  - segment titles should stay short in the teaching outline so the teacher does not see the full leaf title repeated
+- Notes:
+  - kept the split conservative: it only triggers when there are at least two clearly marked task rows
+- Result:
+  - exact-source blocks for activities/examples/exercises/assessments now split into multiple stored source segments when the text contains multiple numbered rows
+  - teach mode outline now shows shorter labels like `Part 1`, `Part 2` when the backend split titles would otherwise repeat the leaf title
+  - added regression coverage proving one numbered exercise block becomes three exact source segments
+- Follow-up:
+  - next fidelity pass should preserve short symbolic math lines and compact statement groups even when they are not numbered
+
 ### 2026-05-20 14:05 - Codex
 
 - Status: done

@@ -55,9 +55,17 @@ function _compactTeachPath(pathValues) {
   return compact.join(' > ');
 }
 
-function _getTeachBlockDisplayTitle(block, index) {
+function _getTeachBlockDisplayTitle(block, index, itemTitle = '') {
   const title = String(block?.title || '').trim();
-  if (title) return title;
+  if (title) {
+    const itemKey = _labelKey(itemTitle);
+    const titleKey = _labelKey(title);
+    const trailingNumber = title.match(/(\d+)\s*$/);
+    if (itemKey && titleKey && titleKey.startsWith(itemKey) && trailingNumber) {
+      return `Part ${trailingNumber[1]}`;
+    }
+    return title;
+  }
   const kind = String(block?.kindLabel || '').trim();
   if (kind) return `${kind} ${index + 1}`;
   return `Block ${index + 1}`;
@@ -510,7 +518,7 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
             <aside class="lcm-teach-outline" aria-label="Lesson blocks">
               ${blocks.map((block, index) => {
                 const active = index === safeIndex;
-                const label = _getTeachBlockDisplayTitle(block, index);
+                const label = _getTeachBlockDisplayTitle(block, index, itemTitle);
                 return `
                   <button
                     type="button"
