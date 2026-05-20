@@ -6732,6 +6732,7 @@ def test_leaf_content_generate_happy_path(client, monkeypatch):
     assert isinstance(lc["section_path_json"], list) and lc["section_path_json"]
     assert body["leaf_content"]["source_payload_json"]["item_path"] == lc["item_path_json"]
     assert body["leaf_content"]["source_payload_json"]["section_path"] == lc["section_path_json"]
+    assert body["leaf_content"]["source_payload_json"]["merge_strategy"] == "fill_missing"
 
     # GET also returns the persisted record
     get_resp = client.get(
@@ -6754,6 +6755,69 @@ def test_leaf_content_generate_happy_path(client, monkeypatch):
     assert second_resp.status_code == 200
     second_body = second_resp.json()
     assert second_body["leaf_content"]["id"] == lc["id"]
+
+
+def test_leaf_content_generate_fill_missing_preserves_source_fields(client, monkeypatch):
+    from app.routers import workflow as workflow_router
+
+    headers = _auth_headers(client)
+    class_id, unit_id, item_id = _setup_unit_with_leaf(client, headers)
+
+    put_resp = client.put(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}",
+        headers=headers,
+        json={
+            "provider": "source_extract",
+            "status": "ready",
+            "teaching_goal_md": "Comprendre la propriete.",
+            "explanation_md": "Explication extraite du PDF.",
+            "source_excerpt_md": "Extrait source.",
+            "source_payload": {"mode": "source_derived"},
+            "raw_provider_response": {"mode": "source_derived"},
+        },
+    )
+    assert put_resp.status_code == 200
+
+    def _fake_generate_leaf_content_package(**kwargs):
+        return {
+            "provider": "notebooklm",
+            "requested_provider": "notebooklm",
+            "model": "notebooklm-py",
+            "status": "ready",
+            "teaching_goal_md": "Objectif regenere.",
+            "launch_activity_md": None,
+            "explanation_md": "Nouvelle explication IA.",
+            "worked_example_md": None,
+            "practice_md": "Nouvel exercice de pratique.",
+            "solution_md": "Correction du nouvel exercice.",
+            "assessment_md": None,
+            "teacher_notes_md": "Conseil enseignant.",
+            "source_excerpt_md": "Nouvel extrait.",
+            "source_payload": {"mode": "generated"},
+            "raw_provider_response": {"answer": "generated"},
+            "error_message": None,
+        }
+
+    monkeypatch.setattr(workflow_router, "generate_leaf_content_package", _fake_generate_leaf_content_package)
+
+    resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}/generate",
+        headers=headers,
+        json={"provider": "notebooklm", "regenerate": True, "merge_strategy": "fill_missing"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    lc = body["leaf_content"]
+    assert lc["provider"] == "notebooklm"
+    assert lc["teaching_goal_md"] == "Comprendre la propriete."
+    assert lc["explanation_md"] == "Explication extraite du PDF."
+    assert lc["source_excerpt_md"] == "Extrait source."
+    assert lc["practice_md"] == "Nouvel exercice de pratique."
+    assert lc["solution_md"] == "Correction du nouvel exercice."
+    assert lc["teacher_notes_md"] == "Conseil enseignant."
+    assert lc["source_payload_json"]["mode"] == "hybrid"
+    assert "practice_md" in lc["source_payload_json"]["filled_fields"]
+    assert "explanation_md" in lc["source_payload_json"]["retained_fields"]
 
 
 def test_leaf_content_generate_rejects_non_leaf(client, monkeypatch):

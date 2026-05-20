@@ -1925,6 +1925,90 @@ code {
     flex-shrink: 0;
 }
 
+.lcm-footer-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.lcm-origin-banner {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.875rem 1rem;
+    border-radius: 18px;
+    border: 1px solid #dbeafe;
+    background: linear-gradient(180deg, #f8fbff 0%, #f2f8ff 100%);
+}
+
+.lcm-origin-banner--source {
+    border-color: #dbeafe;
+    background: linear-gradient(180deg, #f8fbff 0%, #eef6ff 100%);
+}
+
+.lcm-origin-banner--hybrid {
+    border-color: #d1fae5;
+    background: linear-gradient(180deg, #f4fffb 0%, #ecfdf5 100%);
+}
+
+.lcm-origin-banner--brain {
+    border-color: #ede9fe;
+    background: linear-gradient(180deg, #faf8ff 0%, #f5f3ff 100%);
+}
+
+.lcm-origin-banner--manual {
+    border-color: #e2e8f0;
+    background: linear-gradient(180deg, #fbfdff 0%, #f8fafc 100%);
+}
+
+.lcm-origin-copy {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.lcm-origin-title {
+    margin: 0 0 0.2rem;
+    font-size: 12px;
+    font-weight: 700;
+    color: #1e293b;
+}
+
+.lcm-origin-detail {
+    margin: 0;
+    font-size: 11px;
+    line-height: 1.55;
+    color: #64748b;
+}
+
+.lcm-origin-summary {
+    flex: 0 0 auto;
+    min-width: 120px;
+    padding: 0.65rem 0.75rem;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.78);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    text-align: right;
+}
+
+.lcm-summary-label {
+    display: block;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #94a3b8;
+}
+
+.lcm-summary-value {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 12px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
 /* Prose inside rendered mode */
 .lcm-prose {
     font-size: 13px;
@@ -2004,3 +2088,23 @@ code {
 }
 .leaf-status-dot--ready { background-color: #3b82f6; }
 .leaf-status-dot--draft { background-color: #94a3b8; }
+
+@media (max-width: 720px) {
+    .lcm-footer {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .lcm-footer-actions {
+        width: 100%;
+    }
+
+    .lcm-origin-banner {
+        flex-direction: column;
+    }
+
+    .lcm-origin-summary {
+        width: 100%;
+        text-align: left;
+    }
+}

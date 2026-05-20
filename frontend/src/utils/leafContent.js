@@ -79,6 +79,45 @@ function _createEmptyLeafContent(item = {}) {
   };
 }
 
+function _countReadySections(content) {
+  const draft = content || EMPTY_LEAF_CONTENT;
+  return CONTENT_FIELDS.reduce((count, field) => count + (String(draft[field.key] || '').trim() ? 1 : 0), 0);
+}
+
+function _getLeafContentOriginMeta(content) {
+  const provider = String(content?.provider || 'manual').trim().toLowerCase();
+  const sourceMode = String(content?.source_payload_json?.mode || '').trim().toLowerCase();
+  if (sourceMode === 'hybrid') {
+    const filled = Array.isArray(content?.source_payload_json?.filled_fields) ? content.source_payload_json.filled_fields.length : 0;
+    return {
+      tone: 'hybrid',
+      title: 'Prepared from the unit source and completed with unit-brain help',
+      detail: filled > 0
+        ? `${filled} missing section${filled > 1 ? 's were' : ' was'} added on top of the extracted lesson content.`
+        : 'This lesson keeps the extracted source content and can be improved section by section.',
+    };
+  }
+  if (sourceMode === 'source_derived' || provider === 'source_extract') {
+    return {
+      tone: 'source',
+      title: 'Prepared from extracted unit content',
+      detail: 'This lesson card is grounded in the PDF structure we already extracted for the unit.',
+    };
+  }
+  if (provider === 'notebooklm') {
+    return {
+      tone: 'brain',
+      title: 'Generated with unit-brain support',
+      detail: 'This lesson content was generated from the saved unit brain and can be edited freely.',
+    };
+  }
+  return {
+    tone: 'manual',
+    title: 'Teacher-edited lesson content',
+    detail: 'This lesson card is stored in the app and can be refined in source mode at any time.',
+  };
+}
+
 /**
  * Render a Markdown + LaTeX string as HTML.
  * Strategy: extract LaTeX spans before Markdown parsing so marked
@@ -189,7 +228,10 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
         <p class="text-[13px] text-slate-400 py-8 text-center">Loading...</p>
       </div>
       <div class="lcm-footer">
-        <button id="lcm-btn-generate" class="btn btn-secondary btn-sm">Generate from Unit Brain</button>
+        <div class="lcm-footer-actions">
+          <button id="lcm-btn-generate" class="btn btn-secondary btn-sm">Generate from Unit Brain</button>
+          <button id="lcm-btn-regenerate" class="btn btn-ghost btn-sm" hidden>Regenerate All</button>
+        </div>
         <div class="flex items-center gap-2">
           <button id="lcm-btn-save" class="btn btn-primary btn-sm" hidden>Save</button>
           <button id="lcm-btn-close2" class="btn btn-ghost btn-sm">Close</button>
@@ -208,6 +250,7 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
   const btnRendered = overlay.querySelector('#lcm-btn-rendered');
   const btnSource = overlay.querySelector('#lcm-btn-source');
   const btnGenerate = overlay.querySelector('#lcm-btn-generate');
+  const btnRegenerate = overlay.querySelector('#lcm-btn-regenerate');
   const btnSave = overlay.querySelector('#lcm-btn-save');
 
   function onKey(event) {
@@ -243,6 +286,9 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
 
   function renderRenderedMode() {
     const draft = content || _createEmptyLeafContent(item);
+    const origin = _getLeafContentOriginMeta(draft);
+    const readyCount = _countReadySections(draft);
+    const totalCount = CONTENT_FIELDS.length;
     const mainFields = CONTENT_FIELDS.filter(field => field.key !== 'source_excerpt_md');
     const sections = mainFields.filter(field => draft[field.key]);
     const excerpt = draft.source_excerpt_md;
@@ -258,6 +304,16 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
 
     body.innerHTML = `
       <div class="flex flex-col gap-3">
+        <div class="lcm-origin-banner lcm-origin-banner--${_esc(origin.tone)}">
+          <div class="lcm-origin-copy">
+            <p class="lcm-origin-title">${_esc(origin.title)}</p>
+            <p class="lcm-origin-detail">${_esc(origin.detail)}</p>
+          </div>
+          <div class="lcm-origin-summary">
+            <span class="lcm-summary-label">Lesson readiness</span>
+            <span class="lcm-summary-value">${readyCount} of ${totalCount} sections ready</span>
+          </div>
+        </div>
         ${sections.map(field => `
           <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
             <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">${_esc(field.label)}</p>
@@ -274,8 +330,21 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
 
   function renderSourceMode() {
     const draft = content || _createEmptyLeafContent(item);
+    const origin = _getLeafContentOriginMeta(draft);
+    const readyCount = _countReadySections(draft);
+    const totalCount = CONTENT_FIELDS.length;
     body.innerHTML = `
       <div class="flex flex-col gap-4">
+        <div class="lcm-origin-banner lcm-origin-banner--${_esc(origin.tone)}">
+          <div class="lcm-origin-copy">
+            <p class="lcm-origin-title">${_esc(origin.title)}</p>
+            <p class="lcm-origin-detail">${_esc(origin.detail)}</p>
+          </div>
+          <div class="lcm-origin-summary">
+            <span class="lcm-summary-label">Lesson readiness</span>
+            <span class="lcm-summary-value">${readyCount} of ${totalCount} sections ready</span>
+          </div>
+        </div>
         <p class="text-[12px] text-slate-400">
           Edit below. Use Markdown for structure, <code>$...$</code> for inline math,
           <code>$$...$$</code> for block math.
@@ -295,12 +364,15 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
   }
 
   function renderBody() {
+    const hasAnyContent = Boolean(content) && _countReadySections(content) > 0;
+    btnGenerate.textContent = hasAnyContent ? 'Fill Missing with Unit Brain' : 'Generate from Unit Brain';
+    btnRegenerate.hidden = !hasAnyContent;
     if (!content && mode !== 'source') {
       body.innerHTML = `
         <div class="flex flex-col items-center justify-center gap-3 py-12 text-center">
           <p class="text-[13px] text-slate-600 font-medium">No lesson content yet</p>
           <p class="text-[12px] text-slate-400 max-w-[260px]">
-            Press <strong>Generate from Unit Brain</strong> to create teaching content for this leaf.
+            Press <strong>Generate from Unit Brain</strong> to create the first lesson draft for this leaf.
           </p>
         </div>`;
       btnSave.hidden = true;
@@ -356,13 +428,14 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
 
   btnGenerate.addEventListener('click', async () => {
     _setBusy(btnGenerate, true);
+    _setBusy(btnRegenerate, true);
     try {
       const result = await api(
         `/workflow/classes/${classId}/units/${unitId}/leaf-content/${itemId}/generate`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ regenerate: true }),
+          body: JSON.stringify({ regenerate: true, merge_strategy: 'fill_missing' }),
         },
       );
       content = result?.leaf_content ?? null;
@@ -370,11 +443,38 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
       updateStatusBadge();
       setMode('rendered');
       onChange?.(content);
-      showToast('Lesson content generated', 'ok');
+      showToast('Missing lesson sections filled', 'ok');
     } catch (err) {
       showToast(err.message || 'Generation failed', 'error');
     } finally {
       _setBusy(btnGenerate, false);
+      _setBusy(btnRegenerate, false);
+    }
+  });
+
+  btnRegenerate.addEventListener('click', async () => {
+    _setBusy(btnGenerate, true);
+    _setBusy(btnRegenerate, true);
+    try {
+      const result = await api(
+        `/workflow/classes/${classId}/units/${unitId}/leaf-content/${itemId}/generate`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ regenerate: true, merge_strategy: 'replace' }),
+        },
+      );
+      content = result?.leaf_content ?? null;
+      if (content) _upsertUnitLeafContentSummary(classId, unitId, content);
+      updateStatusBadge();
+      setMode('rendered');
+      onChange?.(content);
+      showToast('Lesson card regenerated', 'ok');
+    } catch (err) {
+      showToast(err.message || 'Regeneration failed', 'error');
+    } finally {
+      _setBusy(btnGenerate, false);
+      _setBusy(btnRegenerate, false);
     }
   });
 

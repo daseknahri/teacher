@@ -960,6 +960,7 @@ class WorkflowLeafContentUpsertIn(BaseModel):
 class WorkflowLeafContentGenerateIn(BaseModel):
     provider: str | None = None
     regenerate: bool = True
+    merge_strategy: str = "fill_missing"
 
 
 class WorkflowLeafContentGenerateOut(BaseModel):

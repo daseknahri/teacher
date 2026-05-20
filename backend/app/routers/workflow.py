@@ -455,6 +455,72 @@ def _apply_leaf_content_payload_to_row(
     row.updated_at = _utc_now_naive()
 
 
+def _leaf_content_field_has_value(value: object | None) -> bool:
+    return bool(str(value or "").strip())
+
+
+def _merge_generated_leaf_content_payload(
+    *,
+    existing: WorkflowLeafContent | None,
+    generated: dict[str, object],
+    merge_strategy: str,
+    item_path: list[str] | None,
+    section_path: list[str] | None,
+) -> dict[str, object]:
+    normalized_strategy = str(merge_strategy or "fill_missing").strip().lower() or "fill_missing"
+    replace_all = normalized_strategy == "replace" or existing is None
+
+    merged: dict[str, object] = dict(generated)
+    filled_fields: list[str] = []
+    retained_fields: list[str] = []
+
+    if not replace_all and existing is not None:
+        for field in _LEAF_CONTENT_PAYLOAD_FIELDS:
+            existing_value = getattr(existing, field, None)
+            generated_value = generated.get(field)
+            if _leaf_content_field_has_value(existing_value):
+                if not _leaf_content_field_has_value(generated_value):
+                    retained_fields.append(field)
+                else:
+                    retained_fields.append(field)
+                merged[field] = existing_value
+            elif _leaf_content_field_has_value(generated_value):
+                filled_fields.append(field)
+                merged[field] = generated_value
+            else:
+                merged[field] = None
+
+        base_source_payload = existing.source_payload_json if isinstance(existing.source_payload_json, dict) else None
+        enhancement_source_payload = generated.get("source_payload") if isinstance(generated.get("source_payload"), dict) else None
+        merged["source_payload"] = {
+            "mode": "hybrid" if filled_fields else str((base_source_payload or {}).get("mode") or "source_derived"),
+            "base": base_source_payload,
+            "enhancement": enhancement_source_payload,
+            "merge_strategy": normalized_strategy,
+            "filled_fields": filled_fields,
+            "retained_fields": retained_fields,
+            "item_path": item_path or [],
+            "section_path": section_path or [],
+        }
+        base_raw = existing.raw_provider_response_json if isinstance(existing.raw_provider_response_json, dict) else None
+        enhancement_raw = generated.get("raw_provider_response") if isinstance(generated.get("raw_provider_response"), dict) else None
+        merged["raw_provider_response"] = {
+            "base": base_raw,
+            "enhancement": enhancement_raw,
+            "merge_strategy": normalized_strategy,
+        }
+        merged["provider"] = str(generated.get("provider") or existing.provider or "manual").strip() or "manual"
+        merged["status"] = "ready" if any(_leaf_content_field_has_value(merged.get(field)) for field in _LEAF_CONTENT_PAYLOAD_FIELDS) else str(generated.get("status") or existing.status or "draft")
+    else:
+        merged["source_payload"] = {
+            **(generated.get("source_payload") if isinstance(generated.get("source_payload"), dict) else {}),
+            "merge_strategy": "replace",
+            "item_path": item_path or [],
+            "section_path": section_path or [],
+        }
+    return merged
+
+
 def _seed_unit_leaf_content_from_blueprint(
     db: Session,
     *,
@@ -6941,6 +7007,10 @@ def generate_leaf_content(
             leaf_content=WorkflowLeafContentOut.model_validate(existing),
         )
 
+    merge_strategy = str(payload.merge_strategy or "fill_missing").strip().lower() or "fill_missing"
+    if merge_strategy not in {"fill_missing", "replace"}:
+        raise HTTPException(status_code=400, detail="merge_strategy must be 'fill_missing' or 'replace'.")
+
     try:
         result = generate_leaf_content_package(
             unit_title=str(unit.title or "").strip(),
@@ -6962,37 +7032,20 @@ def generate_leaf_content(
         existing = WorkflowLeafContent(unit_id=int(unit_id), checklist_item_id=int(item_id))
         db.add(existing)
 
-    if item_path:
-        existing.item_path_json = item_path
-    if section_path:
-        existing.section_path_json = section_path
-
-    existing.provider = str(result.get("provider") or "fallback")
-    existing.model = str(result.get("model") or "").strip() or None
-    existing.status = str(result.get("status") or "ready")
-    for field in (
-        "teaching_goal_md",
-        "launch_activity_md",
-        "explanation_md",
-        "worked_example_md",
-        "practice_md",
-        "solution_md",
-        "assessment_md",
-        "teacher_notes_md",
-        "source_excerpt_md",
-    ):
-        value = result.get(field)
-        if value is not None:
-            setattr(existing, field, str(value).strip() or None)
-    if isinstance(result.get("source_payload"), dict):
-        existing.source_payload_json = {
-            **result["source_payload"],
-            "item_path": item_path or [],
-            "section_path": section_path or [],
-        }
-    if isinstance(result.get("raw_provider_response"), dict):
-        existing.raw_provider_response_json = result["raw_provider_response"]
-    existing.updated_at = _utc_now_naive()
+    merged_result = _merge_generated_leaf_content_payload(
+        existing=existing,
+        generated=result,
+        merge_strategy=merge_strategy,
+        item_path=item_path,
+        section_path=section_path,
+    )
+    _apply_leaf_content_payload_to_row(
+        existing,
+        merged_result,
+        item_path=item_path,
+        section_path=section_path,
+        preserve_existing_paths=False,
+    )
     db.commit()
     db.refresh(existing)
 
@@ -7008,6 +7061,7 @@ def generate_leaf_content(
             "unit_id": int(unit_id),
             "provider": existing.provider,
             "status": existing.status,
+            "merge_strategy": merge_strategy,
         },
     )
     return WorkflowLeafContentGenerateOut(

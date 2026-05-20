@@ -38,6 +38,35 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-20 02:05 - Codex
+
+- Status: done
+- Goal: make leaf lesson cards source-first so extracted content is preserved and NotebookLM generation fills missing parts by default
+- Files expected:
+  - `backend/app/schemas.py`
+  - `backend/app/routers/workflow.py`
+  - `backend/tests/test_app_flows.py`
+  - `frontend/src/utils/leafContent.js`
+  - `frontend/src/style/components.css`
+  - `docs/roadmap/CLAUDE-TASK-LEAF-CARD-SOURCE-FIRST.md`
+- Assumptions:
+  - extracted leaf content should remain the primary lesson source when present
+  - lesson generation should be additive by default, with full replacement still available explicitly
+  - keeping the existing modal and status-dot contract is more important than a broad UI rewrite
+- Notes:
+  - attempted to dispatch the modal UX slice to Claude in a separate worktree, but Claude CLI exited before producing code, so the implementation was completed locally to keep momentum
+- Result:
+  - generation endpoint now accepts `merge_strategy` with `fill_missing` default and `replace` explicit
+  - source-derived leaf content is preserved during generation unless replace is requested
+  - hybrid source payload metadata now records retained vs filled lesson fields
+  - lesson modal now explains content origin, shows section readiness, and presents:
+    - `Fill Missing with Unit Brain`
+    - `Regenerate All`
+  - added test coverage for preserving extracted fields while filling missing ones
+- Follow-up:
+  - next quality step is improving how extraction maps raw PDF content blocks into the right leaf fields, especially for activity/example/exercise separation
+
+
 ### 2026-05-19 23:05 - Claude
 
 - Status: done
