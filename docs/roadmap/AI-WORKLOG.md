@@ -38,6 +38,30 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-20 15:45 - Codex
+
+- Status: done
+- Goal: preserve compact symbolic math sequences more faithfully and turn them into separate teachable exact-source segments when appropriate
+- Files expected:
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/test_app_flows.py`
+- Assumptions:
+  - short math rows separated by semicolons should not stay as one dense sentence
+  - we should only split compact math rows for teachable block kinds:
+    - activity
+    - example
+    - exercise
+    - assessment
+- Notes:
+  - kept the detection conservative so normal prose paragraphs do not get broken apart
+- Result:
+  - source markdown normalization now splits compact semicolon-based math rows into separate lines
+  - exact-source segment building now splits short math-line sequences into separate stored source blocks
+  - added regression coverage for a compact example like:
+    - `A = 2/3 ; B = 4/5 ; A × B = 8/15`
+- Follow-up:
+  - next fidelity pass should preserve short statement groups without numbers or semicolons when the PDF still implies separate steps visually
+
 ### 2026-05-20 15:05 - Codex
 
 - Status: done

@@ -7261,8 +7261,8 @@ def test_source_derived_leaf_content_preserves_multiline_exact_source():
     assert "\n" in (payload["practice_md"] or "")
     exact_blocks = payload["source_payload"]["extracted_blocks"]
     assert exact_blocks
-    assert "\n" in exact_blocks[0]["content_md"]
-    assert "Donner le resultat sous forme simplifiee" in exact_blocks[0]["content_md"]
+    assert any("Effectuer les calculs suivants" in row["content_md"] for row in exact_blocks)
+    assert any("Donner le resultat sous forme simplifiee" in row["content_md"] for row in exact_blocks)
 
 
 def test_source_derived_leaf_content_splits_inline_numbered_rows():
@@ -7335,6 +7335,46 @@ def test_source_derived_leaf_content_splits_exact_source_segments_for_numbered_e
     assert "1) Calculer 2/3 × 4/5." in exact_blocks[0]["content_md"]
     assert "2) Simplifier 6/9 × 3/2." in exact_blocks[1]["content_md"]
     assert "3) Donner le signe du produit." in exact_blocks[2]["content_md"]
+
+
+def test_source_derived_leaf_content_preserves_compact_math_sequences():
+    from app.services import workflow_generation
+    from app.models import WorkflowChecklistItemKind
+
+    content_blocks = workflow_generation._normalize_content_blocks_payload(
+        {
+            "content_blocks": [
+                {
+                    "section_title": "Produit et division",
+                    "section_path": ["Rationnels", "Produit et division"],
+                    "title": "Exemple guide",
+                    "kind": "example",
+                    "teaching_material": "A = 2/3 ; B = 4/5 ; A × B = 8/15",
+                    "source_excerpt": "Bloc d'exemple compact.",
+                }
+            ]
+        },
+        unit_map=None,
+        fallback_outline=None,
+    )
+
+    payload = workflow_generation.build_source_derived_leaf_content_package(
+        item_title="Exemple guide",
+        item_kind=WorkflowChecklistItemKind.EXAMPLE,
+        item_path=["Rationnels", "Produit et division", "Exemple guide"],
+        section_path=["Rationnels", "Produit et division"],
+        content_blocks=content_blocks,
+    )
+
+    assert "A = 2/3" in (payload["worked_example_md"] or "")
+    assert "B = 4/5" in (payload["worked_example_md"] or "")
+    assert "A × B = 8/15" in (payload["worked_example_md"] or "")
+    assert "\n" in (payload["worked_example_md"] or "")
+    exact_blocks = payload["source_payload"]["extracted_blocks"]
+    assert len(exact_blocks) == 3
+    assert exact_blocks[0]["content_md"] == "A = 2/3"
+    assert exact_blocks[1]["content_md"] == "B = 4/5"
+    assert exact_blocks[2]["content_md"] == "A × B = 8/15"
 
 
 def test_leaf_content_generate_requires_blueprint(client):

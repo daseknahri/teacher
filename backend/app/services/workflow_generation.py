@@ -1050,33 +1050,47 @@ def _build_exact_source_segments_from_blocks(
         content_md: str,
         content_source: str,
     ) -> list[dict[str, Any]]:
+        def looks_like_short_math_line(line: str) -> bool:
+            normalized = str(line or "").strip()
+            if not normalized or len(normalized) > 160:
+                return False
+            operator_count = sum(normalized.count(token) for token in ("=", "+", "-", "/", ":", "x", "*"))
+            digit_count = sum(char.isdigit() for char in normalized)
+            return operator_count >= 1 and digit_count >= 1
+
         if kind not in {"activity", "example", "exercise", "evaluation"}:
             return []
         lines = [line.rstrip() for line in str(content_md or "").split("\n")]
-        marker_pattern = re.compile(r"^(?:\d+\s*[\).:-]|[-*•])\s+")
+        marker_pattern = re.compile(r"^(?:\d+\s*[\).:-]|[-*\u2022])\s+")
         marker_indexes = [index for index, line in enumerate(lines) if marker_pattern.match(line.strip())]
-        if len(marker_indexes) < 2:
+        compact_lines = [line.strip() for line in lines if line.strip()]
+        if len(marker_indexes) < 2 and not (
+            len(compact_lines) >= 2 and sum(1 for line in compact_lines if looks_like_short_math_line(line)) >= 2
+        ):
             return []
 
-        preamble = [line.strip() for line in lines[: marker_indexes[0]] if line.strip()]
+        preamble = [line.strip() for line in lines[: marker_indexes[0]] if line.strip()] if marker_indexes else []
         groups: list[list[str]] = []
         current_group: list[str] = []
-        for line in lines[marker_indexes[0] :]:
-            stripped = line.strip()
-            if not stripped:
-                if current_group and current_group[-1] != "":
-                    current_group.append("")
-                continue
-            if marker_pattern.match(stripped):
-                if current_group:
-                    groups.append(current_group)
-                current_group = [stripped]
-            elif current_group:
-                current_group.append(stripped)
-            elif preamble:
-                preamble.append(stripped)
-        if current_group:
-            groups.append(current_group)
+        if marker_indexes:
+            for line in lines[marker_indexes[0] :]:
+                stripped = line.strip()
+                if not stripped:
+                    if current_group and current_group[-1] != "":
+                        current_group.append("")
+                    continue
+                if marker_pattern.match(stripped):
+                    if current_group:
+                        groups.append(current_group)
+                    current_group = [stripped]
+                elif current_group:
+                    current_group.append(stripped)
+                elif preamble:
+                    preamble.append(stripped)
+            if current_group:
+                groups.append(current_group)
+        else:
+            groups = [[line] for line in compact_lines]
         if len(groups) < 2:
             return []
 
@@ -3924,6 +3938,15 @@ def _normalize_content_block_text(value: Any, *, limit: int) -> str:
 
 
 def _normalize_content_block_markdown(value: Any, *, limit: int) -> str:
+    def looks_like_mathish_fragment(fragment: str) -> bool:
+        normalized = str(fragment or "").strip()
+        if not normalized:
+            return False
+        operator_count = sum(normalized.count(token) for token in ("=", "+", "−", "-", "×", "÷", "/", ":", "→"))
+        digit_count = sum(char.isdigit() for char in normalized)
+        has_formula_tokens = any(token in normalized for token in ("\\frac", "(", ")", "[", "]"))
+        return operator_count >= 1 and (digit_count >= 1 or has_formula_tokens)
+
     text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
     if not text:
         return ""
@@ -3945,6 +3968,10 @@ def _normalize_content_block_markdown(value: Any, *, limit: int) -> str:
                 chunk = line[start:end].strip(" ;,-")
                 if chunk:
                     expanded_lines.append(chunk)
+            continue
+        semicolon_parts = [part.strip(" ;") for part in re.split(r"\s*;\s*", line) if part.strip(" ;")]
+        if len(semicolon_parts) >= 2 and sum(1 for part in semicolon_parts if looks_like_mathish_fragment(part)) >= 2:
+            expanded_lines.extend(semicolon_parts)
             continue
         expanded_lines.append(line)
     text = "\n".join(expanded_lines)
