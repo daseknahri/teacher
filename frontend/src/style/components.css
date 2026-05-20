@@ -1898,6 +1898,10 @@ code {
     overflow: hidden;
 }
 
+.leaf-content-modal--teach {
+    width: min(98vw, 1100px);
+}
+
 .lcm-header {
     display: flex;
     align-items: flex-start;
@@ -2072,6 +2076,147 @@ code {
     padding: 1px 4px;
 }
 
+.lcm-teach {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    min-height: 100%;
+}
+
+.lcm-teach-topbar {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.lcm-teach-kicker {
+    margin: 0 0 0.3rem;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #2563eb;
+}
+
+.lcm-teach-title {
+    margin: 0;
+    font-size: 28px;
+    line-height: 1.15;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.lcm-teach-subtitle {
+    margin: 0.4rem 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #64748b;
+}
+
+.lcm-teach-counter {
+    flex: 0 0 auto;
+    padding: 0.5rem 0.85rem;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.lcm-teach-stage {
+    flex: 1 1 auto;
+    border-radius: 24px;
+    border: 1px solid #dbeafe;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    padding: 1.5rem 1.6rem;
+    min-height: 340px;
+}
+
+.lcm-teach-prose {
+    font-size: 23px;
+    line-height: 1.75;
+    color: #0f172a;
+}
+
+.lcm-teach-prose p {
+    margin: 0 0 0.95em;
+}
+
+.lcm-teach-prose p:last-child {
+    margin-bottom: 0;
+}
+
+.lcm-teach-prose ul,
+.lcm-teach-prose ol {
+    margin: 0.5em 0 1em 1.5em;
+}
+
+.lcm-teach-prose li {
+    margin-bottom: 0.35em;
+}
+
+.lcm-teach-prose h1,
+.lcm-teach-prose h2,
+.lcm-teach-prose h3,
+.lcm-teach-prose h4 {
+    margin: 0 0 0.55em;
+    color: #0f172a;
+    line-height: 1.2;
+}
+
+.lcm-teach-prose h1 { font-size: 34px; }
+.lcm-teach-prose h2 { font-size: 30px; }
+.lcm-teach-prose h3 { font-size: 27px; }
+.lcm-teach-prose h4 { font-size: 24px; }
+
+.lcm-teach-prose code {
+    font-size: 18px;
+}
+
+.lcm-teach-prose .katex {
+    font-size: 1.15em;
+}
+
+.lcm-teach-prose .katex-display {
+    overflow-x: auto;
+    padding: 0.55em 0;
+}
+
+.lcm-teach-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+}
+
+.lcm-teach-empty {
+    display: flex;
+    min-height: 320px;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 0.75rem;
+    text-align: center;
+    color: #64748b;
+}
+
+.lcm-teach-empty-title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.lcm-teach-empty-detail {
+    margin: 0;
+    max-width: 420px;
+    font-size: 14px;
+    line-height: 1.65;
+}
+
 /* Lesson button on checklist rows */
 .btn-leaf-lesson {
     color: #2563eb !important;
@@ -2107,4 +2252,27 @@ code {
         width: 100%;
         text-align: left;
     }
+
+    .leaf-content-modal--teach {
+        width: min(100vw, 100vw);
+    }
+
+    .lcm-teach-title {
+        font-size: 22px;
+    }
+
+    .lcm-teach-stage {
+        min-height: 260px;
+        padding: 1.1rem 1rem;
+    }
+
+    .lcm-teach-prose {
+        font-size: 18px;
+        line-height: 1.65;
+    }
+
+    .lcm-teach-prose h1 { font-size: 28px; }
+    .lcm-teach-prose h2 { font-size: 24px; }
+    .lcm-teach-prose h3 { font-size: 21px; }
+    .lcm-teach-prose h4 { font-size: 19px; }
 }

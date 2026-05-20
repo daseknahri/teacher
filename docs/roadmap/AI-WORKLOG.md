@@ -327,3 +327,19 @@ Keep entries short and factual.
   - `PYTHONPATH=backend python -m pytest -p no:cacheprovider backend/tests/test_app_flows.py -k "leaf_content"`
 - Follow-up:
   - next quality step is broader reconstruction for weak PDFs where one coarse block still mixes unlabeled explanation, example, and practice
+### 2026-05-20 14:40 - Codex
+
+- Status: done
+- Goal: make leaf lessons usable for real teaching instead of only authoring
+- Files changed:
+  - `frontend/src/utils/leafContent.js`
+  - `frontend/src/style/components.css`
+- Notes:
+  - added `Teach` mode to the leaf lesson modal
+  - if exact source blocks exist, the lesson now opens in teach mode by default
+  - teach mode shows one block at a time in larger projector-friendly typography with previous/next navigation
+  - kept `Rendered` and `Source` as author/edit views
+- Validation:
+  - `npm run build`
+- Follow-up:
+  - next step is improving the exact source extraction quality for harder PDFs, not adding more UI noise

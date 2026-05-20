@@ -250,6 +250,7 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
           ${pathBreadcrumb ? `<p class="text-[11px] text-slate-400 mt-0.5">${_esc(pathBreadcrumb)}</p>` : ''}
         </div>
         <div class="flex items-center gap-1 flex-shrink-0">
+          <button id="lcm-btn-teach" class="btn btn-sm btn-ghost lcm-mode-btn">Teach</button>
           <button id="lcm-btn-rendered" class="btn btn-sm btn-secondary lcm-mode-btn">Rendered</button>
           <button id="lcm-btn-source" class="btn btn-sm btn-ghost lcm-mode-btn">Source</button>
           <button id="lcm-btn-close" class="btn btn-ghost btn-sm !text-slate-400 !text-[18px] !leading-none !px-2" title="Close">x</button>
@@ -275,9 +276,12 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
 
   let mode = 'rendered';
   let content = null;
+  let teachIndex = 0;
 
+  const modal = overlay.querySelector('.leaf-content-modal');
   const body = overlay.querySelector('#lcm-body');
   const statusBadge = overlay.querySelector('#lcm-status-badge');
+  const btnTeach = overlay.querySelector('#lcm-btn-teach');
   const btnRendered = overlay.querySelector('#lcm-btn-rendered');
   const btnSource = overlay.querySelector('#lcm-btn-source');
   const btnGenerate = overlay.querySelector('#lcm-btn-generate');
@@ -285,6 +289,16 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
   const btnSave = overlay.querySelector('#lcm-btn-save');
 
   function onKey(event) {
+    if (mode === 'teach') {
+      if (event.key === 'ArrowRight') {
+        moveTeachIndex(1);
+        return;
+      }
+      if (event.key === 'ArrowLeft') {
+        moveTeachIndex(-1);
+        return;
+      }
+    }
     if (event.key === 'Escape') close();
   }
 
@@ -384,6 +398,63 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
       </div>`;
   }
 
+  function _buildTeachBlocks(draft) {
+    const exactSourceSegments = _normalizeExactSourceSegments(draft);
+    if (exactSourceSegments.length) {
+      return exactSourceSegments.map(segment => ({
+        kindLabel: SOURCE_SEGMENT_LABELS[segment.kind] || 'Source',
+        title: segment.title || '',
+        subtitle: segment.contentSource === 'source_excerpt' ? 'Exact text from PDF' : 'Extracted source content',
+        contentMd: segment.contentMd,
+      }));
+    }
+    return CONTENT_FIELDS
+      .filter(field => field.key !== 'teacher_notes_md' && field.key !== 'source_excerpt_md')
+      .map(field => ({
+        kindLabel: field.label,
+        title: '',
+        subtitle: 'Lesson content',
+        contentMd: String(draft?.[field.key] || '').trim(),
+      }))
+      .filter(block => block.contentMd);
+  }
+
+  function renderTeachMode() {
+    const draft = content || _createEmptyLeafContent(item);
+    const blocks = _buildTeachBlocks(draft);
+    if (!blocks.length) {
+      body.innerHTML = `
+        <div class="lcm-teach-empty">
+          <p class="lcm-teach-empty-title">Nothing ready to teach yet</p>
+          <p class="lcm-teach-empty-detail">This leaf does not have a readable source block yet. Use <strong>Rendered</strong> or <strong>Source</strong> to prepare it first.</p>
+        </div>`;
+      return;
+    }
+    const safeIndex = Math.max(0, Math.min(teachIndex, blocks.length - 1));
+    teachIndex = safeIndex;
+    const current = blocks[safeIndex];
+    body.innerHTML = `
+      <div class="lcm-teach">
+        <div class="lcm-teach-topbar">
+          <div>
+            <p class="lcm-teach-kicker">${_esc(current.kindLabel)}</p>
+            <h3 class="lcm-teach-title">${_esc(current.title || itemTitle)}</h3>
+            <p class="lcm-teach-subtitle">${_esc(current.subtitle)}${pathBreadcrumb ? ` · ${_esc(pathBreadcrumb)}` : ''}</p>
+          </div>
+          <div class="lcm-teach-counter">${safeIndex + 1} / ${blocks.length}</div>
+        </div>
+        <div class="lcm-teach-stage">
+          <div class="lcm-teach-prose">${renderMarkdownLatex(current.contentMd)}</div>
+        </div>
+        <div class="lcm-teach-nav">
+          <button type="button" class="btn btn-ghost btn-sm" id="lcm-teach-prev" ${safeIndex <= 0 ? 'disabled' : ''}>Previous</button>
+          <button type="button" class="btn btn-secondary btn-sm" id="lcm-teach-next" ${safeIndex >= blocks.length - 1 ? 'disabled' : ''}>Next</button>
+        </div>
+      </div>`;
+    body.querySelector('#lcm-teach-prev')?.addEventListener('click', () => moveTeachIndex(-1));
+    body.querySelector('#lcm-teach-next')?.addEventListener('click', () => moveTeachIndex(1));
+  }
+
   function renderSourceMode() {
     const draft = content || _createEmptyLeafContent(item);
     const origin = _getLeafContentOriginMeta(draft);
@@ -435,7 +506,10 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
       return;
     }
 
-    if (mode === 'rendered') {
+    if (mode === 'teach') {
+      renderTeachMode();
+      btnSave.hidden = true;
+    } else if (mode === 'rendered') {
       renderRenderedMode();
       btnSave.hidden = true;
     } else {
@@ -444,8 +518,19 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
     }
   }
 
+  function moveTeachIndex(delta) {
+    if (mode !== 'teach') return;
+    const blockCount = _buildTeachBlocks(content || _createEmptyLeafContent(item)).length;
+    if (!blockCount) return;
+    teachIndex = Math.max(0, Math.min(blockCount - 1, teachIndex + delta));
+    renderTeachMode();
+  }
+
   function setMode(nextMode) {
     mode = nextMode;
+    modal?.classList.toggle('leaf-content-modal--teach', mode === 'teach');
+    btnTeach.classList.toggle('btn-secondary', mode === 'teach');
+    btnTeach.classList.toggle('btn-ghost', mode !== 'teach');
     btnRendered.classList.toggle('btn-secondary', mode === 'rendered');
     btnRendered.classList.toggle('btn-ghost', mode !== 'rendered');
     btnSource.classList.toggle('btn-secondary', mode === 'source');
@@ -453,6 +538,7 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
     renderBody();
   }
 
+  btnTeach.addEventListener('click', () => setMode('teach'));
   btnRendered.addEventListener('click', () => setMode('rendered'));
   btnSource.addEventListener('click', () => setMode('source'));
 
@@ -478,8 +564,13 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
         return;
       }
     }
+    const exactSourceSegments = _normalizeExactSourceSegments(content || {});
+    if (exactSourceSegments.length) {
+      teachIndex = 0;
+      mode = 'teach';
+    }
     updateStatusBadge();
-    renderBody();
+    setMode(mode);
   }
 
   btnGenerate.addEventListener('click', async () => {
@@ -497,7 +588,8 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
       content = result?.leaf_content ?? null;
       if (content) _upsertUnitLeafContentSummary(classId, unitId, content);
       updateStatusBadge();
-      setMode('rendered');
+      if (_normalizeExactSourceSegments(content || {}).length) teachIndex = 0;
+      setMode(_normalizeExactSourceSegments(content || {}).length ? 'teach' : 'rendered');
       onChange?.(content);
       showToast('Missing lesson sections filled', 'ok');
     } catch (err) {
@@ -523,7 +615,8 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
       content = result?.leaf_content ?? null;
       if (content) _upsertUnitLeafContentSummary(classId, unitId, content);
       updateStatusBadge();
-      setMode('rendered');
+      if (_normalizeExactSourceSegments(content || {}).length) teachIndex = 0;
+      setMode(_normalizeExactSourceSegments(content || {}).length ? 'teach' : 'rendered');
       onChange?.(content);
       showToast('Lesson card regenerated', 'ok');
     } catch (err) {
