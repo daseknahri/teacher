@@ -38,6 +38,25 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-21 00:15 - Codex
+
+- Status: done
+- Goal: Test whether NotebookLM can return a full unit content package in one pass with exact section content instead of broad rewritten teaching blocks.
+- Files expected:
+  - `backend/scripts/test_notebooklm_full_unit_extract.py`
+  - `docs/roadmap/AI-WORKLOG.md`
+- Assumptions:
+  - One strict full-unit extraction pass is preferable if the schema stays narrow and source-faithful.
+- Notes:
+  - Benchmarked current `content_pack` prompt against a stricter full-unit prompt on real uploaded PDFs.
+  - Result: the current prompt maps sections better than expected but rewrites too much; the stricter prompt preserves more exact text and, after refinement, also keeps strong section paths.
+  - One geometry PDF failed during NotebookLM source processing, so any final architecture still needs a fallback path for PDFs NotebookLM cannot ingest.
+- Result:
+  - Added `backend/scripts/test_notebooklm_full_unit_extract.py` to repeat this benchmark on multiple PDFs.
+  - The refined prompt produced materially better section-first results on at least two real math PDFs.
+- Follow-up:
+  - Use this script on the 3-PDF benchmark set before wiring the refined full-unit output into the app.
+
 ### 2026-05-20 22:05 - Codex
 
 - Status: done
