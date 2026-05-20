@@ -26,6 +26,17 @@ const CONTENT_FIELDS = [
   { key: 'source_excerpt_md', label: 'Source Excerpt' },
 ];
 
+const SOURCE_SEGMENT_LABELS = {
+  activity: 'Activity',
+  lesson: 'Lesson',
+  definition: 'Definition',
+  property: 'Property',
+  example: 'Example',
+  exercise: 'Exercise',
+  evaluation: 'Assessment',
+  content: 'Content',
+};
+
 const EMPTY_LEAF_CONTENT = Object.freeze({
   id: null,
   unit_id: null,
@@ -84,9 +95,25 @@ function _countReadySections(content) {
   return CONTENT_FIELDS.reduce((count, field) => count + (String(draft[field.key] || '').trim() ? 1 : 0), 0);
 }
 
+function _normalizeExactSourceSegments(content) {
+  const rows = Array.isArray(content?.source_payload_json?.extracted_blocks)
+    ? content.source_payload_json.extracted_blocks
+    : [];
+  return rows
+    .map(row => ({
+      title: String(row?.title || '').trim(),
+      kind: String(row?.kind || '').trim().toLowerCase(),
+      phase: String(row?.teaching_phase || '').trim().toLowerCase(),
+      contentMd: String(row?.content_md || '').trim(),
+      contentSource: String(row?.content_source || '').trim().toLowerCase(),
+    }))
+    .filter(row => row.contentMd);
+}
+
 function _getLeafContentOriginMeta(content) {
   const provider = String(content?.provider || 'manual').trim().toLowerCase();
   const sourceMode = String(content?.source_payload_json?.mode || '').trim().toLowerCase();
+  const exactSourceCount = _normalizeExactSourceSegments(content).length;
   if (sourceMode === 'hybrid') {
     const filled = Array.isArray(content?.source_payload_json?.filled_fields) ? content.source_payload_json.filled_fields.length : 0;
     return {
@@ -95,6 +122,7 @@ function _getLeafContentOriginMeta(content) {
       detail: filled > 0
         ? `${filled} missing section${filled > 1 ? 's were' : ' was'} added on top of the extracted lesson content.`
         : 'This lesson keeps the extracted source content and can be improved section by section.',
+      sourceDetail: exactSourceCount ? `${exactSourceCount} exact source block${exactSourceCount === 1 ? '' : 's'} preserved from the unit.` : '',
     };
   }
   if (sourceMode === 'source_derived' || provider === 'source_extract') {
@@ -102,6 +130,7 @@ function _getLeafContentOriginMeta(content) {
       tone: 'source',
       title: 'Prepared from extracted unit content',
       detail: 'This lesson card is grounded in the PDF structure we already extracted for the unit.',
+      sourceDetail: exactSourceCount ? `${exactSourceCount} exact source block${exactSourceCount === 1 ? '' : 's'} preserved from the unit.` : '',
     };
   }
   if (provider === 'notebooklm') {
@@ -109,12 +138,14 @@ function _getLeafContentOriginMeta(content) {
       tone: 'brain',
       title: 'Generated with unit-brain support',
       detail: 'This lesson content was generated from the saved unit brain and can be edited freely.',
+      sourceDetail: exactSourceCount ? `${exactSourceCount} extracted source block${exactSourceCount === 1 ? '' : 's'} also available below.` : '',
     };
   }
   return {
     tone: 'manual',
     title: 'Teacher-edited lesson content',
     detail: 'This lesson card is stored in the app and can be refined in source mode at any time.',
+    sourceDetail: exactSourceCount ? `${exactSourceCount} extracted source block${exactSourceCount === 1 ? '' : 's'} also available below.` : '',
   };
 }
 
@@ -292,8 +323,9 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
     const mainFields = CONTENT_FIELDS.filter(field => field.key !== 'source_excerpt_md');
     const sections = mainFields.filter(field => draft[field.key]);
     const excerpt = draft.source_excerpt_md;
+    const exactSourceSegments = _normalizeExactSourceSegments(draft);
 
-    if (!sections.length && !excerpt) {
+    if (!sections.length && !excerpt && !exactSourceSegments.length) {
       body.innerHTML = `
         <p class="text-[13px] text-slate-400 py-8 text-center">
           No content fields filled in yet.
@@ -308,12 +340,36 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
           <div class="lcm-origin-copy">
             <p class="lcm-origin-title">${_esc(origin.title)}</p>
             <p class="lcm-origin-detail">${_esc(origin.detail)}</p>
+            ${origin.sourceDetail ? `<p class="lcm-origin-detail mt-1">${_esc(origin.sourceDetail)}</p>` : ''}
           </div>
           <div class="lcm-origin-summary">
             <span class="lcm-summary-label">Lesson readiness</span>
             <span class="lcm-summary-value">${readyCount} of ${totalCount} sections ready</span>
           </div>
         </div>
+        ${exactSourceSegments.length ? `
+          <div class="rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-4">
+            <div class="flex items-start justify-between gap-3 flex-wrap">
+              <div>
+                <p class="text-[10px] font-bold uppercase tracking-widest text-blue-600 mb-1">Exact Source Content</p>
+                <p class="text-[12px] text-slate-600">These blocks are preserved from the extracted unit content so you can teach directly from what was in the document.</p>
+              </div>
+              <span class="badge badge-blue">${exactSourceSegments.length} block${exactSourceSegments.length === 1 ? '' : 's'}</span>
+            </div>
+            <div class="mt-3 flex flex-col gap-3">
+              ${exactSourceSegments.map(segment => `
+                <div class="rounded-2xl border border-blue-100 bg-white px-4 py-4">
+                  <div class="flex items-center gap-2 flex-wrap mb-2">
+                    <span class="badge badge-blue">${_esc(SOURCE_SEGMENT_LABELS[segment.kind] || 'Source')}</span>
+                    ${segment.title ? `<span class="text-[12px] font-semibold text-slate-700">${_esc(segment.title)}</span>` : ''}
+                    <span class="text-[10px] text-slate-400 uppercase tracking-wider">${segment.contentSource === 'source_excerpt' ? 'Exact text' : 'Extracted content'}</span>
+                  </div>
+                  <div class="lcm-prose">${renderMarkdownLatex(segment.contentMd)}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
         ${sections.map(field => `
           <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
             <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">${_esc(field.label)}</p>

@@ -7018,6 +7018,10 @@ def test_leaf_content_source_extract_seeds_on_unit_start(client, monkeypatch):
     assert "additionne les numerateurs" in (body["explanation_md"] or "")
     assert body["source_payload_json"]["mode"] == "source_derived"
     assert body["source_payload_json"]["matched_block_count"] >= 1
+    extracted_blocks = body["source_payload_json"].get("extracted_blocks") or []
+    assert extracted_blocks
+    assert extracted_blocks[0]["content_md"]
+    assert extracted_blocks[0]["content_source"] in {"source_excerpt", "teaching_material"}
 
 
 def test_leaf_content_source_extract_assigns_examples_by_sequence(client, monkeypatch):

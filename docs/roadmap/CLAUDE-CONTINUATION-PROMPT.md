@@ -14,9 +14,10 @@ Before changing code, read these files in this order:
 1. docs/roadmap/AI-CONTENT-BANK-HANDOFF.md
 2. docs/roadmap/NOTEBOOKLM-UNIT-BRAIN-ARCHITECTURE.md
 3. docs/roadmap/LEAF-CONTENT-BANK-SPEC.md
-4. docs/roadmap/LEAF-CONTENT-READER-ROADMAP.md
-5. docs/roadmap/AI-COLLABORATION-PROTOCOL.md
-6. docs/roadmap/AI-WORKLOG.md
+4. docs/roadmap/EXACT-SOURCE-LESSON-MODE.md
+5. docs/roadmap/LEAF-CONTENT-READER-ROADMAP.md
+6. docs/roadmap/AI-COLLABORATION-PROTOCOL.md
+7. docs/roadmap/AI-WORKLOG.md
 
 Project direction to preserve:
 
@@ -33,6 +34,7 @@ Do not break these rules:
 4. Preserve started outline context in sessions and future textbook/export work.
 5. Prefer structured Markdown + LaTeX fields over one giant raw LaTeX blob.
 6. Regeneration should be granular per part, not always whole-unit or whole-leaf.
+7. If the PDF already contains a definition/example/exercise/activity, preserve that source content first and treat AI as an additive layer.
 
 Current workflow reality to preserve:
 

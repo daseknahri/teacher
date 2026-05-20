@@ -1039,6 +1039,46 @@ def _build_leaf_content_markdown_from_blocks(
     return "\n\n".join(rows[:4]).strip() or None
 
 
+def _build_exact_source_segments_from_blocks(
+    blocks: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    segments: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    for block in blocks or []:
+        if not isinstance(block, dict):
+            continue
+        title = _normalize_outline_title(block.get("title"))
+        kind = _normalize_content_block_kind(block.get("kind"))
+        phase = str(block.get("teaching_phase") or "").strip() or _normalize_content_block_phase(None, kind=kind, title=title)
+        excerpt = _normalize_content_block_text(block.get("source_excerpt"), limit=1200)
+        material = _normalize_content_block_text(block.get("teaching_material"), limit=1200)
+        content_md = excerpt or material
+        if not content_md:
+            continue
+        segment_key = "|".join(
+            value
+            for value in (
+                _semantic_title_key(title),
+                _semantic_title_key(content_md),
+            )
+            if value
+        )
+        if segment_key and segment_key in seen_keys:
+            continue
+        if segment_key:
+            seen_keys.add(segment_key)
+        segments.append(
+            {
+                "title": title or None,
+                "kind": kind,
+                "teaching_phase": phase,
+                "content_md": content_md,
+                "content_source": "source_excerpt" if excerpt else "teaching_material",
+            }
+        )
+    return segments[:8]
+
+
 def _extract_leaf_sequence_hint(title: str) -> int | None:
     normalized = _normalize_outline_title(title)
     if not normalized:
@@ -1196,6 +1236,7 @@ def build_source_derived_leaf_content_package(
                 for block in meaningful_blocks[:8]
                 if _normalize_outline_title(block.get("title"))
             ],
+            "extracted_blocks": _build_exact_source_segments_from_blocks(meaningful_blocks),
         },
         "raw_provider_response": {
             "mode": "source_derived",

@@ -38,6 +38,31 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-20 13:10 - Codex
+
+- Status: done
+- Goal: make source-seeded lesson cards preserve an exact source layer so the teacher can see document-faithful content inside the app before any added AI help
+- Files expected:
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/test_app_flows.py`
+  - `frontend/src/utils/leafContent.js`
+  - `docs/roadmap/EXACT-SOURCE-LESSON-MODE.md`
+  - `docs/roadmap/CLAUDE-CONTINUATION-PROMPT.md`
+  - `docs/roadmap/CLAUDE-TASK-EXACT-SOURCE-BLOCK-EXTRACTION.md`
+- Assumptions:
+  - exact source preservation is more important than adding another generated summary layer
+  - we can use the existing `source_payload_json` shape instead of forcing a new migration first
+  - lesson cards should show extracted source blocks first, while still keeping editable structured fields
+- Notes:
+  - kept this slice local to save Claude tokens; prepared a narrow follow-up Claude task for the next extraction-quality pass
+- Result:
+  - source-derived leaf content now stores ordered `extracted_blocks` in `source_payload_json`
+  - lesson cards now render an `Exact Source Content` layer when extracted blocks exist
+  - added regression coverage proving extracted blocks are preserved on source-seeded leaf cards
+  - documented the product rule in `EXACT-SOURCE-LESSON-MODE.md`
+- Follow-up:
+  - next extraction-quality pass should improve splitting and classification when a coarse PDF block contains multiple pedagogical parts
+
 ### 2026-05-20 02:35 - Codex
 
 - Status: done
