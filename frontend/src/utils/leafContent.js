@@ -298,88 +298,61 @@ export function invalidateUnitLeafContentSummaries(classId, unitId) {
 }
 
 export async function openLeafContentModal(classId, unitId, item, options = {}) {
-  const itemId = Number(item?.id || 0);
-  if (!itemId || !classId || !unitId) return;
-  const onChange = typeof options?.onChange === 'function' ? options.onChange : null;
+  const cid = Number(classId || 0);
+  const uid = Number(unitId || 0);
+  if (!cid || !uid) return;
+
+  const itemTitle = String(item?.title || '').trim() || 'Section lesson';
+  const itemPath = Array.isArray(item?.item_path_json)
+    ? item.item_path_json.map(value => String(value || '').trim()).filter(Boolean)
+    : [];
+  const sectionPath = Array.isArray(item?.section_path_json) && item.section_path_json.length
+    ? item.section_path_json.map(value => String(value || '').trim()).filter(Boolean)
+    : (itemPath.length > 1 ? itemPath.slice(0, -1) : []);
+  if (!sectionPath.length) {
+    showToast('This row is missing its section path, so the section lesson cannot open yet.', 'info');
+    return;
+  }
 
   document.getElementById('leaf-content-modal-overlay')?.remove();
 
-  const itemTitle = String(item?.title || 'Leaf Item');
-  const itemPath = Array.isArray(item?.item_path_json) ? item.item_path_json : [];
-  const pathBreadcrumb = itemPath.length > 1 ? itemPath.slice(0, -1).join(' > ') : '';
+  const sectionTitle = String(sectionPath[sectionPath.length - 1] || itemTitle || 'Section').trim();
+  const sectionBreadcrumb = sectionPath.join(' > ');
 
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.id = 'leaf-content-modal-overlay';
   overlay.innerHTML = `
-    <div class="modal leaf-content-modal">
+    <div class="modal leaf-content-modal leaf-content-modal--section">
       <div class="lcm-header">
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2 mb-1">
-            <span class="text-[10px] font-bold uppercase tracking-widest text-blue-600">Lesson</span>
-            <span id="lcm-status-badge"></span>
+            <span class="text-[10px] font-bold uppercase tracking-widest text-blue-600">Section</span>
           </div>
-          <h2 class="text-[15px] font-bold text-slate-800 leading-tight">${_esc(itemTitle)}</h2>
-          ${pathBreadcrumb ? `<p class="lcm-header-path text-[11px] text-slate-400 mt-0.5">${_esc(pathBreadcrumb)}</p>` : ''}
+          <h2 class="text-[15px] font-bold text-slate-800 leading-tight">${_esc(sectionTitle)}</h2>
+          <p class="lcm-header-path text-[11px] text-slate-400 mt-0.5">${_esc(sectionBreadcrumb)}</p>
         </div>
-        <div class="flex items-center gap-1 flex-shrink-0">
-          <button id="lcm-btn-teach" class="btn btn-sm btn-ghost lcm-mode-btn">Teach</button>
-          <button id="lcm-btn-rendered" class="btn btn-sm btn-secondary lcm-mode-btn">Review</button>
-          <button id="lcm-btn-source" class="btn btn-sm btn-ghost lcm-mode-btn">Edit</button>
-          <button id="lcm-btn-close" class="btn btn-ghost btn-sm !text-slate-400 !text-[18px] !leading-none !px-2" title="Close">x</button>
-        </div>
+        <button id="lcm-btn-close" class="btn btn-ghost btn-sm !text-slate-400 !text-[18px] !leading-none !px-2" title="Close">x</button>
       </div>
       <div id="lcm-body" class="lcm-body">
-        <p class="text-[13px] text-slate-400 py-8 text-center">Loading...</p>
+        <p class="text-[13px] text-slate-400 py-8 text-center">Loading section content...</p>
       </div>
       <div class="lcm-footer">
-        <div class="lcm-footer-actions">
-          <button id="lcm-btn-generate" class="btn btn-secondary btn-sm">Generate from Unit Brain</button>
-          <button id="lcm-btn-regenerate" class="btn btn-ghost btn-sm" hidden>Regenerate All</button>
-        </div>
-        <div class="flex items-center gap-2">
-          <button id="lcm-btn-save" class="btn btn-primary btn-sm" hidden>Save</button>
-          <button id="lcm-btn-close2" class="btn btn-ghost btn-sm">Close</button>
-        </div>
+        <div class="text-[12px] text-slate-400">Exact extracted section content</div>
+        <button id="lcm-btn-close2" class="btn btn-ghost btn-sm">Close</button>
       </div>
     </div>
   `;
-
   document.body.appendChild(overlay);
 
-  let mode = 'rendered';
-  let content = null;
-  let teachIndex = 0;
-
-  const modal = overlay.querySelector('.leaf-content-modal');
   const body = overlay.querySelector('#lcm-body');
-  const statusBadge = overlay.querySelector('#lcm-status-badge');
-  const btnTeach = overlay.querySelector('#lcm-btn-teach');
-  const btnRendered = overlay.querySelector('#lcm-btn-rendered');
-  const btnSource = overlay.querySelector('#lcm-btn-source');
-  const btnGenerate = overlay.querySelector('#lcm-btn-generate');
-  const btnRegenerate = overlay.querySelector('#lcm-btn-regenerate');
-  const btnSave = overlay.querySelector('#lcm-btn-save');
-
   function onKey(event) {
-    if (mode === 'teach') {
-      if (event.key === 'ArrowRight') {
-        moveTeachIndex(1);
-        return;
-      }
-      if (event.key === 'ArrowLeft') {
-        moveTeachIndex(-1);
-        return;
-      }
-    }
     if (event.key === 'Escape') close();
   }
-
-  function close() {
+  const close = () => {
     document.removeEventListener('keydown', onKey);
     overlay.remove();
-  }
-
+  };
   overlay.querySelector('#lcm-btn-close')?.addEventListener('click', close);
   overlay.querySelector('#lcm-btn-close2')?.addEventListener('click', close);
   overlay.addEventListener('click', event => {
@@ -387,401 +360,85 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
   });
   document.addEventListener('keydown', onKey);
 
-  function updateStatusBadge() {
-    if (!content) {
-      statusBadge.innerHTML = '';
-      return;
-    }
-    const status = String(content?.status || 'draft');
-    const reviewed = Boolean(content?.reviewed);
-    let cls = 'badge badge-gray';
-    if (status === 'ok') cls = reviewed ? 'badge badge-green' : 'badge badge-blue';
-    else if (status === 'degraded') cls = 'badge badge-amber';
-    statusBadge.innerHTML =
-      `<span class="${cls}">${_esc(status)}</span>` +
-      (reviewed ? ' <span class="badge badge-green">Reviewed</span>' : '');
-  }
-
-  function renderRenderedMode() {
-    const draft = content || _createEmptyLeafContent(item);
-    const origin = _getLeafContentOriginMeta(draft);
-    const readyCount = _countReadySections(draft);
-    const totalCount = CONTENT_FIELDS.length;
-    const mainFields = CONTENT_FIELDS.filter(field => field.key !== 'source_excerpt_md');
-    const exactSourceKeys = new Set(
-      _normalizeExactSourceSegments(draft)
-        .map(segment => _semanticContentKey(segment.contentMd))
-        .filter(Boolean)
-    );
-    const sections = mainFields.filter(field => {
-      const value = String(draft[field.key] || '').trim();
-      if (!value) return false;
-      const valueKey = _semanticContentKey(value);
-      return !valueKey || !exactSourceKeys.has(valueKey);
+  try {
+    const lesson = await api(`/workflow/classes/${cid}/units/${uid}/section-lesson`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        section_path: sectionPath,
+        item_path: itemPath,
+        item_title: itemTitle,
+      }),
     });
-    const excerpt = draft.source_excerpt_md;
-    const exactSourceSegments = _normalizeExactSourceSegments(draft);
-    const excerptKey = _semanticContentKey(excerpt);
-    const showExcerpt = Boolean(excerpt) && (!excerptKey || !exactSourceKeys.has(excerptKey));
+    const blocks = Array.isArray(lesson?.source_blocks) ? lesson.source_blocks : [];
+    const excerpt = String(lesson?.source_excerpt_md || '').trim();
 
-    if (!sections.length && !showExcerpt && !exactSourceSegments.length) {
-      body.innerHTML = `
-        <p class="text-[13px] text-slate-400 py-8 text-center">
-          No content fields filled in yet.
-          Switch to <strong>Edit</strong> mode to add content manually, or press <strong>Generate</strong>.
-        </p>`;
-      return;
-    }
-
-    body.innerHTML = `
-      <div class="flex flex-col gap-3">
-        <div class="lcm-origin-banner lcm-origin-banner--${_esc(origin.tone)}">
-          <div class="lcm-origin-copy">
-            <p class="lcm-origin-title">${_esc(origin.title)}</p>
-            <p class="lcm-origin-detail">${_esc(origin.detail)}</p>
-            ${origin.sourceDetail ? `<p class="lcm-origin-detail mt-1">${_esc(origin.sourceDetail)}</p>` : ''}
-          </div>
-          <div class="lcm-origin-summary">
-            <span class="lcm-summary-label">Lesson readiness</span>
-            <span class="lcm-summary-value">${readyCount} of ${totalCount} sections ready</span>
-          </div>
-        </div>
-        ${exactSourceSegments.length ? `
-          <div class="rounded-2xl border border-blue-100 bg-blue-50/60 px-4 py-4">
-            <div class="flex items-start justify-between gap-3 flex-wrap">
-              <div>
-                <p class="text-[10px] font-bold uppercase tracking-widest text-blue-600 mb-1">Exact Source Content</p>
-                <p class="text-[12px] text-slate-600">These blocks are preserved from the extracted unit content so you can teach directly from what was in the document.</p>
-              </div>
-              <span class="badge badge-blue">${exactSourceSegments.length} block${exactSourceSegments.length === 1 ? '' : 's'}</span>
-            </div>
-            <div class="mt-3 flex flex-col gap-3">
-              ${exactSourceSegments.map(segment => `
-                <div class="rounded-2xl border border-blue-100 bg-white px-4 py-4">
-                  <div class="flex items-center gap-2 flex-wrap mb-2">
-                    <span class="badge badge-blue">${_esc(SOURCE_SEGMENT_LABELS[segment.kind] || 'Source')}</span>
-                    ${segment.title ? `<span class="text-[12px] font-semibold text-slate-700">${_esc(segment.title)}</span>` : ''}
-                    <span class="text-[10px] text-slate-400 uppercase tracking-wider">${segment.contentSource === 'source_excerpt' ? 'Exact text' : 'Extracted content'}</span>
-                  </div>
-                  <div class="lcm-prose">${renderMarkdownLatex(segment.contentMd, { preserveLineBreaks: true })}</div>
-                </div>
-              `).join('')}
-            </div>
-          </div>
-        ` : ''}
-        ${sections.map(field => `
-          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-            <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">${_esc(field.label)}</p>
-            <div class="lcm-prose">${renderMarkdownLatex(draft[field.key], { preserveLineBreaks: true })}</div>
-          </div>
-        `).join('')}
-        ${showExcerpt ? `
-          <details class="rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
-            <summary class="text-[11px] font-semibold text-slate-400 cursor-pointer select-none">Source Excerpt</summary>
-            <div class="lcm-prose text-[12px] text-slate-500 mt-3">${renderMarkdownLatex(excerpt, { preserveLineBreaks: true })}</div>
-          </details>` : ''}
-      </div>`;
-  }
-
-  function _buildTeachBlocks(draft) {
-    const exactSourceSegments = _normalizeExactSourceSegments(draft);
-    if (exactSourceSegments.length) {
-      return exactSourceSegments.map(segment => ({
-        kindLabel: SOURCE_SEGMENT_LABELS[segment.kind] || 'Source',
-        title: segment.title || '',
-        subtitle: segment.contentSource === 'source_excerpt' ? 'Exact text from PDF' : 'Extracted source content',
-        contentMd: segment.contentMd,
-      }));
-    }
-    return CONTENT_FIELDS
-      .filter(field => field.key !== 'teacher_notes_md' && field.key !== 'source_excerpt_md')
-      .map(field => ({
-        kindLabel: field.label,
-        title: '',
-        subtitle: 'Lesson content',
-        contentMd: String(draft?.[field.key] || '').trim(),
-      }))
-      .filter(block => block.contentMd);
-  }
-
-  function renderTeachMode() {
-    const draft = content || _createEmptyLeafContent(item);
-    const blocks = _buildTeachBlocks(draft);
-    if (!blocks.length) {
+    if (!blocks.length && !excerpt) {
       body.innerHTML = `
         <div class="lcm-teach-empty">
-          <p class="lcm-teach-empty-title">Nothing ready to teach yet</p>
-          <p class="lcm-teach-empty-detail">This leaf does not have a readable source block yet. Use <strong>Review</strong> or <strong>Edit</strong> to prepare it first.</p>
+          <p class="lcm-teach-empty-title">No extracted section content found</p>
+          <p class="lcm-teach-empty-detail">This section does not have a clean extracted source block yet. We should improve extraction for this section before adding more AI on top.</p>
         </div>`;
       return;
     }
-    const safeIndex = Math.max(0, Math.min(teachIndex, blocks.length - 1));
-    teachIndex = safeIndex;
-    const current = blocks[safeIndex];
-    const blockTitle = _labelKey(current.title) && _labelKey(current.title) !== _labelKey(itemTitle)
-      ? current.title
-      : '';
-    const stagePath = _compactTeachPath(itemPath.length > 1 ? itemPath.slice(0, -1) : itemPath);
-    const cleanedContent = _cleanTeachContent(current.contentMd, {
-      itemTitle,
-      blockTitle: current.title,
-      pathValues: itemPath,
-    });
+
     body.innerHTML = `
-      <div class="lcm-teach">
-        <div class="lcm-teach-topbar">
-          <div class="lcm-teach-meta">
-            <span class="lcm-teach-pill">${_esc(current.kindLabel)}</span>
-            ${blockTitle ? `<span class="lcm-teach-meta-title">${_esc(blockTitle)}</span>` : ''}
-          </div>
-          ${blocks.length > 1 ? `<div class="lcm-teach-counter">${safeIndex + 1} / ${blocks.length}</div>` : ''}
-        </div>
-        <div class="lcm-teach-layout">
-          ${blocks.length > 1 ? `
-            <aside class="lcm-teach-outline" aria-label="Lesson blocks">
-              ${blocks.map((block, index) => {
-                const active = index === safeIndex;
-                const label = _getTeachBlockDisplayTitle(block, index, itemTitle);
-                return `
-                  <button
-                    type="button"
-                    class="lcm-teach-outline-item${active ? ' is-active' : ''}"
-                    data-teach-index="${index}"
-                  >
-                    <span class="lcm-teach-outline-kind">${_esc(block.kindLabel)}</span>
-                    <span class="lcm-teach-outline-title">${_esc(label)}</span>
-                  </button>`;
-              }).join('')}
-            </aside>
-          ` : ''}
-          <div class="lcm-teach-stage">
-            <div class="lcm-teach-stage-head">
-              <h3 class="lcm-teach-stage-title">${_esc(itemTitle)}</h3>
-              ${stagePath ? `<p class="lcm-teach-stage-path">${_esc(stagePath)}</p>` : ''}
-            </div>
-            <div class="lcm-teach-prose">${renderMarkdownLatex(cleanedContent, { preserveLineBreaks: true })}</div>
-          </div>
-        </div>
+      <div class="section-lesson-shell">
         ${blocks.length > 1 ? `
-        <div class="lcm-teach-nav">
-          <button type="button" class="btn btn-ghost btn-sm" id="lcm-teach-prev" ${safeIndex <= 0 ? 'disabled' : ''}>Previous</button>
-          <button type="button" class="btn btn-secondary btn-sm" id="lcm-teach-next" ${safeIndex >= blocks.length - 1 ? 'disabled' : ''}>Next</button>
-        </div>` : ''}
-      </div>`;
-    if (blocks.length > 1) {
-      body.querySelector('#lcm-teach-prev')?.addEventListener('click', () => moveTeachIndex(-1));
-      body.querySelector('#lcm-teach-next')?.addEventListener('click', () => moveTeachIndex(1));
-      body.querySelectorAll('[data-teach-index]').forEach(node => {
-        node.addEventListener('click', () => {
-          const nextIndex = Number(node.getAttribute('data-teach-index'));
-          if (Number.isFinite(nextIndex)) {
-            teachIndex = Math.max(0, Math.min(blocks.length - 1, nextIndex));
-            renderTeachMode();
-          }
-        });
-      });
-    }
-  }
-
-  function renderSourceMode() {
-    const draft = content || _createEmptyLeafContent(item);
-    const origin = _getLeafContentOriginMeta(draft);
-    const readyCount = _countReadySections(draft);
-    const totalCount = CONTENT_FIELDS.length;
-    body.innerHTML = `
-      <div class="flex flex-col gap-4">
-        <div class="lcm-origin-banner lcm-origin-banner--${_esc(origin.tone)}">
-          <div class="lcm-origin-copy">
-            <p class="lcm-origin-title">${_esc(origin.title)}</p>
-            <p class="lcm-origin-detail">${_esc(origin.detail)}</p>
+          <div class="section-lesson-outline" aria-label="Section outline">
+            ${blocks.map((block, index) => {
+              const displayTitle = _getTeachBlockDisplayTitle(block, index, sectionTitle);
+              return `
+                <button type="button" class="section-lesson-outline-item" data-section-block="${index}">
+                  <span class="section-lesson-outline-kind">${_esc(block.kind_label || 'Content')}</span>
+                  <span class="section-lesson-outline-title">${_esc(displayTitle)}</span>
+                </button>
+              `;
+            }).join('')}
           </div>
-          <div class="lcm-origin-summary">
-            <span class="lcm-summary-label">Lesson readiness</span>
-            <span class="lcm-summary-value">${readyCount} of ${totalCount} sections ready</span>
-          </div>
+        ` : ''}
+        <div class="section-lesson-blocks">
+          ${blocks.map((block, index) => {
+            const displayTitle = _getTeachBlockDisplayTitle(block, index, sectionTitle);
+            const cleanedContent = _cleanTeachContent(block.content_md, {
+              itemTitle: sectionTitle,
+              blockTitle: block.title,
+              pathValues: sectionPath,
+            });
+            const showTitle = _labelKey(displayTitle) !== _labelKey(sectionTitle);
+            return `
+              <section class="section-lesson-block" id="section-lesson-block-${index}">
+                <div class="section-lesson-block-head">
+                  <span class="lcm-teach-pill">${_esc(block.kind_label || 'Content')}</span>
+                  ${showTitle ? `<h3 class="section-lesson-block-title">${_esc(displayTitle)}</h3>` : ''}
+                </div>
+                <div class="lcm-teach-prose">${renderMarkdownLatex(cleanedContent, { preserveLineBreaks: true })}</div>
+              </section>
+            `;
+          }).join('')}
+          ${!blocks.length && excerpt ? `
+            <section class="section-lesson-block">
+              <div class="section-lesson-block-head">
+                <span class="lcm-teach-pill">Section</span>
+              </div>
+              <div class="lcm-teach-prose">${renderMarkdownLatex(excerpt, { preserveLineBreaks: true })}</div>
+            </section>
+          ` : ''}
         </div>
-        <p class="text-[12px] text-slate-400">
-          Edit below. Use Markdown for structure, <code>$...$</code> for inline math,
-          <code>$$...$$</code> for block math.
-        </p>
-        ${CONTENT_FIELDS.map(field => `
-          <div class="flex flex-col gap-1.5">
-            <label class="text-[11px] font-semibold uppercase tracking-widest text-slate-400">${_esc(field.label)}</label>
-            <textarea
-              id="lcm-field-${field.key}"
-              class="text-[12px] font-mono"
-              style="min-height:80px;resize:vertical"
-              placeholder="Leave empty if not applicable"
-            >${_esc(draft[field.key] || '')}</textarea>
-          </div>
-        `).join('')}
-      </div>`;
-  }
+      </div>
+    `;
 
-  function renderBody() {
-    const hasAnyContent = Boolean(content) && _countReadySections(content) > 0;
-    const footerActions = overlay.querySelector('.lcm-footer-actions');
-    btnGenerate.textContent = hasAnyContent ? 'Fill Missing with Unit Brain' : 'Generate from Unit Brain';
-    btnRegenerate.hidden = !hasAnyContent;
-    if (footerActions) footerActions.style.display = mode === 'teach' ? 'none' : 'flex';
-    if (!content && mode !== 'source') {
-      body.innerHTML = `
-        <div class="flex flex-col items-center justify-center gap-3 py-12 text-center">
-          <p class="text-[13px] text-slate-600 font-medium">No lesson content yet</p>
-          <p class="text-[12px] text-slate-400 max-w-[260px]">
-            Press <strong>Generate from Unit Brain</strong> to create the first lesson draft for this leaf.
-          </p>
-        </div>`;
-      btnSave.hidden = true;
-      return;
-    }
-
-    if (mode === 'teach') {
-      renderTeachMode();
-      btnSave.hidden = true;
-    } else if (mode === 'rendered') {
-      renderRenderedMode();
-      btnSave.hidden = true;
-    } else {
-      renderSourceMode();
-      btnSave.hidden = false;
-    }
-  }
-
-  function moveTeachIndex(delta) {
-    if (mode !== 'teach') return;
-    const blockCount = _buildTeachBlocks(content || _createEmptyLeafContent(item)).length;
-    if (!blockCount) return;
-    teachIndex = Math.max(0, Math.min(blockCount - 1, teachIndex + delta));
-    renderTeachMode();
-  }
-
-  function setMode(nextMode) {
-    mode = nextMode;
-    modal?.classList.toggle('leaf-content-modal--teach', mode === 'teach');
-    btnTeach.classList.toggle('btn-secondary', mode === 'teach');
-    btnTeach.classList.toggle('btn-ghost', mode !== 'teach');
-    btnRendered.classList.toggle('btn-secondary', mode === 'rendered');
-    btnRendered.classList.toggle('btn-ghost', mode !== 'rendered');
-    btnSource.classList.toggle('btn-secondary', mode === 'source');
-    btnSource.classList.toggle('btn-ghost', mode !== 'source');
-    renderBody();
-  }
-
-  btnTeach.addEventListener('click', () => setMode('teach'));
-  btnRendered.addEventListener('click', () => setMode('rendered'));
-  btnSource.addEventListener('click', () => setMode('source'));
-
-  function collectSourceFields() {
-    const fields = {};
-    CONTENT_FIELDS.forEach(field => {
-      const node = overlay.querySelector(`#lcm-field-${field.key}`);
-      fields[field.key] = node ? (node.value.trim() || null) : ((content || EMPTY_LEAF_CONTENT)[field.key] ?? null);
+    body.querySelectorAll('[data-section-block]').forEach(node => {
+      node.addEventListener('click', () => {
+        const index = Number(node.getAttribute('data-section-block'));
+        const target = body.querySelector(`#section-lesson-block-${index}`);
+        target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
     });
-    return fields;
+  } catch (err) {
+    showToast(err.message || 'Failed to open section lesson', 'error');
+    close();
   }
-
-  async function loadContent() {
-    body.innerHTML = `<p class="text-[13px] text-slate-400 py-8 text-center">Loading...</p>`;
-    try {
-      content = await api(`/workflow/classes/${classId}/units/${unitId}/leaf-content/${itemId}`);
-    } catch (err) {
-      if (err.status === 404) {
-        content = null;
-      } else {
-        showToast(err.message || 'Failed to load leaf content', 'error');
-        close();
-        return;
-      }
-    }
-    const exactSourceSegments = _normalizeExactSourceSegments(content || {});
-    if (exactSourceSegments.length) {
-      teachIndex = 0;
-      mode = 'teach';
-    }
-    updateStatusBadge();
-    setMode(mode);
-  }
-
-  btnGenerate.addEventListener('click', async () => {
-    _setBusy(btnGenerate, true);
-    _setBusy(btnRegenerate, true);
-    try {
-      const result = await api(
-        `/workflow/classes/${classId}/units/${unitId}/leaf-content/${itemId}/generate`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ regenerate: true, merge_strategy: 'fill_missing' }),
-        },
-      );
-      content = result?.leaf_content ?? null;
-      if (content) _upsertUnitLeafContentSummary(classId, unitId, content);
-      updateStatusBadge();
-      if (_normalizeExactSourceSegments(content || {}).length) teachIndex = 0;
-      setMode(_normalizeExactSourceSegments(content || {}).length ? 'teach' : 'rendered');
-      onChange?.(content);
-      showToast('Missing lesson sections filled', 'ok');
-    } catch (err) {
-      showToast(err.message || 'Generation failed', 'error');
-    } finally {
-      _setBusy(btnGenerate, false);
-      _setBusy(btnRegenerate, false);
-    }
-  });
-
-  btnRegenerate.addEventListener('click', async () => {
-    _setBusy(btnGenerate, true);
-    _setBusy(btnRegenerate, true);
-    try {
-      const result = await api(
-        `/workflow/classes/${classId}/units/${unitId}/leaf-content/${itemId}/generate`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ regenerate: true, merge_strategy: 'replace' }),
-        },
-      );
-      content = result?.leaf_content ?? null;
-      if (content) _upsertUnitLeafContentSummary(classId, unitId, content);
-      updateStatusBadge();
-      if (_normalizeExactSourceSegments(content || {}).length) teachIndex = 0;
-      setMode(_normalizeExactSourceSegments(content || {}).length ? 'teach' : 'rendered');
-      onChange?.(content);
-      showToast('Lesson card regenerated', 'ok');
-    } catch (err) {
-      showToast(err.message || 'Regeneration failed', 'error');
-    } finally {
-      _setBusy(btnGenerate, false);
-      _setBusy(btnRegenerate, false);
-    }
-  });
-
-  btnSave.addEventListener('click', async () => {
-    if (!content) content = _createEmptyLeafContent(item);
-    _setBusy(btnSave, true);
-    try {
-      const fields = collectSourceFields();
-      content = await api(
-        `/workflow/classes/${classId}/units/${unitId}/leaf-content/${itemId}`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(fields),
-        },
-      );
-      if (content) _upsertUnitLeafContentSummary(classId, unitId, content);
-      updateStatusBadge();
-      onChange?.(content);
-      showToast('Lesson card saved', 'ok');
-    } catch (err) {
-      showToast(err.message || 'Save failed', 'error');
-    } finally {
-      _setBusy(btnSave, false);
-    }
-  });
-
-  await loadContent();
 }
 
 export async function fetchUnitLeafContentSummaries(classId, unitId) {

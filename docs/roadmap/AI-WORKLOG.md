@@ -38,6 +38,35 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-20 19:35 - Codex
+
+- Status: done
+- Goal: Simplify the confusing leaf lesson flow into a section-first teaching surface that shows only exact extracted section content.
+- Files expected:
+  - `backend/app/routers/workflow.py`
+  - `backend/app/schemas.py`
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/test_app_flows.py`
+  - `frontend/src/utils/leafContent.js`
+  - `frontend/src/views/WorkflowView.js`
+  - `frontend/src/views/CalendarView.js`
+  - `frontend/src/style/components.css`
+- Assumptions:
+  - First testable version should be read-only and exact-source-first.
+  - Section-level correctness matters more right now than per-leaf generation/editing.
+- Notes:
+  - Added a new `/workflow/classes/{class_id}/units/{unit_id}/section-lesson` route.
+  - Lesson buttons now open a section reader instead of the old leaf authoring modal.
+  - Removed leaf lesson status dots from the main flow to reduce noise.
+- Result:
+  - Section lesson now shows exact extracted section blocks only, in a cleaner reading modal.
+  - Backend and focused tests pass, and frontend build passes.
+- Follow-up:
+  - Test this exact section-reader flow on cloud.
+  - If section extraction is still weak for some PDFs, improve source block quality before adding any more AI layers.
+
+---
+
 ### 2026-05-20 18:25 - Codex
 
 - Status: done

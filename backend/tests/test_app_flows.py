@@ -7623,6 +7623,127 @@ def test_source_derived_leaf_content_splits_pipe_separated_rows():
     assert exact_blocks[2]["content_md"] == "Comparer 4/9 et 5/9"
 
 
+def test_build_source_section_lesson_package_keeps_exact_section_content():
+    from app.services import workflow_generation
+
+    content_blocks = workflow_generation._normalize_content_blocks_payload(
+        {
+            "content_blocks": [
+                {
+                    "section_title": "Produit et division",
+                    "section_path": ["Rationnels", "Produit et division"],
+                    "title": "Exemple de produit",
+                    "kind": "example",
+                    "teaching_material": "Calculer 2/3 x 4/5 = 8/15.",
+                    "source_excerpt": "Bloc exemple produit.",
+                },
+                {
+                    "section_title": "Produit et division",
+                    "section_path": ["Rationnels", "Produit et division"],
+                    "title": "Exercices de produit",
+                    "kind": "exercise",
+                    "teaching_material": "a) Calculer 3/7 x 2/7. b) Simplifier 5/10 x 1/2.",
+                    "source_excerpt": "Bloc exercices produit.",
+                },
+                {
+                    "section_title": "Somme et difference",
+                    "section_path": ["Rationnels", "Somme et difference"],
+                    "title": "Exemple de somme",
+                    "kind": "example",
+                    "teaching_material": "Calculer 3/7 + 2/7 = 5/7.",
+                    "source_excerpt": "Bloc exemple somme.",
+                },
+            ]
+        },
+        unit_map=None,
+        fallback_outline=None,
+    )
+
+    payload = workflow_generation.build_source_section_lesson_package(
+        section_title="Produit et division",
+        section_path=["Rationnels", "Produit et division"],
+        item_path=["Rationnels", "Produit et division", "Exemple de produit"],
+        item_title="Exemple de produit",
+        content_blocks=content_blocks,
+    )
+
+    assert payload["section_title"] == "Produit et division"
+    assert payload["source_block_count"] >= 2
+    combined = "\n".join(block["content_md"] for block in payload["source_blocks"])
+    assert "2/3 x 4/5" in combined
+    assert "3/7 x 2/7" in combined
+    assert "3/7 + 2/7" not in combined
+
+
+def test_section_lesson_endpoint_returns_matching_section_content(client):
+    headers = _auth_headers(client)
+    class_resp = client.post(
+        "/classes",
+        json={"name": f"SectionLesson {uuid.uuid4().hex[:6]}", "subject": "Math"},
+        headers=headers,
+    )
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    start_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={"unit_type": "chapter", "title": "Section Lesson Unit", "source_text": "Produit et division\nExemples\nExercices"},
+    )
+    assert start_resp.status_code == 201
+    unit_id = start_resp.json()["id"]
+
+    from app.database import SessionLocal
+    from app.models import WorkflowUnitBlueprint
+
+    with SessionLocal() as db_session:
+        blueprint = db_session.query(WorkflowUnitBlueprint).filter(WorkflowUnitBlueprint.unit_id == unit_id).one()
+        blueprint.content_blocks_json = [
+            {
+                "section_title": "Produit et division",
+                "section_path": ["Rationnels", "Produit et division"],
+                "title": "Exemple de produit",
+                "kind": "example",
+                "teaching_material": "Calculer 2/3 x 4/5 = 8/15.",
+                "source_excerpt": "Bloc exemple produit.",
+            },
+            {
+                "section_title": "Produit et division",
+                "section_path": ["Rationnels", "Produit et division"],
+                "title": "Exercices de produit",
+                "kind": "exercise",
+                "teaching_material": "a) Calculer 3/7 x 2/7. b) Simplifier 5/10 x 1/2.",
+                "source_excerpt": "Bloc exercices produit.",
+            },
+            {
+                "section_title": "Somme et difference",
+                "section_path": ["Rationnels", "Somme et difference"],
+                "title": "Exemple de somme",
+                "kind": "example",
+                "teaching_material": "Calculer 3/7 + 2/7 = 5/7.",
+                "source_excerpt": "Bloc exemple somme.",
+            },
+        ]
+        db_session.commit()
+
+    resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/section-lesson",
+        headers=headers,
+        json={
+            "section_path": ["Rationnels", "Produit et division"],
+            "item_path": ["Rationnels", "Produit et division", "Exemple de produit"],
+            "item_title": "Exemple de produit",
+        },
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["section_title"] == "Produit et division"
+    combined = "\n".join(row["content_md"] for row in payload["source_blocks"])
+    assert "2/3 x 4/5" in combined
+    assert "3/7 x 2/7" in combined
+    assert "3/7 + 2/7" not in combined
+
+
 def test_leaf_content_generate_requires_blueprint(client):
     headers = _auth_headers(client)
     class_resp = client.post(

@@ -11,7 +11,7 @@ import { fmtDate, fmtTime } from '../utils/format.js';
 import { askConfirm } from '../utils/modal.js';
 import { navigate } from '../router.js';
 import { copyText } from '../utils/password.js';
-import { openLeafContentModal, fetchUnitLeafContentSummaries, renderLeafStatusBadge } from '../utils/leafContent.js';
+import { openLeafContentModal } from '../utils/leafContent.js';
 
 let _weekStart = _startOfWeek(new Date());
 let _selectedSessionId = null;
@@ -35,7 +35,6 @@ const CALENDAR_VIEW_INTENT_KEY = 'calendar_view_intent';
 const _sessionDetailCache = new Map();
 const _calendarUnitBlueprintCache = new Map();
 const _calendarAssistantArtifactCache = new Map();
-const _calendarLeafSumFetchedUnits = new Set();
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const TIME_SLOTS = [
@@ -639,9 +638,8 @@ function _renderCalendarBlueprintTree(nodes, depth = 0, { resumeNodeId = null, c
             <span class="text-[13px] ${node?.is_completed ? 'text-slate-400 line-through' : 'text-slate-700'}">${_escapeHtml(node?.title || '')}</span>
             ${node?.kind ? `<span class="badge badge-gray">${_escapeHtml(String(node.kind))}</span>` : ''}
             ${node?.session_number ? `<span class="badge badge-blue">S${Number(node.session_number)}</span>` : ''}
-            ${hasLeafId ? renderLeafStatusBadge(nodeId, classId, unitId) : ''}
             ${resumeNodeId != null && Number(node?.id || 0) === Number(resumeNodeId) ? `<span class="badge badge-amber">Resume here</span>` : node?.is_completed ? `<span class="badge badge-green">Done</span>` : ''}
-            ${hasLeafId ? `<button type="button" class="btn btn-ghost btn-sm btn-calendar-leaf-lesson !text-blue-600" data-item-id="${nodeId}" data-class-id="${Number(classId || 0)}" data-unit-id="${Number(unitId || 0)}" data-item-path="${_escapeHtmlAttr(JSON.stringify(path))}" data-section-path="${_escapeHtmlAttr(JSON.stringify(path.length > 1 ? path.slice(0, -1) : path))}" title="Open lesson card">Lesson</button>` : ''}
+            ${hasLeafId ? `<button type="button" class="btn btn-ghost btn-sm btn-calendar-leaf-lesson !text-blue-600" data-item-id="${nodeId}" data-class-id="${Number(classId || 0)}" data-unit-id="${Number(unitId || 0)}" data-item-path="${_escapeHtmlAttr(JSON.stringify(path))}" data-section-path="${_escapeHtmlAttr(JSON.stringify(path.length > 1 ? path.slice(0, -1) : path))}" title="Open section lesson">Lesson</button>` : ''}
           </div>
           ${_renderCalendarBlueprintTree(node?.children || [], depth + 1, { resumeNodeId, classId, unitId, lineage: path })}
         </li>
@@ -836,12 +834,11 @@ function _renderCalendarTeachingFlowGroups(groups, { hasPlannedRoute = false, re
                                     ${row?.kind ? `<span class="badge badge-gray">${_escapeHtml(String(row.kind))}</span>` : ''}
                                     ${isResume ? '<span class="badge badge-amber">Resume here</span>' : ''}
                                     ${Array.isArray(row?.path) && row.path.length > 1 ? `<span class="text-[11px] text-slate-400">${_escapeHtml(row.path.slice(0, -1).join(' > '))}</span>` : ''}
-                                    ${hasLeafId ? renderLeafStatusBadge(rowItemId, classId, unitId) : ''}
                                   </div>
                                 </div>
                               </div>
                             </div>
-                            ${hasLeafId ? `<button type="button" class="btn btn-ghost btn-sm btn-calendar-leaf-lesson !text-blue-600 self-center flex-shrink-0" data-item-id="${rowItemId}" data-class-id="${Number(classId || 0)}" data-unit-id="${Number(unitId || 0)}" data-item-path="${_escapeHtmlAttr(JSON.stringify(Array.isArray(row?.path) ? row.path : []))}" data-section-path="${_escapeHtmlAttr(JSON.stringify(Array.isArray(row?.sectionPath) ? row.sectionPath : []))}" title="Open lesson card">Lesson</button>` : ''}
+                            ${hasLeafId ? `<button type="button" class="btn btn-ghost btn-sm btn-calendar-leaf-lesson !text-blue-600 self-center flex-shrink-0" data-item-id="${rowItemId}" data-class-id="${Number(classId || 0)}" data-unit-id="${Number(unitId || 0)}" data-item-path="${_escapeHtmlAttr(JSON.stringify(Array.isArray(row?.path) ? row.path : []))}" data-section-path="${_escapeHtmlAttr(JSON.stringify(Array.isArray(row?.sectionPath) ? row.sectionPath : []))}" title="Open section lesson">Lesson</button>` : ''}
                           </div>
                         `;
                       }).join('')}
@@ -899,12 +896,11 @@ function _renderCalendarFallbackRouteRows(items, { classId = null, unitId = null
                   <div class="mt-1 flex items-center gap-2 flex-wrap">
                     <span class="badge badge-green">${row?.isCompleted === false ? 'In progress' : 'Checked'}</span>
                     ${path.length > 1 ? `<span class="text-[11px] text-slate-400">${_escapeHtml(path.slice(0, -1).join(' > '))}</span>` : ''}
-                    ${hasLeafId ? renderLeafStatusBadge(rowItemId, classId, unitId) : ''}
                   </div>
                 </div>
               </div>
             </div>
-            ${hasLeafId ? `<button type="button" class="btn btn-ghost btn-sm btn-calendar-leaf-lesson !text-blue-600 self-center flex-shrink-0" data-item-id="${rowItemId}" data-class-id="${Number(classId || 0)}" data-unit-id="${Number(unitId || 0)}" data-item-path="${_escapeHtmlAttr(JSON.stringify(path))}" data-section-path="${_escapeHtmlAttr(JSON.stringify(sectionPath))}" title="Open lesson card">Lesson</button>` : ''}
+            ${hasLeafId ? `<button type="button" class="btn btn-ghost btn-sm btn-calendar-leaf-lesson !text-blue-600 self-center flex-shrink-0" data-item-id="${rowItemId}" data-class-id="${Number(classId || 0)}" data-unit-id="${Number(unitId || 0)}" data-item-path="${_escapeHtmlAttr(JSON.stringify(path))}" data-section-path="${_escapeHtmlAttr(JSON.stringify(sectionPath))}" title="Open section lesson">Lesson</button>` : ''}
           </div>
         `;
       }).join('')}
@@ -5059,18 +5055,6 @@ function _renderCalendar(el, classId) {
     const artifactCacheKey = `${Number(classId || 0)}:${Number(selectedEvent.unit_id || 0)}`;
     if (!_calendarAssistantArtifactCache.has(artifactCacheKey)) {
       _loadCalendarAssistantArtifacts(classId, selectedEvent.unit_id).then(() => {
-        if (Number(_selectedSessionId || 0) === Number(selectedEvent.session_id || 0)) {
-          _renderCalendar(el, classId);
-        }
-      }).catch(() => {});
-    }
-  }
-
-  if (selectedEvent?.unit_id != null) {
-    const uid = Number(selectedEvent.unit_id);
-    if (!_calendarLeafSumFetchedUnits.has(uid)) {
-      _calendarLeafSumFetchedUnits.add(uid);
-      fetchUnitLeafContentSummaries(classId, uid).then(() => {
         if (Number(_selectedSessionId || 0) === Number(selectedEvent.session_id || 0)) {
           _renderCalendar(el, classId);
         }

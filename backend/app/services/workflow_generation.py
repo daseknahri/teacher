@@ -1393,6 +1393,67 @@ def build_source_derived_leaf_content_package(
     return payload
 
 
+def build_source_section_lesson_package(
+    *,
+    section_title: str | None,
+    section_path: list[str] | None,
+    item_path: list[str] | None = None,
+    item_title: str | None = None,
+    content_blocks: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    normalized_section_path = [
+        _normalize_outline_title(value)
+        for value in (section_path or [])
+        if _normalize_outline_title(value)
+    ]
+    normalized_item_path = [
+        _normalize_outline_title(value)
+        for value in (item_path or [])
+        if _normalize_outline_title(value)
+    ]
+    normalized_section_title = _normalize_outline_title(section_title) or (
+        normalized_section_path[-1] if normalized_section_path else "Section"
+    )
+    kind_labels = {
+        "activity": "Activity",
+        "lesson": "Lesson",
+        "definition": "Definition",
+        "property": "Property",
+        "example": "Example",
+        "exercise": "Exercise",
+        "evaluation": "Assessment",
+        "content": "Content",
+    }
+    selected_blocks = _filter_content_blocks_for_section(
+        content_blocks,
+        section_title=normalized_section_title,
+        section_path=normalized_section_path or None,
+        fallback_to_all=False,
+    )
+    exact_blocks = _build_exact_source_segments_from_blocks(selected_blocks)
+    return {
+        "section_title": normalized_section_title,
+        "section_path_json": normalized_section_path,
+        "item_path_json": normalized_item_path,
+        "item_title": _normalize_outline_title(item_title) or None,
+        "source_block_count": len(exact_blocks),
+        "source_blocks": [
+                {
+                    "title": segment.get("title"),
+                    "kind": str(segment.get("kind") or "").strip().lower() or "content",
+                    "kind_label": kind_labels.get(str(segment.get("kind") or "").strip().lower(), "Content"),
+                    "teaching_phase": str(segment.get("teaching_phase") or "").strip().lower() or None,
+                    "content_md": str(segment.get("content_md") or "").strip(),
+                    "content_source": str(segment.get("content_source") or "").strip().lower() or "source_excerpt",
+            }
+            for segment in exact_blocks
+            if str(segment.get("content_md") or "").strip()
+        ],
+        "source_excerpt_md": _build_leaf_content_markdown_from_blocks(selected_blocks, prefer_excerpt=False)
+        or _build_leaf_content_markdown_from_blocks(selected_blocks, prefer_excerpt=True),
+    }
+
+
 def delete_provider_unit_context(*, provider_context: dict[str, Any] | None) -> bool:
     if not isinstance(provider_context, dict):
         return False
@@ -2096,6 +2157,7 @@ def _filter_content_blocks_for_section(
     *,
     section_title: str | None,
     section_path: list[str] | None,
+    fallback_to_all: bool = True,
 ) -> list[dict[str, Any]]:
     if not isinstance(blocks, list):
         return []
@@ -2113,6 +2175,8 @@ def _filter_content_blocks_for_section(
             matched.append(block)
     if matched:
         return matched
+    if not fallback_to_all:
+        return []
     return [block for block in blocks if isinstance(block, dict) and not bool(block.get("teacher_only"))][:18]
 
 

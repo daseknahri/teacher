@@ -24,7 +24,7 @@ import { askConfirm } from '../utils/modal.js';
 import { mountRetryCard } from '../utils/retryView.js';
 import { fmtDate, fmtTime } from '../utils/format.js';
 import { copyText } from '../utils/password.js';
-import { openLeafContentModal, fetchUnitLeafContentSummaries, renderLeafStatusBadge } from '../utils/leafContent.js';
+import { openLeafContentModal } from '../utils/leafContent.js';
 
 let _activeTab = 0;
 let _recentWindow = 'month';
@@ -2468,9 +2468,6 @@ export async function renderWorkflowView() {
       _workflowPreviewFocusOnly = true;
       _workflowPreviewHideDone = false;
     }
-    if (ws?.active_unit?.id) {
-      await fetchUnitLeafContentSummaries(classId, ws.active_unit.id);
-    }
     setWorkspace(ws);
     _render(el, classId);
   } catch (err) {
@@ -2994,12 +2991,11 @@ function _renderSessionTeachingChecklistGroups(groups, { hasPlannedRoute = false
                                     ${Array.isArray(entry?.context?.itemPath) && entry.context.itemPath.length > 1
                                       ? `<span class="text-[11px] text-slate-400">${_escapeHtml(entry.context.itemPath.slice(0, -1).join(' > '))}</span>`
                                       : ''}
-                                    ${renderLeafStatusBadge(item.id, classId, unitId)}
                                   </div>
                                 </div>
                               </div>
                             </button>
-                            <button type="button" class="btn btn-ghost btn-sm btn-leaf-lesson !text-blue-600 self-center" data-item-id="${Number(item.id || 0)}" title="Open lesson card">Lesson</button>
+                            <button type="button" class="btn btn-ghost btn-sm btn-leaf-lesson !text-blue-600 self-center" data-item-id="${Number(item.id || 0)}" title="Open section lesson">Lesson</button>
                           </div>
                         `;
                       }).join('')}
@@ -3710,7 +3706,6 @@ function _render(el, classId) {
                   ${isDone ? 'Y' : ''}
                 </button>
                 <span class="todo-title text-[13px] leading-snug flex-1">${item.title}</span>
-                ${!hasChildren ? renderLeafStatusBadge(item.id, classId, Number(unit?.id || 0)) : ''}
                 ${previewResumeTarget ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex-shrink-0">Resume here</span>` : previewMatch ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 flex-shrink-0">Planned now</span>` : ''}
                 ${item.item_kind && item.item_kind !== 'other' ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 flex-shrink-0">${item.item_kind}</span>` : ''}
                 <div class="row-hover-actions flex items-center gap-1 ml-auto flex-wrap">
@@ -3723,7 +3718,7 @@ function _render(el, classId) {
                   <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-add-child" data-item-id="${item.id}" title="Add child">Child</button>
                   <button class="btn btn-ghost btn-sm !text-blue-600 btn-item-edit" data-item-id="${item.id}" data-item-kind="${item.item_kind || 'other'}" data-item-title="${_escapeHtmlAttr(item.title)}" title="Edit item">Edit</button>
                   <button class="btn btn-ghost btn-sm !text-red-600 btn-item-delete" data-item-id="${item.id}" title="Delete item">Delete</button>
-                  ${!hasChildren ? `<button class="btn btn-ghost btn-sm btn-leaf-lesson !text-blue-600" data-item-id="${item.id}" title="Open lesson card">Lesson</button>` : ''}
+                  ${!hasChildren ? `<button class="btn btn-ghost btn-sm btn-leaf-lesson !text-blue-600" data-item-id="${item.id}" title="Open section lesson">Lesson</button>` : ''}
                 </div>
               </div>`;
   }).join('')}
@@ -4330,10 +4325,9 @@ function _render(el, classId) {
                   ${item.is_completed || item.done ? 'Y' : (isStructural ? '·' : '')}
                 </div>
                 <span class="todo-title text-[13px] leading-snug flex-1">${item.title}</span>
-                ${!isStructural && !hasChildren ? renderLeafStatusBadge(item.id, classId, Number(unit?.id || 0)) : ''}
                 ${isStructural ? '<span class="text-[10px] text-slate-400 whitespace-nowrap">Auto-completes when all child rows are done</span>' : ''}
                 ${hasChildren ? `<button class="btn btn-ghost btn-sm !text-sky-600 btn-checklist-group-complete" data-item-id="${item.id}" title="Mark all unfinished lesson steps under this heading">Check group</button>` : ''}
-                ${!isStructural && !hasChildren ? `<button class="btn btn-ghost btn-sm btn-leaf-lesson !text-blue-600" data-item-id="${item.id}" title="Open lesson card">Lesson</button>` : ''}
+                ${!isStructural && !hasChildren ? `<button class="btn btn-ghost btn-sm btn-leaf-lesson !text-blue-600" data-item-id="${item.id}" title="Open section lesson">Lesson</button>` : ''}
               </div>`;
     }).join('')}
               </div>

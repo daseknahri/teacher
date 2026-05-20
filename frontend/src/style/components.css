@@ -1902,6 +1902,10 @@ code {
     width: min(98vw, 1100px);
 }
 
+.leaf-content-modal--section {
+    width: min(96vw, 1040px);
+}
+
 .leaf-content-modal--teach .lcm-header {
     padding-bottom: 0.9rem;
 }
@@ -2317,6 +2321,81 @@ code {
     line-height: 1.65;
 }
 
+.section-lesson-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.section-lesson-outline {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.section-lesson-outline-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid #dbeafe;
+    background: #eff6ff;
+    color: #1e3a8a;
+    border-radius: 999px;
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.section-lesson-outline-item:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(37, 99, 235, 0.12);
+    background: #dbeafe;
+}
+
+.section-lesson-outline-kind {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #2563eb;
+}
+
+.section-lesson-outline-title {
+    color: #0f172a;
+    font-weight: 600;
+}
+
+.section-lesson-blocks {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.section-lesson-block {
+    border: 1px solid #dbeafe;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    border-radius: 24px;
+    padding: 20px 22px;
+}
+
+.section-lesson-block-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+}
+
+.section-lesson-block-title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: #0f172a;
+}
+
 /* Lesson button on checklist rows */
 .btn-leaf-lesson {
     color: #2563eb !important;
@@ -2357,6 +2436,10 @@ code {
         width: min(100vw, 100vw);
     }
 
+    .leaf-content-modal--section {
+        width: min(100vw, 100vw);
+    }
+
     .leaf-content-modal--teach .lcm-header h2 {
         font-size: 19px;
     }
@@ -2392,4 +2475,12 @@ code {
     .lcm-teach-prose h2 { font-size: 24px; }
     .lcm-teach-prose h3 { font-size: 21px; }
     .lcm-teach-prose h4 { font-size: 19px; }
+
+    .section-lesson-block {
+        padding: 16px;
+    }
+
+    .section-lesson-block-title {
+        font-size: 17px;
+    }
 }

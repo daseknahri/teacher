@@ -109,6 +109,8 @@ from ..schemas import (
     WorkflowLeafContentOut,
     WorkflowLeafContentSummaryOut,
     WorkflowLeafContentUpsertIn,
+    WorkflowSectionLessonOut,
+    WorkflowSectionLessonRequestIn,
 )
 from ..security import ensure_class_access, ensure_class_writable, get_current_user, require_owner, require_teacher
 from ..services.audit import log_audit
@@ -137,6 +139,7 @@ from ..services.workflow_content import (
 from ..services.workflow_generation import (
     NotebookLMGenerationUnavailableError,
     build_source_derived_leaf_content_package,
+    build_source_section_lesson_package,
     delete_provider_unit_context,
     generate_leaf_content_package,
     generate_unit_assistant_package,
@@ -6809,6 +6812,41 @@ def list_leaf_content_summaries(
         .order_by(WorkflowLeafContent.updated_at.desc(), WorkflowLeafContent.id.desc())
     ).all()
     return list(rows)
+
+
+@router.post("/classes/{class_id}/units/{unit_id}/section-lesson", response_model=WorkflowSectionLessonOut)
+def get_section_lesson(
+    class_id: int,
+    unit_id: int,
+    payload: WorkflowSectionLessonRequestIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict[str, object]:
+    _ = ensure_class_access(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    blueprint = db.scalar(select(WorkflowUnitBlueprint).where(WorkflowUnitBlueprint.unit_id == int(unit_id)))
+    if blueprint is None or not isinstance(blueprint.content_blocks_json, list) or not blueprint.content_blocks_json:
+        raise HTTPException(status_code=409, detail="Unit extracted content is required before opening a section lesson.")
+
+    normalized_section_path = [str(value).strip() for value in (payload.section_path or []) if str(value).strip()]
+    normalized_item_path = [str(value).strip() for value in (payload.item_path or []) if str(value).strip()]
+    if not normalized_section_path and len(normalized_item_path) > 1:
+        normalized_section_path = normalized_item_path[:-1]
+    if not normalized_section_path:
+        raise HTTPException(status_code=400, detail="section_path is required to open a section lesson.")
+
+    lesson = build_source_section_lesson_package(
+        section_title=normalized_section_path[-1] if normalized_section_path else None,
+        section_path=normalized_section_path,
+        item_path=normalized_item_path,
+        item_title=payload.item_title,
+        content_blocks=blueprint.content_blocks_json,
+    )
+    if int(lesson.get("source_block_count") or 0) <= 0 and not str(lesson.get("source_excerpt_md") or "").strip():
+        raise HTTPException(status_code=404, detail="No extracted section content found for this lesson.")
+    return lesson
 
 
 @router.get("/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}", response_model=WorkflowLeafContentOut)

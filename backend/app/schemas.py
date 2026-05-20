@@ -970,3 +970,28 @@ class WorkflowLeafContentGenerateOut(BaseModel):
     leaf_content: WorkflowLeafContentOut
 
 
+class WorkflowSectionLessonRequestIn(BaseModel):
+    section_path: list[str] = Field(default_factory=list)
+    item_path: list[str] = Field(default_factory=list)
+    item_title: str | None = None
+
+
+class WorkflowSectionLessonBlockOut(BaseModel):
+    title: str | None = None
+    kind: str
+    kind_label: str
+    teaching_phase: str | None = None
+    content_md: str
+    content_source: str
+
+
+class WorkflowSectionLessonOut(BaseModel):
+    section_title: str
+    section_path_json: list[str] = Field(default_factory=list)
+    item_path_json: list[str] = Field(default_factory=list)
+    item_title: str | None = None
+    source_block_count: int = 0
+    source_blocks: list[WorkflowSectionLessonBlockOut] = Field(default_factory=list)
+    source_excerpt_md: str | None = None
+
+
