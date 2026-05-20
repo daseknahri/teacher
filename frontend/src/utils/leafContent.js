@@ -55,6 +55,14 @@ function _compactTeachPath(pathValues) {
   return compact.join(' > ');
 }
 
+function _getTeachBlockDisplayTitle(block, index) {
+  const title = String(block?.title || '').trim();
+  if (title) return title;
+  const kind = String(block?.kindLabel || '').trim();
+  if (kind) return `${kind} ${index + 1}`;
+  return `Block ${index + 1}`;
+}
+
 function _cleanTeachContent(contentMd, { itemTitle = '', blockTitle = '', pathValues = [] } = {}) {
   const raw = String(contentMd || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
   if (!raw) return '';
@@ -200,7 +208,7 @@ function _getLeafContentOriginMeta(content) {
  * Strategy: extract LaTeX spans before Markdown parsing so marked
  * does not alter math tokens, then inject KaTeX HTML back in.
  */
-export function renderMarkdownLatex(text) {
+export function renderMarkdownLatex(text, { preserveLineBreaks = false } = {}) {
   if (!text) return '';
 
   const parts = [];
@@ -231,7 +239,7 @@ export function renderMarkdownLatex(text) {
   });
 
   processed = processed.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  let html = marked.parse(processed, { gfm: true, breaks: false });
+  let html = marked.parse(processed, { gfm: true, breaks: preserveLineBreaks });
 
   parts.forEach(({ placeholder, html: katexHtml }) => {
     const escapedPlaceholder = placeholder.replace(/\x00/g, '&#0;');
@@ -389,7 +397,7 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
       body.innerHTML = `
         <p class="text-[13px] text-slate-400 py-8 text-center">
           No content fields filled in yet.
-          Switch to <strong>Source</strong> mode to add content manually, or press <strong>Generate</strong>.
+          Switch to <strong>Edit</strong> mode to add content manually, or press <strong>Generate</strong>.
         </p>`;
       return;
     }
@@ -424,7 +432,7 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
                     ${segment.title ? `<span class="text-[12px] font-semibold text-slate-700">${_esc(segment.title)}</span>` : ''}
                     <span class="text-[10px] text-slate-400 uppercase tracking-wider">${segment.contentSource === 'source_excerpt' ? 'Exact text' : 'Extracted content'}</span>
                   </div>
-                  <div class="lcm-prose">${renderMarkdownLatex(segment.contentMd)}</div>
+                  <div class="lcm-prose">${renderMarkdownLatex(segment.contentMd, { preserveLineBreaks: true })}</div>
                 </div>
               `).join('')}
             </div>
@@ -433,13 +441,13 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
         ${sections.map(field => `
           <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
             <p class="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">${_esc(field.label)}</p>
-            <div class="lcm-prose">${renderMarkdownLatex(draft[field.key])}</div>
+            <div class="lcm-prose">${renderMarkdownLatex(draft[field.key], { preserveLineBreaks: true })}</div>
           </div>
         `).join('')}
         ${excerpt ? `
           <details class="rounded-2xl border border-slate-100 bg-slate-50/70 px-4 py-3">
             <summary class="text-[11px] font-semibold text-slate-400 cursor-pointer select-none">Source Excerpt</summary>
-            <div class="lcm-prose text-[12px] text-slate-500 mt-3">${renderMarkdownLatex(excerpt)}</div>
+            <div class="lcm-prose text-[12px] text-slate-500 mt-3">${renderMarkdownLatex(excerpt, { preserveLineBreaks: true })}</div>
           </details>` : ''}
       </div>`;
   }
@@ -472,7 +480,7 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
       body.innerHTML = `
         <div class="lcm-teach-empty">
           <p class="lcm-teach-empty-title">Nothing ready to teach yet</p>
-          <p class="lcm-teach-empty-detail">This leaf does not have a readable source block yet. Use <strong>Rendered</strong> or <strong>Source</strong> to prepare it first.</p>
+          <p class="lcm-teach-empty-detail">This leaf does not have a readable source block yet. Use <strong>Review</strong> or <strong>Edit</strong> to prepare it first.</p>
         </div>`;
       return;
     }
@@ -497,12 +505,31 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
           </div>
           ${blocks.length > 1 ? `<div class="lcm-teach-counter">${safeIndex + 1} / ${blocks.length}</div>` : ''}
         </div>
-        <div class="lcm-teach-stage">
-          <div class="lcm-teach-stage-head">
-            <h3 class="lcm-teach-stage-title">${_esc(itemTitle)}</h3>
-            ${stagePath ? `<p class="lcm-teach-stage-path">${_esc(stagePath)}</p>` : ''}
+        <div class="lcm-teach-layout">
+          ${blocks.length > 1 ? `
+            <aside class="lcm-teach-outline" aria-label="Lesson blocks">
+              ${blocks.map((block, index) => {
+                const active = index === safeIndex;
+                const label = _getTeachBlockDisplayTitle(block, index);
+                return `
+                  <button
+                    type="button"
+                    class="lcm-teach-outline-item${active ? ' is-active' : ''}"
+                    data-teach-index="${index}"
+                  >
+                    <span class="lcm-teach-outline-kind">${_esc(block.kindLabel)}</span>
+                    <span class="lcm-teach-outline-title">${_esc(label)}</span>
+                  </button>`;
+              }).join('')}
+            </aside>
+          ` : ''}
+          <div class="lcm-teach-stage">
+            <div class="lcm-teach-stage-head">
+              <h3 class="lcm-teach-stage-title">${_esc(itemTitle)}</h3>
+              ${stagePath ? `<p class="lcm-teach-stage-path">${_esc(stagePath)}</p>` : ''}
+            </div>
+            <div class="lcm-teach-prose">${renderMarkdownLatex(cleanedContent, { preserveLineBreaks: true })}</div>
           </div>
-          <div class="lcm-teach-prose">${renderMarkdownLatex(cleanedContent)}</div>
         </div>
         ${blocks.length > 1 ? `
         <div class="lcm-teach-nav">
@@ -513,6 +540,15 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
     if (blocks.length > 1) {
       body.querySelector('#lcm-teach-prev')?.addEventListener('click', () => moveTeachIndex(-1));
       body.querySelector('#lcm-teach-next')?.addEventListener('click', () => moveTeachIndex(1));
+      body.querySelectorAll('[data-teach-index]').forEach(node => {
+        node.addEventListener('click', () => {
+          const nextIndex = Number(node.getAttribute('data-teach-index'));
+          if (Number.isFinite(nextIndex)) {
+            teachIndex = Math.max(0, Math.min(blocks.length - 1, nextIndex));
+            renderTeachMode();
+          }
+        });
+      });
     }
   }
 

@@ -3854,7 +3854,26 @@ def _normalize_content_block_markdown(value: Any, *, limit: int) -> str:
     if not text:
         return ""
     lines = [line.strip(" \t") for line in text.split("\n")]
-    text = "\n".join(lines)
+    expanded_lines: list[str] = []
+    inline_number_pattern = re.compile(r"(^|\s)\d+\s*[\).:-](?=\s|$)")
+    for line in lines:
+        if not line:
+            expanded_lines.append("")
+            continue
+        starts: list[int] = []
+        match = inline_number_pattern.search(line)
+        while match:
+            starts.append(match.start() + (1 if match.group(1) else 0))
+            match = inline_number_pattern.search(line, match.end())
+        if len(starts) > 1 and starts[0] == 0:
+            for idx, start in enumerate(starts):
+                end = starts[idx + 1] if idx + 1 < len(starts) else len(line)
+                chunk = line[start:end].strip(" ;,-")
+                if chunk:
+                    expanded_lines.append(chunk)
+            continue
+        expanded_lines.append(line)
+    text = "\n".join(expanded_lines)
     text = re.sub(r"\n{3,}", "\n\n", text).strip(" \t\r\n;")
     if len(text) > limit:
         text = text[:limit].rstrip() + "..."

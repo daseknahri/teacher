@@ -2103,6 +2103,64 @@ code {
     min-height: 100%;
 }
 
+.lcm-teach-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 260px) minmax(0, 1fr);
+    gap: 1rem;
+    align-items: stretch;
+}
+
+.lcm-teach-outline {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    max-height: 100%;
+    overflow-y: auto;
+    padding-right: 0.15rem;
+}
+
+.lcm-teach-outline-item {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.3rem;
+    width: 100%;
+    text-align: left;
+    border-radius: 18px;
+    border: 1px solid #dbeafe;
+    background: #ffffff;
+    padding: 0.85rem 0.95rem;
+    color: #334155;
+    transition: border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+}
+
+.lcm-teach-outline-item:hover {
+    border-color: #93c5fd;
+    background: #f8fbff;
+}
+
+.lcm-teach-outline-item.is-active {
+    border-color: #60a5fa;
+    background: linear-gradient(180deg, #eff6ff 0%, #f8fbff 100%);
+    box-shadow: inset 0 0 0 1px #bfdbfe;
+}
+
+.lcm-teach-outline-kind {
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #2563eb;
+}
+
+.lcm-teach-outline-title {
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 700;
+    color: #0f172a;
+}
+
 .lcm-teach-topbar {
     display: flex;
     align-items: flex-start;
@@ -2301,6 +2359,15 @@ code {
 
     .leaf-content-modal--teach .lcm-header h2 {
         font-size: 19px;
+    }
+
+    .lcm-teach-layout {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .lcm-teach-outline {
+        order: 2;
+        max-height: none;
     }
 
     .lcm-teach-stage {

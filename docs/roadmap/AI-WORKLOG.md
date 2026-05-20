@@ -38,6 +38,32 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-20 14:05 - Codex
+
+- Status: done
+- Goal: make exact-source leaf lessons easier to teach from by preserving numbered source rows and simplifying the multi-block teaching surface
+- Files expected:
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/test_app_flows.py`
+  - `frontend/src/utils/leafContent.js`
+  - `frontend/src/style/components.css`
+- Assumptions:
+  - exact source line breaks and numbered exercise steps matter more than another round of AI generation polish
+  - multi-block leaves need direct block jumping, not only previous/next navigation
+  - teaching mode should speak in teacher language:
+    - `Teach`
+    - `Review`
+    - `Edit`
+- Notes:
+  - kept this slice local to save Claude tokens and focused on source fidelity plus teaching readability
+- Result:
+  - source-derived lesson content now splits inline numbered rows like `1) ... 2) ... 3) ...` into separate preserved lines
+  - markdown rendering now preserves line breaks in exact-source and teach surfaces
+  - teach mode now shows a simple clickable block outline for multi-part leaves
+  - stale wording was cleaned so empty states point to `Review` and `Edit`
+- Follow-up:
+  - next source-fidelity pass should preserve short math line sequences and list structure even more faithfully
+
 ### 2026-05-20 13:10 - Codex
 
 - Status: done

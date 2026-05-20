@@ -7265,6 +7265,41 @@ def test_source_derived_leaf_content_preserves_multiline_exact_source():
     assert "Donner le resultat sous forme simplifiee" in exact_blocks[0]["content_md"]
 
 
+def test_source_derived_leaf_content_splits_inline_numbered_rows():
+    from app.services import workflow_generation
+    from app.models import WorkflowChecklistItemKind
+
+    content_blocks = workflow_generation._normalize_content_blocks_payload(
+        {
+            "content_blocks": [
+                {
+                    "section_title": "Produit et division",
+                    "section_path": ["Rationnels", "Produit et division"],
+                    "title": "Serie d'exercices de multiplication",
+                    "kind": "exercise",
+                    "teaching_material": "1) Calculer 2/3 × 4/5. 2) Simplifier 6/9 × 3/2. 3) Donner le signe du produit.",
+                    "source_excerpt": "Bloc d'exercices inline.",
+                }
+            ]
+        },
+        unit_map=None,
+        fallback_outline=None,
+    )
+
+    payload = workflow_generation.build_source_derived_leaf_content_package(
+        item_title="Serie d'exercices de multiplication",
+        item_kind=WorkflowChecklistItemKind.EXERCISE,
+        item_path=["Rationnels", "Produit et division", "Serie d'exercices de multiplication"],
+        section_path=["Rationnels", "Produit et division"],
+        content_blocks=content_blocks,
+    )
+
+    assert "1) Calculer 2/3 × 4/5." in (payload["practice_md"] or "")
+    assert "2) Simplifier 6/9 × 3/2." in (payload["practice_md"] or "")
+    assert "3) Donner le signe du produit." in (payload["practice_md"] or "")
+    assert "\n" in (payload["practice_md"] or "")
+
+
 def test_leaf_content_generate_requires_blueprint(client):
     headers = _auth_headers(client)
     class_resp = client.post(
