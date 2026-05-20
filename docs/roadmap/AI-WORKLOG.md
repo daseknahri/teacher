@@ -38,6 +38,24 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-20 16:35 - Codex
+
+- Status: done
+- Goal: preserve short statement groups from source text so concise rules and definitions can teach as separate steps without needing explicit numbering
+- Files expected:
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/test_app_flows.py`
+- Assumptions:
+  - short line groups in definition/property content should remain separate when the PDF already gave them as distinct lines
+  - this should stay conservative and not split long prose paragraphs
+- Notes:
+  - limited the heuristic to lesson/definition/property kinds with 2 to 4 short statement lines
+- Result:
+  - exact-source segment building now splits short statement groups into separate source blocks for concise rules and definitions
+  - added regression coverage for a compact rule block with three short lines
+- Follow-up:
+  - next fidelity pass should target source rows that rely on PDF visual indentation or table-like layout rather than punctuation or line breaks
+
 ### 2026-05-20 16:10 - Codex
 
 - Status: done

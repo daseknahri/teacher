@@ -7377,6 +7377,48 @@ def test_source_derived_leaf_content_preserves_compact_math_sequences():
     assert exact_blocks[2]["content_md"] == "A × B = 8/15"
 
 
+def test_source_derived_leaf_content_splits_short_statement_groups():
+    from app.services import workflow_generation
+    from app.models import WorkflowChecklistItemKind
+
+    content_blocks = workflow_generation._normalize_content_blocks_payload(
+        {
+            "content_blocks": [
+                {
+                    "section_title": "Somme et difference",
+                    "section_path": ["Rationnels", "Somme et difference"],
+                    "title": "Regle generale",
+                    "kind": "property",
+                    "teaching_material": (
+                        "On garde le denominateur.\n"
+                        "On additionne les numerateurs.\n"
+                        "On simplifie si possible."
+                    ),
+                    "source_excerpt": "Bloc de regle.",
+                }
+            ]
+        },
+        unit_map=None,
+        fallback_outline=None,
+    )
+
+    payload = workflow_generation.build_source_derived_leaf_content_package(
+        item_title="Regle generale",
+        item_kind=WorkflowChecklistItemKind.PROPERTY,
+        item_path=["Rationnels", "Somme et difference", "Regle generale"],
+        section_path=["Rationnels", "Somme et difference"],
+        content_blocks=content_blocks,
+    )
+
+    assert "On garde le denominateur." in (payload["explanation_md"] or "")
+    assert "On additionne les numerateurs." in (payload["explanation_md"] or "")
+    exact_blocks = payload["source_payload"]["extracted_blocks"]
+    assert len(exact_blocks) == 3
+    assert exact_blocks[0]["content_md"] == "On garde le denominateur."
+    assert exact_blocks[1]["content_md"] == "On additionne les numerateurs."
+    assert exact_blocks[2]["content_md"] == "On simplifie si possible."
+
+
 def test_leaf_content_generate_requires_blueprint(client):
     headers = _auth_headers(client)
     class_resp = client.post(

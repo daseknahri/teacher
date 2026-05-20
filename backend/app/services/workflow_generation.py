@@ -1058,15 +1058,30 @@ def _build_exact_source_segments_from_blocks(
             digit_count = sum(char.isdigit() for char in normalized)
             return operator_count >= 1 and digit_count >= 1
 
-        if kind not in {"activity", "example", "exercise", "evaluation"}:
+        def looks_like_short_statement_line(line: str) -> bool:
+            normalized = str(line or "").strip()
+            if not normalized or len(normalized) > 140:
+                return False
+            words = [token for token in re.split(r"\s+", normalized) if token]
+            if not words or len(words) > 18:
+                return False
+            has_alpha = any(char.isalpha() for char in normalized)
+            has_end_signal = normalized.endswith((".", ":", ";", "?", "!"))
+            return has_alpha and has_end_signal
+
+        if kind not in {"activity", "example", "exercise", "evaluation", "lesson", "definition", "property"}:
             return []
         lines = [line.rstrip() for line in str(content_md or "").split("\n")]
         marker_pattern = re.compile(r"^(?:\d+\s*[\).:-]|[-*\u2022])\s+")
         marker_indexes = [index for index, line in enumerate(lines) if marker_pattern.match(line.strip())]
         compact_lines = [line.strip() for line in lines if line.strip()]
-        if len(marker_indexes) < 2 and not (
-            len(compact_lines) >= 2 and sum(1 for line in compact_lines if looks_like_short_math_line(line)) >= 2
-        ):
+        short_math_mode = len(compact_lines) >= 2 and sum(1 for line in compact_lines if looks_like_short_math_line(line)) >= 2
+        short_statement_mode = (
+            kind in {"lesson", "definition", "property"}
+            and 2 <= len(compact_lines) <= 4
+            and sum(1 for line in compact_lines if looks_like_short_statement_line(line)) >= 2
+        )
+        if len(marker_indexes) < 2 and not short_math_mode and not short_statement_mode:
             return []
 
         preamble = [line.strip() for line in lines[: marker_indexes[0]] if line.strip()] if marker_indexes else []
