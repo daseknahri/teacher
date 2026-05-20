@@ -995,3 +995,47 @@ class WorkflowSectionLessonOut(BaseModel):
     source_excerpt_md: str | None = None
 
 
+class WorkflowPreparedSectionPrepareIn(BaseModel):
+    section_path: list[str] = Field(default_factory=list)
+
+
+class WorkflowPreparedSectionSummaryOut(BaseModel):
+    id: int
+    unit_id: int
+    section_key: str
+    section_title: str
+    section_path_json: list[str] = Field(default_factory=list)
+    order_index: int = 0
+    status: str
+    benchmark_status: str = "pending"
+    error_message: str | None = None
+    source_block_count: int = 0
+    provider: str
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class WorkflowPreparedSectionOut(BaseModel):
+    id: int
+    unit_id: int
+    section_key: str
+    section_title: str
+    section_path_json: list[str] = Field(default_factory=list)
+    order_index: int = 0
+    source_blocks_json: list[WorkflowSectionLessonBlockOut] = Field(default_factory=list)
+    source_excerpt_md: str | None = None
+    latex_source: str | None = None
+    provider: str
+    model: str | None = None
+    status: str
+    benchmark_status: str = "pending"
+    benchmark_notes_md: str | None = None
+    raw_provider_response_json: dict | None = None
+    error_message: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+

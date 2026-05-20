@@ -1,6 +1,6 @@
 # AI Worklog
 
-Last updated: 2026-05-19
+Last updated: 2026-05-20
 
 Use this file as a shared handoff log between coding sessions, AI helpers, and engineers.
 
@@ -37,6 +37,34 @@ Keep entries short and factual.
 ---
 
 ## Current Entries
+
+### 2026-05-20 22:05 - Codex
+
+- Status: done
+- Goal: Implement the section-first preparation pipeline so Lesson reads stored prepared sections instead of rebuilding ad hoc leaf content.
+- Files expected:
+  - `backend/app/models.py`
+  - `backend/app/database.py`
+  - `backend/app/schemas.py`
+  - `backend/app/services/workflow_generation.py`
+  - `backend/app/routers/workflow.py`
+  - `backend/tests/test_app_flows.py`
+  - `frontend/src/utils/leafContent.js`
+  - `frontend/src/views/WorkflowView.js`
+- Assumptions:
+  - First benchmark version can derive section indexing/preparation from the saved blueprint `content_blocks_json`.
+  - NotebookLM remains the only provider in this phase, but the stored section shape should stay provider-friendly.
+- Notes:
+  - Added persisted `workflow_prepared_sections`.
+  - Added section APIs: index, list, prepare, get, and repointed `section-lesson` to stored prepared sections.
+  - Added a Workflow `Prepare Sections` modal so teachers can build the index and prepare sections one by one.
+  - Simplified `leafContent.js` down to a section-first reader instead of the old leaf authoring helper.
+- Result:
+  - `Lesson` now opens only prepared section content.
+  - Unprepared sections show a simple “prepare this section first” state.
+  - Focused backend tests and `npm run build` passed.
+- Follow-up:
+  - Test 3 representative PDFs on cloud and judge section fidelity before revisiting leaf splitting or slide generation.
 
 ### 2026-05-20 19:35 - Codex
 

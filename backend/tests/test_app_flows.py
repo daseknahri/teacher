@@ -7675,6 +7675,48 @@ def test_build_source_section_lesson_package_keeps_exact_section_content():
     assert "3/7 + 2/7" not in combined
 
 
+def test_build_source_section_index_orders_unique_sections():
+    from app.services import workflow_generation
+
+    content_blocks = workflow_generation._normalize_content_blocks_payload(
+        {
+            "content_blocks": [
+                {
+                    "section_title": "Produit et division",
+                    "section_path": ["Rationnels", "Produit et division"],
+                    "title": "Exemple de produit",
+                    "kind": "example",
+                    "teaching_material": "Calculer 2/3 x 4/5 = 8/15.",
+                },
+                {
+                    "section_title": "Produit et division",
+                    "section_path": ["Rationnels", "Produit et division"],
+                    "title": "Exercices de produit",
+                    "kind": "exercise",
+                    "teaching_material": "Calculer 3/7 x 2/7.",
+                },
+                {
+                    "section_title": "Somme et difference",
+                    "section_path": ["Rationnels", "Somme et difference"],
+                    "title": "Exemple de somme",
+                    "kind": "example",
+                    "teaching_material": "Calculer 3/7 + 2/7 = 5/7.",
+                },
+            ]
+        },
+        unit_map=None,
+        fallback_outline=None,
+    )
+
+    rows = workflow_generation.build_source_section_index(content_blocks)
+
+    assert [row["section_title"] for row in rows] == ["Produit et division", "Somme et difference"]
+    assert rows[0]["section_path_json"] == ["Rationnels", "Produit et division"]
+    assert rows[0]["order_index"] == 0
+    assert rows[1]["order_index"] == 1
+    assert rows[0]["section_key"]
+
+
 def test_section_lesson_endpoint_returns_matching_section_content(client):
     headers = _auth_headers(client)
     class_resp = client.post(
@@ -7726,6 +7768,21 @@ def test_section_lesson_endpoint_returns_matching_section_content(client):
         ]
         db_session.commit()
 
+    index_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/sections/index",
+        headers=headers,
+    )
+    assert index_resp.status_code == 200
+    assert len(index_resp.json()) == 2
+
+    prepare_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/sections/prepare",
+        headers=headers,
+        json={"section_path": ["Rationnels", "Produit et division"]},
+    )
+    assert prepare_resp.status_code == 200
+    assert prepare_resp.json()["status"] == "prepared"
+
     resp = client.post(
         f"/workflow/classes/{class_id}/units/{unit_id}/section-lesson",
         headers=headers,
@@ -7742,6 +7799,127 @@ def test_section_lesson_endpoint_returns_matching_section_content(client):
     assert "2/3 x 4/5" in combined
     assert "3/7 x 2/7" in combined
     assert "3/7 + 2/7" not in combined
+
+
+def test_section_lesson_requires_prepared_section(client):
+    headers = _auth_headers(client)
+    class_resp = client.post(
+        "/classes",
+        json={"name": f"SectionPrepGate {uuid.uuid4().hex[:6]}", "subject": "Math"},
+        headers=headers,
+    )
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    start_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={"unit_type": "chapter", "title": "Section Gate Unit", "source_text": "Produit et division\nExemples\nExercices"},
+    )
+    assert start_resp.status_code == 201
+    unit_id = start_resp.json()["id"]
+
+    from app.database import SessionLocal
+    from app.models import WorkflowUnitBlueprint
+
+    with SessionLocal() as db_session:
+        blueprint = db_session.query(WorkflowUnitBlueprint).filter(WorkflowUnitBlueprint.unit_id == unit_id).one()
+        blueprint.content_blocks_json = [
+            {
+                "section_title": "Produit et division",
+                "section_path": ["Rationnels", "Produit et division"],
+                "title": "Exemple de produit",
+                "kind": "example",
+                "teaching_material": "Calculer 2/3 x 4/5 = 8/15.",
+                "source_excerpt": "Bloc exemple produit.",
+            },
+        ]
+        db_session.commit()
+
+    resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/section-lesson",
+        headers=headers,
+        json={"section_path": ["Rationnels", "Produit et division"]},
+    )
+    assert resp.status_code == 409
+    assert "prepare this section first" in resp.json()["detail"].lower()
+
+
+def test_prepare_unit_section_stores_persisted_section_record(client):
+    headers = _auth_headers(client)
+    class_resp = client.post(
+        "/classes",
+        json={"name": f"PreparedSection {uuid.uuid4().hex[:6]}", "subject": "Math"},
+        headers=headers,
+    )
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    start_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={"unit_type": "chapter", "title": "Prepared Section Unit", "source_text": "Produit et division\nExemples\nExercices"},
+    )
+    assert start_resp.status_code == 201
+    unit_id = start_resp.json()["id"]
+
+    from app.database import SessionLocal
+    from app.models import WorkflowUnitBlueprint
+
+    with SessionLocal() as db_session:
+        blueprint = db_session.query(WorkflowUnitBlueprint).filter(WorkflowUnitBlueprint.unit_id == unit_id).one()
+        blueprint.content_blocks_json = [
+            {
+                "section_title": "Produit et division",
+                "section_path": ["Rationnels", "Produit et division"],
+                "title": "Exemple de produit",
+                "kind": "example",
+                "teaching_material": "Calculer 2/3 x 4/5 = 8/15.",
+                "source_excerpt": "Bloc exemple produit.",
+            },
+            {
+                "section_title": "Produit et division",
+                "section_path": ["Rationnels", "Produit et division"],
+                "title": "Exercices de produit",
+                "kind": "exercise",
+                "teaching_material": "Calculer 3/7 x 2/7.",
+                "source_excerpt": "Bloc exercices produit.",
+            },
+        ]
+        db_session.commit()
+
+    index_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/sections/index",
+        headers=headers,
+    )
+    assert index_resp.status_code == 200
+    rows = index_resp.json()
+    assert len(rows) == 1
+    section_key = rows[0]["section_key"]
+
+    prepare_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/sections/prepare",
+        headers=headers,
+        json={"section_path": ["Rationnels", "Produit et division"]},
+    )
+    assert prepare_resp.status_code == 200
+    prepared = prepare_resp.json()
+    assert prepared["status"] == "prepared"
+    assert prepared["section_key"] == section_key
+    assert prepared["latex_source"]
+    assert len(prepared["source_blocks_json"]) >= 2
+
+    get_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/sections/{section_key}",
+        headers=headers,
+    )
+    assert get_resp.status_code == 200
+    fetched = get_resp.json()
+    assert fetched["section_title"] == "Produit et division"
+    assert fetched["status"] == "prepared"
+    combined = "\n".join(row["content_md"] for row in fetched["source_blocks_json"])
+    assert "2/3 x 4/5" in combined
+    assert "3/7 x 2/7" in combined
 
 
 def test_leaf_content_generate_requires_blueprint(client):

@@ -1454,6 +1454,108 @@ def build_source_section_lesson_package(
     }
 
 
+def build_section_key(section_path: list[str] | None, *, fallback_title: str | None = None) -> str:
+    normalized_path = [
+        _normalize_outline_title(value)
+        for value in (section_path or [])
+        if _normalize_outline_title(value)
+    ]
+    if not normalized_path:
+        fallback = _normalize_outline_title(fallback_title) or "section"
+        normalized_path = [fallback]
+    key_parts = [_semantic_title_key(value) for value in normalized_path if _semantic_title_key(value)]
+    return "__".join(key_parts[:8]) or "section"
+
+
+def build_source_section_index(
+    content_blocks: list[dict[str, Any]] | None,
+) -> list[dict[str, Any]]:
+    if not isinstance(content_blocks, list):
+        return []
+    section_rows: list[dict[str, Any]] = []
+    seen_keys: set[str] = set()
+    indexed_blocks = [
+        (index, row)
+        for index, row in enumerate(content_blocks)
+        if isinstance(row, dict) and not bool(row.get("teacher_only"))
+    ]
+    indexed_blocks.sort(
+        key=lambda pair: (
+            int(pair[1].get("order_index")) if str(pair[1].get("order_index") or "").strip().isdigit() else pair[0],
+            pair[0],
+        )
+    )
+    for fallback_index, block in indexed_blocks:
+        section_title = _normalize_outline_title(block.get("section_title"))
+        section_path = _normalize_content_block_path(block.get("section_path"), fallback_section_title=section_title or "Section")
+        if not section_path and section_title:
+            section_path = [section_title]
+        if not section_path:
+            continue
+        section_title = section_title or section_path[-1]
+        section_key = build_section_key(section_path, fallback_title=section_title)
+        if section_key in seen_keys:
+            continue
+        seen_keys.add(section_key)
+        section_rows.append(
+            {
+                "section_key": section_key,
+                "section_title": section_title,
+                "section_path_json": section_path,
+                "order_index": len(section_rows),
+            }
+        )
+    return section_rows
+
+
+def render_section_latex_source(
+    *,
+    section_title: str,
+    section_path: list[str] | None,
+    source_blocks: list[dict[str, Any]] | None,
+) -> str:
+    def _escape_latex(value: str) -> str:
+        text = str(value or "")
+        replacements = {
+            "\\": r"\textbackslash{}",
+            "{": r"\{",
+            "}": r"\}",
+            "$": r"\$",
+            "&": r"\&",
+            "%": r"\%",
+            "#": r"\#",
+            "_": r"\_",
+        }
+        for source, target in replacements.items():
+            text = text.replace(source, target)
+        return text
+
+    lines: list[str] = [rf"\section*{{{_escape_latex(_normalize_outline_title(section_title) or 'Section')}}}"]
+    compact_path = [
+        _normalize_outline_title(value)
+        for value in (section_path or [])
+        if _normalize_outline_title(value)
+    ]
+    if compact_path:
+        lines.append(rf"\textit{{{_escape_latex(' > '.join(compact_path))}}}")
+        lines.append("")
+
+    blocks = [row for row in (source_blocks or []) if isinstance(row, dict) and str(row.get("content_md") or "").strip()]
+    for index, block in enumerate(blocks):
+        block_title = _normalize_outline_title(block.get("title"))
+        kind_label = str(block.get("kind_label") or "Content").strip() or "Content"
+        if block_title and _semantic_title_key(block_title) != _semantic_title_key(section_title):
+            lines.append(rf"\subsection*{{{_escape_latex(block_title)}}}")
+        else:
+            lines.append(rf"\paragraph{{{_escape_latex(kind_label)}}}")
+        text = str(block.get("content_md") or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+        if text:
+            lines.append(_escape_latex(text).replace("\n", r"\\ " + "\n"))
+        if index != len(blocks) - 1:
+            lines.append("")
+    return "\n".join(lines).strip()
+
+
 def delete_provider_unit_context(*, provider_context: dict[str, Any] | None) -> bool:
     if not isinstance(provider_context, dict):
         return False

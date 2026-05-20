@@ -639,3 +639,29 @@ class WorkflowLeafContent(Base):
 
     unit: Mapped["WorkflowUnit"] = relationship()
     checklist_item: Mapped["WorkflowChecklistItem"] = relationship()
+
+
+class WorkflowPreparedSection(Base):
+    __tablename__ = "workflow_prepared_sections"
+    __table_args__ = (UniqueConstraint("unit_id", "section_key", name="uq_workflow_prepared_sections_unit_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    unit_id: Mapped[int] = mapped_column(ForeignKey("workflow_units.id", ondelete="CASCADE"), index=True)
+    section_key: Mapped[str] = mapped_column(String(255), index=True)
+    section_title: Mapped[str] = mapped_column(String(255))
+    section_path_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    order_index: Mapped[int] = mapped_column(Integer, default=0)
+    source_blocks_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    source_excerpt_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    latex_source: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider: Mapped[str] = mapped_column(String(64), default="notebooklm")
+    model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="indexed", index=True)
+    benchmark_status: Mapped[str] = mapped_column(String(32), default="pending")
+    benchmark_notes_md: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_provider_response_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    unit: Mapped["WorkflowUnit"] = relationship()

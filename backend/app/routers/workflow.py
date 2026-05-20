@@ -37,6 +37,7 @@ from ..models import (
     WorkflowChecklistItem,
     WorkflowChecklistItemKind,
     WorkflowLeafContent,
+    WorkflowPreparedSection,
     WorkflowSessionChecklistAction,
     WorkflowUnitAssistantArtifact,
     WorkflowUnitMaterial,
@@ -109,6 +110,9 @@ from ..schemas import (
     WorkflowLeafContentOut,
     WorkflowLeafContentSummaryOut,
     WorkflowLeafContentUpsertIn,
+    WorkflowPreparedSectionOut,
+    WorkflowPreparedSectionPrepareIn,
+    WorkflowPreparedSectionSummaryOut,
     WorkflowSectionLessonOut,
     WorkflowSectionLessonRequestIn,
 )
@@ -138,12 +142,15 @@ from ..services.workflow_content import (
 )
 from ..services.workflow_generation import (
     NotebookLMGenerationUnavailableError,
+    build_section_key,
+    build_source_section_index,
     build_source_derived_leaf_content_package,
     build_source_section_lesson_package,
     delete_provider_unit_context,
     generate_leaf_content_package,
     generate_unit_assistant_package,
     generate_unit_material_package,
+    render_section_latex_source,
 )
 from ..services.report import build_calendar_summary_pdf
 from ..services.excel import build_holiday_export_workbook, build_holiday_import_template, parse_holiday_excel
@@ -591,6 +598,178 @@ def _seed_unit_leaf_content_from_blueprint(
     if created_or_updated:
         db.flush()
     return created_or_updated
+
+
+def _serialize_prepared_section_summary(row: WorkflowPreparedSection) -> WorkflowPreparedSectionSummaryOut:
+    source_blocks = row.source_blocks_json if isinstance(row.source_blocks_json, list) else []
+    return WorkflowPreparedSectionSummaryOut(
+        id=int(row.id),
+        unit_id=int(row.unit_id),
+        section_key=str(row.section_key or "").strip(),
+        section_title=str(row.section_title or "").strip() or "Section",
+        section_path_json=[str(value).strip() for value in (row.section_path_json or []) if str(value).strip()],
+        order_index=int(row.order_index or 0),
+        status=str(row.status or "indexed").strip() or "indexed",
+        benchmark_status=str(row.benchmark_status or "pending").strip() or "pending",
+        error_message=str(row.error_message or "").strip() or None,
+        source_block_count=len([block for block in source_blocks if isinstance(block, dict) and str(block.get("content_md") or "").strip()]),
+        provider=str(row.provider or "notebooklm").strip() or "notebooklm",
+        updated_at=row.updated_at or row.created_at or _utc_now_naive(),
+    )
+
+
+def _serialize_prepared_section(row: WorkflowPreparedSection) -> WorkflowPreparedSectionOut:
+    source_blocks = row.source_blocks_json if isinstance(row.source_blocks_json, list) else []
+    return WorkflowPreparedSectionOut(
+        id=int(row.id),
+        unit_id=int(row.unit_id),
+        section_key=str(row.section_key or "").strip(),
+        section_title=str(row.section_title or "").strip() or "Section",
+        section_path_json=[str(value).strip() for value in (row.section_path_json or []) if str(value).strip()],
+        order_index=int(row.order_index or 0),
+        source_blocks_json=source_blocks,
+        source_excerpt_md=str(row.source_excerpt_md or "").strip() or None,
+        latex_source=str(row.latex_source or "").strip() or None,
+        provider=str(row.provider or "notebooklm").strip() or "notebooklm",
+        model=str(row.model or "").strip() or None,
+        status=str(row.status or "indexed").strip() or "indexed",
+        benchmark_status=str(row.benchmark_status or "pending").strip() or "pending",
+        benchmark_notes_md=str(row.benchmark_notes_md or "").strip() or None,
+        raw_provider_response_json=row.raw_provider_response_json if isinstance(row.raw_provider_response_json, dict) else None,
+        error_message=str(row.error_message or "").strip() or None,
+        created_at=row.created_at or _utc_now_naive(),
+        updated_at=row.updated_at or row.created_at or _utc_now_naive(),
+    )
+
+
+def _serialize_section_lesson_from_record(
+    row: WorkflowPreparedSection,
+    *,
+    item_path: list[str] | None = None,
+    item_title: str | None = None,
+) -> WorkflowSectionLessonOut:
+    source_blocks = row.source_blocks_json if isinstance(row.source_blocks_json, list) else []
+    return WorkflowSectionLessonOut(
+        section_title=str(row.section_title or "").strip() or "Section",
+        section_path_json=[str(value).strip() for value in (row.section_path_json or []) if str(value).strip()],
+        item_path_json=[str(value).strip() for value in (item_path or []) if str(value).strip()],
+        item_title=str(item_title or "").strip() or None,
+        source_block_count=len([block for block in source_blocks if isinstance(block, dict) and str(block.get("content_md") or "").strip()]),
+        source_blocks=source_blocks,
+        source_excerpt_md=str(row.source_excerpt_md or "").strip() or None,
+    )
+
+
+def _normalize_section_path_input(section_path: list[str] | None, *, fallback_title: str | None = None) -> list[str]:
+    output = [str(value).strip() for value in (section_path or []) if str(value).strip()]
+    if output:
+        return output
+    fallback = str(fallback_title or "").strip()
+    return [fallback] if fallback else []
+
+
+def _index_unit_prepared_sections(
+    db: Session,
+    *,
+    unit: WorkflowUnit,
+    blueprint: WorkflowUnitBlueprint,
+) -> list[WorkflowPreparedSection]:
+    content_blocks = blueprint.content_blocks_json if isinstance(blueprint.content_blocks_json, list) else []
+    section_rows = build_source_section_index(content_blocks)
+    db.execute(delete(WorkflowPreparedSection).where(WorkflowPreparedSection.unit_id == int(unit.id)))
+    created: list[WorkflowPreparedSection] = []
+    provider_name = str(blueprint.provider or "notebooklm").strip() or "notebooklm"
+    model_name = str(blueprint.model or "").strip() or None
+    for row in section_rows:
+        record = WorkflowPreparedSection(
+            unit_id=int(unit.id),
+            section_key=str(row.get("section_key") or "").strip() or build_section_key(row.get("section_path_json"), fallback_title=row.get("section_title")),
+            section_title=str(row.get("section_title") or "").strip() or "Section",
+            section_path_json=[str(value).strip() for value in (row.get("section_path_json") or []) if str(value).strip()] or None,
+            order_index=int(row.get("order_index") or 0),
+            provider=provider_name,
+            model=model_name,
+            status="indexed",
+            benchmark_status="pending",
+            raw_provider_response_json={
+                "mode": "section_index",
+                "provider": provider_name,
+                "section_path": row.get("section_path_json") or [],
+            },
+        )
+        db.add(record)
+        created.append(record)
+    if created:
+        db.flush()
+    return created
+
+
+def _upsert_prepared_section_from_blueprint(
+    db: Session,
+    *,
+    unit: WorkflowUnit,
+    blueprint: WorkflowUnitBlueprint,
+    section_path: list[str],
+) -> WorkflowPreparedSection:
+    normalized_section_path = _normalize_section_path_input(section_path)
+    if not normalized_section_path:
+        raise HTTPException(status_code=400, detail="section_path is required.")
+    section_key = build_section_key(normalized_section_path, fallback_title=normalized_section_path[-1])
+    record = db.scalar(
+        select(WorkflowPreparedSection).where(
+            WorkflowPreparedSection.unit_id == int(unit.id),
+            WorkflowPreparedSection.section_key == section_key,
+        )
+    )
+    if record is None:
+        record = WorkflowPreparedSection(unit_id=int(unit.id), section_key=section_key)
+        db.add(record)
+    lesson = build_source_section_lesson_package(
+        section_title=normalized_section_path[-1],
+        section_path=normalized_section_path,
+        content_blocks=blueprint.content_blocks_json if isinstance(blueprint.content_blocks_json, list) else [],
+    )
+    source_blocks = lesson.get("source_blocks") if isinstance(lesson.get("source_blocks"), list) else []
+    source_excerpt_md = str(lesson.get("source_excerpt_md") or "").strip() or None
+    record.section_key = section_key
+    record.section_title = str(lesson.get("section_title") or normalized_section_path[-1]).strip() or normalized_section_path[-1]
+    record.section_path_json = normalized_section_path
+    record.provider = str(blueprint.provider or "notebooklm").strip() or "notebooklm"
+    record.model = str(blueprint.model or "").strip() or None
+    indexed_rows = build_source_section_index(blueprint.content_blocks_json if isinstance(blueprint.content_blocks_json, list) else [])
+    index_lookup = {str(row.get("section_key") or "").strip(): row for row in indexed_rows}
+    record.order_index = int((index_lookup.get(section_key) or {}).get("order_index") or 0)
+    if source_blocks or source_excerpt_md:
+        record.source_blocks_json = source_blocks
+        record.source_excerpt_md = source_excerpt_md
+        record.latex_source = render_section_latex_source(
+            section_title=record.section_title,
+            section_path=normalized_section_path,
+            source_blocks=source_blocks,
+        )
+        record.status = "prepared"
+        record.error_message = None
+        record.raw_provider_response_json = {
+            "mode": "section_prepare",
+            "provider": record.provider,
+            "section_path": normalized_section_path,
+            "source_block_count": len(source_blocks),
+        }
+    else:
+        record.source_blocks_json = []
+        record.source_excerpt_md = None
+        record.latex_source = None
+        record.status = "failed"
+        record.error_message = "No extracted section content was found for this section."
+        record.raw_provider_response_json = {
+            "mode": "section_prepare",
+            "provider": record.provider,
+            "section_path": normalized_section_path,
+            "source_block_count": 0,
+        }
+    record.updated_at = _utc_now_naive()
+    db.flush()
+    return record
 
 
 def _build_reorder_maps(
@@ -6793,6 +6972,93 @@ def download_workflow_unit_document(
     return FileResponse(path=str(file_path), filename=filename)
 
 
+@router.post("/classes/{class_id}/units/{unit_id}/sections/index", response_model=list[WorkflowPreparedSectionSummaryOut])
+def index_unit_sections(
+    class_id: int,
+    unit_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[WorkflowPreparedSectionSummaryOut]:
+    _ = ensure_class_writable(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    blueprint = db.scalar(select(WorkflowUnitBlueprint).where(WorkflowUnitBlueprint.unit_id == int(unit_id)))
+    if blueprint is None or not isinstance(blueprint.content_blocks_json, list) or not blueprint.content_blocks_json:
+        raise HTTPException(status_code=409, detail="Unit extracted content is required before sections can be prepared.")
+    rows = _index_unit_prepared_sections(db, unit=unit, blueprint=blueprint)
+    db.commit()
+    return [_serialize_prepared_section_summary(row) for row in rows]
+
+
+@router.get("/classes/{class_id}/units/{unit_id}/sections", response_model=list[WorkflowPreparedSectionSummaryOut])
+def list_unit_sections(
+    class_id: int,
+    unit_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> list[WorkflowPreparedSectionSummaryOut]:
+    _ = ensure_class_access(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    rows = db.scalars(
+        select(WorkflowPreparedSection)
+        .where(WorkflowPreparedSection.unit_id == int(unit_id))
+        .order_by(WorkflowPreparedSection.order_index.asc(), WorkflowPreparedSection.id.asc())
+    ).all()
+    return [_serialize_prepared_section_summary(row) for row in rows]
+
+
+@router.post("/classes/{class_id}/units/{unit_id}/sections/prepare", response_model=WorkflowPreparedSectionOut)
+def prepare_unit_section(
+    class_id: int,
+    unit_id: int,
+    payload: WorkflowPreparedSectionPrepareIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkflowPreparedSectionOut:
+    _ = ensure_class_writable(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    blueprint = db.scalar(select(WorkflowUnitBlueprint).where(WorkflowUnitBlueprint.unit_id == int(unit_id)))
+    if blueprint is None or not isinstance(blueprint.content_blocks_json, list) or not blueprint.content_blocks_json:
+        raise HTTPException(status_code=409, detail="Unit extracted content is required before a section can be prepared.")
+    record = _upsert_prepared_section_from_blueprint(
+        db,
+        unit=unit,
+        blueprint=blueprint,
+        section_path=_normalize_section_path_input(payload.section_path),
+    )
+    db.commit()
+    db.refresh(record)
+    return _serialize_prepared_section(record)
+
+
+@router.get("/classes/{class_id}/units/{unit_id}/sections/{section_key}", response_model=WorkflowPreparedSectionOut)
+def get_unit_section(
+    class_id: int,
+    unit_id: int,
+    section_key: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkflowPreparedSectionOut:
+    _ = ensure_class_access(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    row = db.scalar(
+        select(WorkflowPreparedSection).where(
+            WorkflowPreparedSection.unit_id == int(unit_id),
+            WorkflowPreparedSection.section_key == str(section_key or "").strip(),
+        )
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Prepared section not found.")
+    return _serialize_prepared_section(row)
+
+
 @router.get("/classes/{class_id}/units/{unit_id}/leaf-content", response_model=list[WorkflowLeafContentSummaryOut])
 def list_leaf_content_summaries(
     class_id: int,
@@ -6826,9 +7092,6 @@ def get_section_lesson(
     unit = db.get(WorkflowUnit, int(unit_id))
     if unit is None or int(unit.class_id) != int(class_id):
         raise HTTPException(status_code=404, detail="Workflow unit not found.")
-    blueprint = db.scalar(select(WorkflowUnitBlueprint).where(WorkflowUnitBlueprint.unit_id == int(unit_id)))
-    if blueprint is None or not isinstance(blueprint.content_blocks_json, list) or not blueprint.content_blocks_json:
-        raise HTTPException(status_code=409, detail="Unit extracted content is required before opening a section lesson.")
 
     normalized_section_path = [str(value).strip() for value in (payload.section_path or []) if str(value).strip()]
     normalized_item_path = [str(value).strip() for value in (payload.item_path or []) if str(value).strip()]
@@ -6836,17 +7099,20 @@ def get_section_lesson(
         normalized_section_path = normalized_item_path[:-1]
     if not normalized_section_path:
         raise HTTPException(status_code=400, detail="section_path is required to open a section lesson.")
-
-    lesson = build_source_section_lesson_package(
-        section_title=normalized_section_path[-1] if normalized_section_path else None,
-        section_path=normalized_section_path,
+    section_key = build_section_key(normalized_section_path, fallback_title=normalized_section_path[-1])
+    row = db.scalar(
+        select(WorkflowPreparedSection).where(
+            WorkflowPreparedSection.unit_id == int(unit_id),
+            WorkflowPreparedSection.section_key == section_key,
+        )
+    )
+    if row is None or str(row.status or "").strip().lower() != "prepared":
+        raise HTTPException(status_code=409, detail="Prepare this section first from Unit Setup.")
+    return _serialize_section_lesson_from_record(
+        row,
         item_path=normalized_item_path,
         item_title=payload.item_title,
-        content_blocks=blueprint.content_blocks_json,
-    )
-    if int(lesson.get("source_block_count") or 0) <= 0 and not str(lesson.get("source_excerpt_md") or "").strip():
-        raise HTTPException(status_code=404, detail="No extracted section content found for this lesson.")
-    return lesson
+    ).model_dump()
 
 
 @router.get("/classes/{class_id}/units/{unit_id}/leaf-content/{item_id}", response_model=WorkflowLeafContentOut)

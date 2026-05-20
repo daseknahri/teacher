@@ -24,7 +24,7 @@ import { askConfirm } from '../utils/modal.js';
 import { mountRetryCard } from '../utils/retryView.js';
 import { fmtDate, fmtTime } from '../utils/format.js';
 import { copyText } from '../utils/password.js';
-import { openLeafContentModal } from '../utils/leafContent.js';
+import { fetchUnitSections, indexUnitSections, openLeafContentModal, prepareUnitSection } from '../utils/leafContent.js';
 
 let _activeTab = 0;
 let _recentWindow = 'month';
@@ -1402,6 +1402,166 @@ function _assistantArtifactKindLabel(value) {
   if (key === 'guided_practice') return 'Guided practice';
   if (key === 'quick_quiz_draft') return 'Quick quiz draft';
   return 'Teacher notes';
+}
+
+async function _openPreparedSectionsModal({ classId, unit }) {
+  const unitId = Number(unit?.id || 0);
+  if (!unitId) {
+    showToast('No active unit is available for section preparation.', 'warning');
+    return;
+  }
+
+  document.getElementById('workflow-sections-modal-overlay')?.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'workflow-sections-modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal max-w-4xl">
+      <div class="flex items-start justify-between gap-4 mb-4">
+        <div>
+          <p class="text-[11px] font-semibold uppercase tracking-widest text-blue-600">Prepare Sections</p>
+          <h2 class="text-[18px] font-bold text-slate-800 mt-1">${_escapeHtml(unit?.title || 'Active unit')}</h2>
+          <p class="text-[12px] text-slate-500 mt-1">Build the section index first, then prepare one section at a time. Lesson will only open prepared sections.</p>
+        </div>
+        <button id="btn-close-sections-modal" class="btn btn-ghost btn-sm">Close</button>
+      </div>
+      <div class="flex items-center gap-2 flex-wrap mb-4">
+        <button id="btn-refresh-section-index" class="btn btn-secondary btn-sm">Refresh Index</button>
+        <span class="text-[11px] text-slate-500">Use this after re-running extraction or when the section list is empty.</span>
+      </div>
+      <div id="workflow-sections-modal-body" class="space-y-3">
+        <p class="text-[13px] text-slate-400 py-8 text-center">Loading sections...</p>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const body = overlay.querySelector('#workflow-sections-modal-body');
+  const refreshBtn = overlay.querySelector('#btn-refresh-section-index');
+  const close = () => overlay.remove();
+  overlay.querySelector('#btn-close-sections-modal')?.addEventListener('click', close);
+  overlay.addEventListener('click', event => {
+    if (event.target === overlay) close();
+  });
+
+  function renderRows(rows) {
+    const sections = Array.isArray(rows) ? rows : [];
+    if (!sections.length) {
+      body.innerHTML = `
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5 text-center">
+          <p class="text-[14px] font-semibold text-slate-700">No section index yet</p>
+          <p class="text-[12px] text-slate-500 mt-1">Start by building the section index from the extracted unit content.</p>
+          <button id="btn-build-section-index" class="btn btn-primary btn-sm mt-4">Build Section Index</button>
+        </div>
+      `;
+      body.querySelector('#btn-build-section-index')?.addEventListener('click', async function () {
+        _setBusy(this, true);
+        try {
+          const indexed = await indexUnitSections(classId, unitId);
+          renderRows(indexed);
+          showToast('Section index refreshed.', 'ok');
+        } catch (err) {
+          showToast(String(err?.message || 'Failed to build the section index.'), 'error');
+        } finally {
+          _setBusy(this, false);
+        }
+      });
+      return;
+    }
+
+    body.innerHTML = `
+      <div class="grid gap-3">
+        ${sections.map(section => {
+          const path = Array.isArray(section?.section_path_json) ? section.section_path_json : [];
+          const pathLabel = path.join(' > ');
+          const sourceCount = Number(section?.source_block_count || 0);
+          const status = String(section?.status || 'indexed').trim().toLowerCase();
+          const statusClass = status === 'prepared' ? 'badge-green' : status === 'failed' ? 'badge-red' : 'badge-amber';
+          const statusLabel = status === 'prepared' ? 'Prepared' : status === 'failed' ? 'Needs retry' : 'Indexed';
+          return `
+            <div class="rounded-2xl border border-slate-200 bg-white p-4">
+              <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <p class="text-[14px] font-semibold text-slate-800">${_escapeHtml(section?.section_title || 'Section')}</p>
+                    <span class="badge ${statusClass}">${_escapeHtml(statusLabel)}</span>
+                    ${sourceCount > 0 ? `<span class="badge badge-blue">${sourceCount} block${sourceCount === 1 ? '' : 's'}</span>` : ''}
+                  </div>
+                  ${pathLabel ? `<p class="text-[11px] text-slate-500 mt-1">${_escapeHtml(pathLabel)}</p>` : ''}
+                  ${section?.error_message ? `<p class="text-[11px] text-red-600 mt-2">${_escapeHtml(section.error_message)}</p>` : ''}
+                </div>
+                <div class="flex items-center gap-2 flex-wrap justify-end">
+                  ${status === 'prepared'
+                    ? `<button class="btn btn-secondary btn-sm" data-open-section="${_escapeHtml(String(section.section_key || ''))}">Open Lesson</button>`
+                    : `<button class="btn btn-primary btn-sm" data-prepare-section="${_escapeHtml(String(section.section_key || ''))}">Prepare</button>`}
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    `;
+
+    const byKey = new Map(sections.map(section => [String(section?.section_key || ''), section]));
+    body.querySelectorAll('[data-prepare-section]').forEach(button => {
+      button.addEventListener('click', async function () {
+        const section = byKey.get(String(this.getAttribute('data-prepare-section') || ''));
+        if (!section) return;
+        _setBusy(this, true);
+        try {
+          await prepareUnitSection(classId, unitId, section.section_path_json || []);
+          const nextRows = await fetchUnitSections(classId, unitId);
+          renderRows(nextRows);
+          showToast('Section prepared.', 'ok');
+        } catch (err) {
+          showToast(String(err?.message || 'Failed to prepare this section.'), 'error');
+          _setBusy(this, false);
+        }
+      });
+    });
+    body.querySelectorAll('[data-open-section]').forEach(button => {
+      button.addEventListener('click', () => {
+        const section = byKey.get(String(button.getAttribute('data-open-section') || ''));
+        if (!section) return;
+        close();
+        openLeafContentModal(classId, unitId, {
+          title: section.section_title,
+          section_path_json: section.section_path_json || [],
+          item_path_json: section.section_path_json || [],
+        });
+      });
+    });
+  }
+
+  async function loadRows() {
+    body.innerHTML = '<p class="text-[13px] text-slate-400 py-8 text-center">Loading sections...</p>';
+    try {
+      const rows = await fetchUnitSections(classId, unitId);
+      renderRows(rows);
+    } catch (err) {
+      body.innerHTML = `
+        <div class="rounded-2xl border border-red-200 bg-red-50 p-4">
+          <p class="text-[13px] font-semibold text-red-700">Failed to load sections</p>
+          <p class="text-[12px] text-red-600 mt-1">${_escapeHtml(String(err?.message || 'Unknown error'))}</p>
+        </div>
+      `;
+    }
+  }
+
+  refreshBtn?.addEventListener('click', async function () {
+    _setBusy(this, true);
+    try {
+      const indexed = await indexUnitSections(classId, unitId);
+      renderRows(indexed);
+      showToast('Section index refreshed.', 'ok');
+    } catch (err) {
+      showToast(String(err?.message || 'Failed to refresh the section index.'), 'error');
+    } finally {
+      _setBusy(this, false);
+    }
+  });
+
+  await loadRows();
 }
 
 function _openUnitAssistantModal({ classId, unit, blueprint, initial = {} }) {
@@ -3575,6 +3735,7 @@ function _render(el, classId) {
                   ${unit.document_name ? `<button id="btn-download-unit-doc" class="btn btn-secondary btn-sm">Unit PDF</button>` : ''}
                   <button id="btn-toggle-extraction-review" class="btn ${extractionReviewPending ? 'btn-primary' : 'btn-secondary'} btn-sm">${extractionReviewPending ? 'Approve Extraction' : 'Mark Needs Review'}</button>
                   <button id="btn-rerun-ai-extraction" class="btn btn-secondary btn-sm">Re-run AI</button>
+                  <button id="btn-prepare-sections" class="btn btn-primary btn-sm">Prepare Sections</button>
                   <button id="btn-ask-unit-assistant" class="btn btn-secondary btn-sm">Ask This Unit</button>
                   <button id="btn-open-material-studio" class="btn btn-secondary btn-sm">Material Studio</button>
                   <button id="btn-view-ai-details" class="btn btn-secondary btn-sm">AI Details</button>
@@ -6788,6 +6949,15 @@ function _bindWorkflowEvents(el, classId) {
         showToast(String(err?.message || 'Failed to open Material Studio.'), 'error');
       }
     });
+  });
+
+  el.querySelector('#btn-prepare-sections')?.addEventListener('click', async function () {
+    const unit = getActiveUnit();
+    if (!unit?.id) {
+      showToast('No active unit to prepare.', 'warning');
+      return;
+    }
+    await _openPreparedSectionsModal({ classId, unit });
   });
 
   const pendingViewIntent = _consumeWorkflowViewIntent(getActiveUnit()?.id);
