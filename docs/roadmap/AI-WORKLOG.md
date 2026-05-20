@@ -38,6 +38,24 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-20 17:25 - Codex
+
+- Status: done
+- Goal: preserve short line-by-line exercise instructions even when the source does not use numbers or letters
+- Files expected:
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/test_app_flows.py`
+- Assumptions:
+  - short imperative rows like `Calculer ...`, `Simplifier ...`, `Comparer ...` should be teachable as separate steps when they are already split by lines in the source
+  - this should stay limited to activity/example/exercise/assessment kinds
+- Notes:
+  - used a narrow action-verb heuristic to avoid splitting longer prose blocks
+- Result:
+  - exact-source segment building now splits short action rows into separate source blocks when they arrive on separate lines
+  - added regression coverage for a short three-line exercise block without numbering
+- Follow-up:
+  - next fidelity pass should target table-like layouts and visually indented substeps that still lose structure during extraction
+
 ### 2026-05-20 17:00 - Codex
 
 - Status: done

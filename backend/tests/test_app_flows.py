@@ -7458,6 +7458,49 @@ def test_source_derived_leaf_content_splits_lettered_rows():
     assert "c) Comparer 4/9 et 5/9." in exact_blocks[2]["content_md"]
 
 
+def test_source_derived_leaf_content_splits_short_action_rows():
+    from app.services import workflow_generation
+    from app.models import WorkflowChecklistItemKind
+
+    content_blocks = workflow_generation._normalize_content_blocks_payload(
+        {
+            "content_blocks": [
+                {
+                    "section_title": "Somme et difference",
+                    "section_path": ["Rationnels", "Somme et difference"],
+                    "title": "Applications rapides",
+                    "kind": "exercise",
+                    "teaching_material": (
+                        "Calculer 3/7 + 2/7.\n"
+                        "Simplifier 5/10.\n"
+                        "Comparer 4/9 et 5/9."
+                    ),
+                    "source_excerpt": "Bloc d'applications courtes.",
+                }
+            ]
+        },
+        unit_map=None,
+        fallback_outline=None,
+    )
+
+    payload = workflow_generation.build_source_derived_leaf_content_package(
+        item_title="Applications rapides",
+        item_kind=WorkflowChecklistItemKind.EXERCISE,
+        item_path=["Rationnels", "Somme et difference", "Applications rapides"],
+        section_path=["Rationnels", "Somme et difference"],
+        content_blocks=content_blocks,
+    )
+
+    assert "Calculer 3/7 + 2/7." in (payload["practice_md"] or "")
+    assert "Simplifier 5/10." in (payload["practice_md"] or "")
+    assert "Comparer 4/9 et 5/9." in (payload["practice_md"] or "")
+    exact_blocks = payload["source_payload"]["extracted_blocks"]
+    assert len(exact_blocks) == 3
+    assert exact_blocks[0]["content_md"] == "Calculer 3/7 + 2/7."
+    assert exact_blocks[1]["content_md"] == "Simplifier 5/10."
+    assert exact_blocks[2]["content_md"] == "Comparer 4/9 et 5/9."
+
+
 def test_leaf_content_generate_requires_blueprint(client):
     headers = _auth_headers(client)
     class_resp = client.post(

@@ -1069,6 +1069,36 @@ def _build_exact_source_segments_from_blocks(
             has_end_signal = normalized.endswith((".", ":", ";", "?", "!"))
             return has_alpha and has_end_signal
 
+        def looks_like_short_action_line(line: str) -> bool:
+            normalized = str(line or "").strip()
+            if not normalized or len(normalized) > 140:
+                return False
+            words = [token for token in re.split(r"\s+", normalized) if token]
+            if not words or len(words) > 16:
+                return False
+            first = _fold_text_key(words[0]).strip(".:;,-")
+            action_starts = {
+                "calculer",
+                "simplifier",
+                "comparer",
+                "donner",
+                "completer",
+                "completer",
+                "verifier",
+                "verifie",
+                "determiner",
+                "developper",
+                "factoriser",
+                "resoudre",
+                "encadrer",
+                "montrer",
+                "deduire",
+                "identifier",
+                "placer",
+                "ordonner",
+            }
+            return first in action_starts
+
         if kind not in {"activity", "example", "exercise", "evaluation", "lesson", "definition", "property"}:
             return []
         lines = [line.rstrip() for line in str(content_md or "").split("\n")]
@@ -1081,7 +1111,12 @@ def _build_exact_source_segments_from_blocks(
             and 2 <= len(compact_lines) <= 4
             and sum(1 for line in compact_lines if looks_like_short_statement_line(line)) >= 2
         )
-        if len(marker_indexes) < 2 and not short_math_mode and not short_statement_mode:
+        short_action_mode = (
+            kind in {"activity", "example", "exercise", "evaluation"}
+            and 2 <= len(compact_lines) <= 5
+            and sum(1 for line in compact_lines if looks_like_short_action_line(line) or looks_like_short_math_line(line)) >= 2
+        )
+        if len(marker_indexes) < 2 and not short_math_mode and not short_statement_mode and not short_action_mode:
             return []
 
         preamble = [line.strip() for line in lines[: marker_indexes[0]] if line.strip()] if marker_indexes else []
