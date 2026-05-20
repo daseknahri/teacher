@@ -136,6 +136,7 @@ from ..services.workflow_content import (
 )
 from ..services.workflow_generation import (
     NotebookLMGenerationUnavailableError,
+    build_source_derived_leaf_content_package,
     delete_provider_unit_context,
     generate_leaf_content_package,
     generate_unit_assistant_package,
@@ -395,6 +396,132 @@ def _derive_leaf_item_paths(db: Session, *, unit_id: int, item_id: int) -> tuple
     if not section_path:
         section_path = item_path[:-1] or item_path
     return item_path, section_path
+
+
+_LEAF_CONTENT_PAYLOAD_FIELDS = (
+    "teaching_goal_md",
+    "launch_activity_md",
+    "explanation_md",
+    "worked_example_md",
+    "practice_md",
+    "solution_md",
+    "assessment_md",
+    "teacher_notes_md",
+    "source_excerpt_md",
+)
+
+
+def _leaf_content_payload_has_content(payload: dict[str, object] | None) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return any(bool(str(payload.get(field) or "").strip()) for field in _LEAF_CONTENT_PAYLOAD_FIELDS)
+
+
+def _apply_leaf_content_payload_to_row(
+    row: WorkflowLeafContent,
+    payload: dict[str, object],
+    *,
+    item_path: list[str] | None = None,
+    section_path: list[str] | None = None,
+    preserve_existing_paths: bool = True,
+) -> None:
+    if item_path is not None and (not preserve_existing_paths or row.item_path_json is None):
+        row.item_path_json = [str(value).strip() for value in item_path if str(value).strip()] or None
+    if section_path is not None and (not preserve_existing_paths or row.section_path_json is None):
+        row.section_path_json = [str(value).strip() for value in section_path if str(value).strip()] or None
+
+    row.provider = str(payload.get("provider") or row.provider or "manual").strip() or "manual"
+    row.model = str(payload.get("model") or "").strip() or None
+    row.status = str(payload.get("status") or row.status or "draft").strip() or "draft"
+
+    for field in _LEAF_CONTENT_PAYLOAD_FIELDS:
+        value = payload.get(field)
+        setattr(row, field, str(value).strip() or None if value is not None else None)
+
+    if isinstance(payload.get("source_payload"), dict):
+        row.source_payload_json = {
+            **payload["source_payload"],
+            "item_path": row.item_path_json or [],
+            "section_path": row.section_path_json or [],
+        }
+    elif "source_payload" in payload:
+        row.source_payload_json = None
+
+    if isinstance(payload.get("raw_provider_response"), dict):
+        row.raw_provider_response_json = payload["raw_provider_response"]
+    elif "raw_provider_response" in payload:
+        row.raw_provider_response_json = None
+
+    row.updated_at = _utc_now_naive()
+
+
+def _seed_unit_leaf_content_from_blueprint(
+    db: Session,
+    *,
+    unit_id: int,
+    item_id: int | None = None,
+) -> int:
+    blueprint = db.scalar(select(WorkflowUnitBlueprint).where(WorkflowUnitBlueprint.unit_id == int(unit_id)))
+    content_blocks = blueprint.content_blocks_json if blueprint and isinstance(blueprint.content_blocks_json, list) else None
+    if not content_blocks:
+        return 0
+
+    child_counts = {
+        int(parent_id): int(count or 0)
+        for parent_id, count in db.execute(
+            select(WorkflowChecklistItem.parent_item_id, func.count(WorkflowChecklistItem.id))
+            .where(WorkflowChecklistItem.unit_id == int(unit_id))
+            .group_by(WorkflowChecklistItem.parent_item_id)
+        ).all()
+        if parent_id is not None
+    }
+
+    leaf_query = select(WorkflowChecklistItem).where(WorkflowChecklistItem.unit_id == int(unit_id))
+    if item_id is not None:
+        leaf_query = leaf_query.where(WorkflowChecklistItem.id == int(item_id))
+    items = db.scalars(
+        leaf_query.order_by(WorkflowChecklistItem.position.asc(), WorkflowChecklistItem.id.asc())
+    ).all()
+
+    existing_by_item_id = {
+        int(row.checklist_item_id): row
+        for row in db.scalars(
+            select(WorkflowLeafContent).where(WorkflowLeafContent.unit_id == int(unit_id))
+        ).all()
+    }
+
+    created_or_updated = 0
+    for item in items:
+        if child_counts.get(int(item.id), 0) > 0:
+            continue
+        if int(item.id) in existing_by_item_id:
+            continue
+
+        item_path, section_path = _derive_leaf_item_paths(db, unit_id=int(unit_id), item_id=int(item.id))
+        payload = build_source_derived_leaf_content_package(
+            item_title=str(item.title or "").strip(),
+            item_kind=item.item_kind,
+            item_path=item_path,
+            section_path=section_path,
+            content_blocks=content_blocks,
+        )
+        if not _leaf_content_payload_has_content(payload):
+            continue
+
+        row = WorkflowLeafContent(unit_id=int(unit_id), checklist_item_id=int(item.id))
+        db.add(row)
+        _apply_leaf_content_payload_to_row(
+            row,
+            payload,
+            item_path=item_path,
+            section_path=section_path,
+            preserve_existing_paths=False,
+        )
+        created_or_updated += 1
+
+    if created_or_updated:
+        db.flush()
+    return created_or_updated
 
 
 def _build_reorder_maps(
@@ -2498,6 +2625,7 @@ def _store_generated_checklist_on_unit(
         if better_title:
             unit.title = better_title[:255]
 
+    db.execute(delete(WorkflowLeafContent).where(WorkflowLeafContent.unit_id == int(unit.id)))
     db.execute(delete(WorkflowChecklistItem).where(WorkflowChecklistItem.unit_id == int(unit.id)))
     db.flush()
 
@@ -2571,6 +2699,7 @@ def _store_generated_checklist_on_unit(
         reviewed=bool(str(generated.get("source") or "").strip() == "template"),
         reviewed_at=_utc_now_naive() if str(generated.get("source") or "").strip() == "template" else None,
     )
+    _seed_unit_leaf_content_from_blueprint(db, unit_id=int(unit.id))
 
 
 @router.post("/classes/{class_id}/units/start", response_model=WorkflowUnitOut, status_code=status.HTTP_201_CREATED)
@@ -6606,6 +6735,8 @@ def list_leaf_content_summaries(
     unit = db.get(WorkflowUnit, int(unit_id))
     if unit is None or int(unit.class_id) != int(class_id):
         raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    if _seed_unit_leaf_content_from_blueprint(db, unit_id=int(unit_id)) > 0:
+        db.commit()
     rows = db.scalars(
         select(WorkflowLeafContent)
         .where(WorkflowLeafContent.unit_id == int(unit_id))
@@ -6640,6 +6771,15 @@ def get_leaf_content(
             WorkflowLeafContent.checklist_item_id == int(item_id),
         )
     )
+    if row is None:
+        if _seed_unit_leaf_content_from_blueprint(db, unit_id=int(unit_id), item_id=int(item_id)) > 0:
+            db.commit()
+        row = db.scalar(
+            select(WorkflowLeafContent).where(
+                WorkflowLeafContent.unit_id == int(unit_id),
+                WorkflowLeafContent.checklist_item_id == int(item_id),
+            )
+        )
     if row is None:
         raise HTTPException(status_code=404, detail="No leaf content record found for this item.")
     return row

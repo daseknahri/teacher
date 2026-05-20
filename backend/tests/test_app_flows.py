@@ -6842,6 +6842,120 @@ def test_leaf_content_list_by_unit(client):
     assert "teaching_goal_md" not in row
 
 
+def test_leaf_content_source_extract_seeds_on_unit_start(client, monkeypatch):
+    from app.routers import workflow as workflow_router
+
+    headers = _auth_headers(client)
+    class_resp = client.post(
+        "/classes",
+        json={"name": f"SeededLeaf {uuid.uuid4().hex[:6]}", "subject": "Math"},
+        headers=headers,
+    )
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    def _fake_generate_unit_checklist(unit_type, title, source_text, session_count=None, document_path=None):
+        return {
+            "source": "notebooklm",
+            "requested_provider": "notebooklm",
+            "model": "notebooklm-py",
+            "status": "ready",
+            "items": [
+                {
+                    "title": "Les nombres rationnels",
+                    "kind": "chapter",
+                    "children": [
+                        {
+                            "title": "Les denominateurs sont les memes",
+                            "kind": "section",
+                            "children": [
+                                {
+                                    "title": "Regle de calcul pour denominateurs communs",
+                                    "kind": "property",
+                                    "children": [],
+                                },
+                                {
+                                    "title": "Exemples d'application",
+                                    "kind": "example",
+                                    "children": [],
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "unit_map": {"unit_title": title, "source": "notebooklm"},
+            "content_blocks": [
+                {
+                    "section_title": "Les denominateurs sont les memes",
+                    "section_path": ["Les nombres rationnels", "Les denominateurs sont les memes"],
+                    "title": "Regle de calcul pour denominateurs communs",
+                    "kind": "property",
+                    "teaching_material": "Pour additionner deux rationnels de meme denominateur, on additionne les numerateurs et on garde le denominateur.",
+                    "source_excerpt": "Regle: meme denominateur, on garde le denominateur et on additionne les numerateurs.",
+                },
+                {
+                    "section_title": "Les denominateurs sont les memes",
+                    "section_path": ["Les nombres rationnels", "Les denominateurs sont les memes"],
+                    "title": "Exemples d'application",
+                    "kind": "example",
+                    "teaching_material": "Exemple: 3/7 + 2/7 = 5/7.",
+                    "source_excerpt": "Exemple direct avec meme denominateur.",
+                },
+            ],
+            "raw_provider_response": {"seeded": True},
+            "error_message": None,
+            "provider_context": {"notebook_id": "test-seeded-leaf"},
+        }
+
+    monkeypatch.setattr(workflow_router, "generate_unit_checklist", _fake_generate_unit_checklist)
+
+    start_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Chapitre Seeded Leaf",
+            "source_text": "placeholder source text",
+        },
+    )
+    assert start_resp.status_code == 201
+    unit_id = start_resp.json()["id"]
+
+    workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_resp.status_code == 200
+    checklist = workspace_resp.json()["active_unit"]["checklist"]
+    flat = _flatten_checklist(checklist)
+    property_leaf = next(
+        row
+        for row in flat
+        if isinstance(row, dict) and row.get("title") == "Regle de calcul pour denominateurs communs"
+    )
+
+    list_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content",
+        headers=headers,
+    )
+    assert list_resp.status_code == 200
+    rows = list_resp.json()
+    assert len(rows) == 2
+    assert {row["provider"] for row in rows} == {"source_extract"}
+    assert {row["status"] for row in rows} == {"ready"}
+
+    get_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit_id}/leaf-content/{property_leaf['id']}",
+        headers=headers,
+    )
+    assert get_resp.status_code == 200
+    body = get_resp.json()
+    assert body["provider"] == "source_extract"
+    assert body["status"] == "ready"
+    assert body["teaching_goal_md"] == "Regle de calcul pour denominateurs communs"
+    assert "additionne les numerateurs" in (body["explanation_md"] or "")
+    assert body["source_payload_json"]["mode"] == "source_derived"
+    assert body["source_payload_json"]["matched_block_count"] >= 1
+
+
 def test_leaf_content_generate_requires_blueprint(client):
     headers = _auth_headers(client)
     class_resp = client.post(

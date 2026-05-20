@@ -27,6 +27,7 @@ SUPPORTED_SESSION_WRITER_PROVIDERS = {"openai", "fallback", "notebooklm"}
 SUPPORTED_UNIT_ASSISTANT_PROVIDERS = {"notebooklm"}
 SUPPORTED_UNIT_MATERIAL_PROVIDERS = {"notebooklm"}
 SUPPORTED_LEAF_CONTENT_PROVIDERS = {"notebooklm"}
+SOURCE_DERIVED_LEAF_CONTENT_PROVIDER = "source_extract"
 NUMBERED_HEADING_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)*)(?:\s*[-.):]\s*|\s+)(.+)$")
 CHAPTER_START_PATTERN = re.compile(r"^\s*(chapter|chapitre|title|titre|lesson|lecon)\b", re.IGNORECASE)
 NUMBERED_ROW_START_PATTERN = re.compile(r"(?<!\S)\d+(?:\.\d+)+(?:[)\].:-])?(?:\s+|$)")
@@ -967,6 +968,172 @@ def generate_leaf_content_package(
         source_text_excerpt=source_text_excerpt,
         requested_provider=requested_provider,
     )
+
+
+def _expected_content_block_kinds_for_leaf(*, item_kind: Any, item_title: str) -> set[str]:
+    normalized_kind = str(getattr(item_kind, "value", item_kind) or "").strip().lower()
+    normalized_title = _normalize_outline_title(item_title)
+    title_key = _semantic_title_key(normalized_title)
+    if normalized_kind == WorkflowChecklistItemKind.DEFINITION.value:
+        return {"definition", "lesson"}
+    if normalized_kind == WorkflowChecklistItemKind.PROPERTY.value:
+        return {"property", "lesson", "definition"}
+    if normalized_kind == WorkflowChecklistItemKind.EXAMPLE.value:
+        return {"example"}
+    if normalized_kind == WorkflowChecklistItemKind.EXERCISE.value:
+        return {"exercise"}
+    if "evaluation" in title_key or "controle" in title_key or "quiz" in title_key:
+        return {"evaluation"}
+    if _is_activity_outline_title(normalized_title, normalized_kind):
+        return {"activity"}
+    return {"lesson", "definition", "property"}
+
+
+def _content_block_has_meaningful_source_material(block: dict[str, Any] | None) -> bool:
+    if not isinstance(block, dict):
+        return False
+    title_key = _semantic_title_key(block.get("title"))
+    material_key = _semantic_title_key(block.get("teaching_material"))
+    excerpt_key = _semantic_title_key(block.get("source_excerpt"))
+    if material_key and material_key != title_key:
+        return True
+    if excerpt_key and excerpt_key != title_key:
+        return True
+    return False
+
+
+def _build_leaf_content_markdown_from_blocks(
+    blocks: list[dict[str, Any]] | None,
+    *,
+    prefer_excerpt: bool = False,
+) -> str | None:
+    rows: list[str] = []
+    seen: set[str] = set()
+    for block in blocks or []:
+        if not isinstance(block, dict):
+            continue
+        title = _normalize_outline_title(block.get("title"))
+        material = _normalize_content_block_text(block.get("teaching_material"), limit=520)
+        excerpt = _normalize_content_block_text(block.get("source_excerpt"), limit=320)
+        primary = excerpt if prefer_excerpt else (material or excerpt)
+        secondary = material if prefer_excerpt else excerpt
+        if not primary:
+            continue
+        entry_parts: list[str] = []
+        title_key = _semantic_title_key(title)
+        primary_key = _semantic_title_key(primary)
+        if title and title_key and title_key != primary_key:
+            entry_parts.append(f"**{title}**")
+            entry_parts.append("")
+        entry_parts.append(primary)
+        if prefer_excerpt and secondary and _semantic_title_key(secondary) != primary_key:
+            entry_parts.append("")
+            entry_parts.append(f"_Appui pedagogique_: {secondary}")
+        entry = "\n".join(entry_parts).strip()
+        entry_key = _semantic_title_key(title or primary)
+        if not entry or (entry_key and entry_key in seen):
+            continue
+        if entry_key:
+            seen.add(entry_key)
+        rows.append(entry)
+    return "\n\n".join(rows[:4]).strip() or None
+
+
+def build_source_derived_leaf_content_package(
+    *,
+    item_title: str,
+    item_kind: Any,
+    item_path: list[str] | None,
+    section_path: list[str] | None,
+    content_blocks: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    normalized_item_title = _normalize_outline_title(item_title) or "Element"
+    normalized_item_path = [
+        _normalize_outline_title(value)
+        for value in (item_path or [])
+        if _normalize_outline_title(value)
+    ]
+    normalized_section_path = [
+        _normalize_outline_title(value)
+        for value in (section_path or [])
+        if _normalize_outline_title(value)
+    ]
+    selected_blocks = _filter_content_blocks_for_section(
+        content_blocks,
+        section_title=normalized_section_path[-1] if normalized_section_path else normalized_item_title,
+        section_path=normalized_section_path or None,
+    )
+    item_title_key = _semantic_title_key(normalized_item_title)
+    exact_blocks = [
+        block for block in selected_blocks
+        if isinstance(block, dict) and _semantic_title_key(block.get("title")) == item_title_key
+    ]
+    expected_kinds = _expected_content_block_kinds_for_leaf(item_kind=item_kind, item_title=normalized_item_title)
+    kind_blocks = [
+        block for block in selected_blocks
+        if isinstance(block, dict) and _normalize_content_block_kind(block.get("kind")) in expected_kinds
+    ]
+    focus_blocks = exact_blocks or kind_blocks
+    meaningful_blocks = [block for block in focus_blocks if _content_block_has_meaningful_source_material(block)]
+    if not meaningful_blocks and len(selected_blocks) == 1 and _content_block_has_meaningful_source_material(selected_blocks[0]):
+        meaningful_blocks = [selected_blocks[0]]
+
+    grouped: dict[str, list[dict[str, Any]]] = {
+        "activity": [],
+        "content": [],
+        "example": [],
+        "practice": [],
+        "assessment": [],
+    }
+    for block in meaningful_blocks:
+        kind = _normalize_content_block_kind(block.get("kind"))
+        if kind == "activity":
+            grouped["activity"].append(block)
+        elif kind in {"lesson", "definition", "property"}:
+            grouped["content"].append(block)
+        elif kind == "example":
+            grouped["example"].append(block)
+        elif kind == "exercise":
+            grouped["practice"].append(block)
+        elif kind == "evaluation":
+            grouped["assessment"].append(block)
+
+    payload = {
+        "provider": SOURCE_DERIVED_LEAF_CONTENT_PROVIDER,
+        "requested_provider": SOURCE_DERIVED_LEAF_CONTENT_PROVIDER,
+        "model": None,
+        "status": "draft",
+        "teaching_goal_md": normalized_item_title if meaningful_blocks else None,
+        "launch_activity_md": _build_leaf_content_markdown_from_blocks(grouped["activity"]),
+        "explanation_md": _build_leaf_content_markdown_from_blocks(grouped["content"]),
+        "worked_example_md": _build_leaf_content_markdown_from_blocks(grouped["example"]),
+        "practice_md": _build_leaf_content_markdown_from_blocks(grouped["practice"]),
+        "solution_md": None,
+        "assessment_md": _build_leaf_content_markdown_from_blocks(grouped["assessment"]),
+        "teacher_notes_md": None,
+        "source_excerpt_md": _build_leaf_content_markdown_from_blocks(meaningful_blocks, prefer_excerpt=True),
+        "source_payload": {
+            "mode": "source_derived",
+            "item_title": normalized_item_title,
+            "item_kind": str(getattr(item_kind, "value", item_kind) or "").strip().lower() or None,
+            "item_path": normalized_item_path,
+            "section_path": normalized_section_path,
+            "matched_block_count": len(meaningful_blocks),
+            "matched_block_titles": [
+                _normalize_outline_title(block.get("title"))
+                for block in meaningful_blocks[:8]
+                if _normalize_outline_title(block.get("title"))
+            ],
+        },
+        "raw_provider_response": {
+            "mode": "source_derived",
+            "matched_blocks": meaningful_blocks[:8],
+        },
+        "error_message": None,
+    }
+    if any(payload.get(field) for field in _LEAF_CONTENT_FIELDS):
+        payload["status"] = "ready"
+    return payload
 
 
 def delete_provider_unit_context(*, provider_context: dict[str, Any] | None) -> bool:
