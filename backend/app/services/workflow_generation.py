@@ -3713,6 +3713,58 @@ def _normalize_content_block_kind(value: Any) -> str:
     return CONTENT_BLOCK_KIND_MAP.get(folded, CONTENT_BLOCK_KIND_MAP.get(folded.split()[0], "lesson"))
 
 
+def _infer_content_block_kind_from_text(
+    *,
+    title: str,
+    teaching_material: str,
+    source_excerpt: str,
+    current_kind: str,
+) -> str:
+    combined = " ".join(
+        value for value in (
+            _normalize_outline_title(title),
+            _normalize_outline_title(teaching_material),
+            _normalize_outline_title(source_excerpt),
+        )
+        if _normalize_outline_title(value)
+    ).strip()
+    if not combined:
+        return current_kind
+
+    keyword_kind = _keyword_kind_from_line(combined)
+    if keyword_kind is not None:
+        mapping = {
+            WorkflowChecklistItemKind.DEFINITION: "definition",
+            WorkflowChecklistItemKind.PROPERTY: "property",
+            WorkflowChecklistItemKind.EXAMPLE: "example",
+            WorkflowChecklistItemKind.EXERCISE: "exercise",
+            WorkflowChecklistItemKind.OTHER: "activity",
+        }
+        inferred = mapping.get(keyword_kind)
+        if inferred:
+            return inferred
+
+    folded = _fold_text_key(combined)
+    for keyword, keyword_kind in CHECKLIST_KIND_KEYWORDS:
+        if keyword in folded:
+            mapping = {
+                WorkflowChecklistItemKind.DEFINITION: "definition",
+                WorkflowChecklistItemKind.PROPERTY: "property",
+                WorkflowChecklistItemKind.EXAMPLE: "example",
+                WorkflowChecklistItemKind.EXERCISE: "exercise",
+            }
+            inferred = mapping.get(keyword_kind)
+            if inferred:
+                return inferred
+    if any(token in folded for token in ("mini evaluation", "evaluation", "controle", "quiz", "verifier que", "verifie que")):
+        return "evaluation"
+    if _looks_like_rule_continuation(combined):
+        return "property"
+    if current_kind == "lesson" and _is_activity_outline_title(title or teaching_material or source_excerpt, current_kind):
+        return "activity"
+    return current_kind
+
+
 def _normalize_content_block_text(value: Any, *, limit: int) -> str:
     text = _normalize_outline_title(value)
     if not text:
@@ -3895,6 +3947,12 @@ def _normalize_content_blocks_payload(
             section_title = section_path[-1]
         source_excerpt = _normalize_content_block_text(row.get("source_excerpt"), limit=320)
         teaching_material = _normalize_content_block_text(row.get("teaching_material"), limit=520)
+        kind = _infer_content_block_kind_from_text(
+            title=title,
+            teaching_material=teaching_material,
+            source_excerpt=source_excerpt,
+            current_kind=kind,
+        )
         student_visible = bool(row.get("student_visible", True))
         teacher_only = bool(row.get("teacher_only", False))
         if _is_teacher_meta_outline_title(title) or _is_teacher_meta_outline_title(section_title):

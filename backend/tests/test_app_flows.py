@@ -7116,6 +7116,29 @@ def test_leaf_content_source_extract_assigns_examples_by_sequence(client, monkey
     assert first_body["worked_example_md"] != second_body["worked_example_md"]
 
 
+def test_normalize_content_blocks_infers_example_kind_from_generic_block():
+    from app.services import workflow_generation
+
+    blocks = workflow_generation._normalize_content_blocks_payload(
+        {
+            "content_blocks": [
+                {
+                    "section_title": "Somme et difference",
+                    "section_path": ["Rationnels", "Somme et difference"],
+                    "title": "Somme de rationnels",
+                    "kind": "lesson",
+                    "teaching_material": "Exemple: 3/8 + 1/8 = 4/8.",
+                    "source_excerpt": "Exemple resolu avec meme denominateur.",
+                }
+            ]
+        },
+        unit_map=None,
+        fallback_outline=None,
+    )
+    assert len(blocks) == 1
+    assert blocks[0]["kind"] == "example"
+
+
 def test_leaf_content_generate_requires_blueprint(client):
     headers = _auth_headers(client)
     class_resp = client.post(
