@@ -1902,6 +1902,19 @@ code {
     width: min(98vw, 1100px);
 }
 
+.leaf-content-modal--teach .lcm-header {
+    padding-bottom: 0.9rem;
+}
+
+.leaf-content-modal--teach .lcm-header h2 {
+    font-size: 24px;
+    line-height: 1.15;
+}
+
+.leaf-content-modal--teach .lcm-footer {
+    justify-content: flex-end;
+}
+
 .lcm-header {
     display: flex;
     align-items: flex-start;
@@ -2088,32 +2101,33 @@ code {
     align-items: flex-start;
     justify-content: space-between;
     gap: 1rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 0.25rem;
 }
 
-.lcm-teach-kicker {
-    margin: 0 0 0.3rem;
+.lcm-teach-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+}
+
+.lcm-teach-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background: #eff6ff;
+    color: #1d4ed8;
+    padding: 0.35rem 0.7rem;
     font-size: 11px;
     font-weight: 800;
     text-transform: uppercase;
-    letter-spacing: 0.12em;
-    color: #2563eb;
+    letter-spacing: 0.08em;
 }
 
-.lcm-teach-title {
-    margin: 0;
-    font-size: 28px;
-    line-height: 1.15;
-    font-weight: 800;
-    color: #0f172a;
-}
-
-.lcm-teach-subtitle {
-    margin: 0.4rem 0 0;
-    font-size: 13px;
-    line-height: 1.5;
-    color: #64748b;
+.lcm-teach-meta-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #334155;
 }
 
 .lcm-teach-counter {
@@ -2133,6 +2147,27 @@ code {
     background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
     padding: 1.5rem 1.6rem;
     min-height: 340px;
+}
+
+.lcm-teach-stage-head {
+    margin-bottom: 1.1rem;
+    padding-bottom: 0.9rem;
+    border-bottom: 1px solid #dbeafe;
+}
+
+.lcm-teach-stage-title {
+    margin: 0;
+    font-size: 34px;
+    line-height: 1.12;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.lcm-teach-stage-path {
+    margin: 0.55rem 0 0;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #94a3b8;
 }
 
 .lcm-teach-prose {
@@ -2257,13 +2292,21 @@ code {
         width: min(100vw, 100vw);
     }
 
-    .lcm-teach-title {
-        font-size: 22px;
+    .leaf-content-modal--teach .lcm-header h2 {
+        font-size: 19px;
     }
 
     .lcm-teach-stage {
         min-height: 260px;
         padding: 1.1rem 1rem;
+    }
+
+    .lcm-teach-stage-title {
+        font-size: 24px;
+    }
+
+    .lcm-teach-stage-path {
+        font-size: 12px;
     }
 
     .lcm-teach-prose {

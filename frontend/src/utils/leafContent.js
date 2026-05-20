@@ -37,6 +37,15 @@ const SOURCE_SEGMENT_LABELS = {
   content: 'Content',
 };
 
+function _labelKey(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[>:\-–—]+/g, ' ')
+    .trim();
+}
+
 const EMPTY_LEAF_CONTENT = Object.freeze({
   id: null,
   unit_id: null,
@@ -243,7 +252,7 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
       <div class="lcm-header">
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2 mb-1">
-            <span class="text-[10px] font-bold uppercase tracking-widest text-blue-600">Lesson Card</span>
+            <span class="text-[10px] font-bold uppercase tracking-widest text-blue-600">Lesson</span>
             <span id="lcm-status-badge"></span>
           </div>
           <h2 class="text-[15px] font-bold text-slate-800 leading-tight">${_esc(itemTitle)}</h2>
@@ -251,8 +260,8 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
         </div>
         <div class="flex items-center gap-1 flex-shrink-0">
           <button id="lcm-btn-teach" class="btn btn-sm btn-ghost lcm-mode-btn">Teach</button>
-          <button id="lcm-btn-rendered" class="btn btn-sm btn-secondary lcm-mode-btn">Rendered</button>
-          <button id="lcm-btn-source" class="btn btn-sm btn-ghost lcm-mode-btn">Source</button>
+          <button id="lcm-btn-rendered" class="btn btn-sm btn-secondary lcm-mode-btn">Review</button>
+          <button id="lcm-btn-source" class="btn btn-sm btn-ghost lcm-mode-btn">Edit</button>
           <button id="lcm-btn-close" class="btn btn-ghost btn-sm !text-slate-400 !text-[18px] !leading-none !px-2" title="Close">x</button>
         </div>
       </div>
@@ -433,26 +442,35 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
     const safeIndex = Math.max(0, Math.min(teachIndex, blocks.length - 1));
     teachIndex = safeIndex;
     const current = blocks[safeIndex];
+    const blockTitle = _labelKey(current.title) && _labelKey(current.title) !== _labelKey(itemTitle)
+      ? current.title
+      : '';
     body.innerHTML = `
       <div class="lcm-teach">
         <div class="lcm-teach-topbar">
-          <div>
-            <p class="lcm-teach-kicker">${_esc(current.kindLabel)}</p>
-            <h3 class="lcm-teach-title">${_esc(current.title || itemTitle)}</h3>
-            <p class="lcm-teach-subtitle">${_esc(current.subtitle)}${pathBreadcrumb ? ` · ${_esc(pathBreadcrumb)}` : ''}</p>
+          <div class="lcm-teach-meta">
+            <span class="lcm-teach-pill">${_esc(current.kindLabel)}</span>
+            ${blockTitle ? `<span class="lcm-teach-meta-title">${_esc(blockTitle)}</span>` : ''}
           </div>
-          <div class="lcm-teach-counter">${safeIndex + 1} / ${blocks.length}</div>
+          ${blocks.length > 1 ? `<div class="lcm-teach-counter">${safeIndex + 1} / ${blocks.length}</div>` : ''}
         </div>
         <div class="lcm-teach-stage">
+          <div class="lcm-teach-stage-head">
+            <h3 class="lcm-teach-stage-title">${_esc(itemTitle)}</h3>
+            ${pathBreadcrumb ? `<p class="lcm-teach-stage-path">${_esc(pathBreadcrumb)}</p>` : ''}
+          </div>
           <div class="lcm-teach-prose">${renderMarkdownLatex(current.contentMd)}</div>
         </div>
+        ${blocks.length > 1 ? `
         <div class="lcm-teach-nav">
           <button type="button" class="btn btn-ghost btn-sm" id="lcm-teach-prev" ${safeIndex <= 0 ? 'disabled' : ''}>Previous</button>
           <button type="button" class="btn btn-secondary btn-sm" id="lcm-teach-next" ${safeIndex >= blocks.length - 1 ? 'disabled' : ''}>Next</button>
-        </div>
+        </div>` : ''}
       </div>`;
-    body.querySelector('#lcm-teach-prev')?.addEventListener('click', () => moveTeachIndex(-1));
-    body.querySelector('#lcm-teach-next')?.addEventListener('click', () => moveTeachIndex(1));
+    if (blocks.length > 1) {
+      body.querySelector('#lcm-teach-prev')?.addEventListener('click', () => moveTeachIndex(-1));
+      body.querySelector('#lcm-teach-next')?.addEventListener('click', () => moveTeachIndex(1));
+    }
   }
 
   function renderSourceMode() {
@@ -492,8 +510,10 @@ export async function openLeafContentModal(classId, unitId, item, options = {}) 
 
   function renderBody() {
     const hasAnyContent = Boolean(content) && _countReadySections(content) > 0;
+    const footerActions = overlay.querySelector('.lcm-footer-actions');
     btnGenerate.textContent = hasAnyContent ? 'Fill Missing with Unit Brain' : 'Generate from Unit Brain';
     btnRegenerate.hidden = !hasAnyContent;
+    if (footerActions) footerActions.style.display = mode === 'teach' ? 'none' : 'flex';
     if (!content && mode !== 'source') {
       body.innerHTML = `
         <div class="flex flex-col items-center justify-center gap-3 py-12 text-center">
