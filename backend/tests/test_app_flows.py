@@ -7022,6 +7022,7 @@ def test_leaf_content_source_extract_seeds_on_unit_start(client, monkeypatch):
     assert extracted_blocks
     assert extracted_blocks[0]["content_md"]
     assert extracted_blocks[0]["content_source"] in {"source_excerpt", "teaching_material"}
+    assert "additionner deux rationnels de meme denominateur" in extracted_blocks[0]["content_md"]
 
 
 def test_leaf_content_source_extract_assigns_examples_by_sequence(client, monkeypatch):
@@ -7141,6 +7142,85 @@ def test_normalize_content_blocks_infers_example_kind_from_generic_block():
     )
     assert len(blocks) == 1
     assert blocks[0]["kind"] == "example"
+
+
+def test_normalize_content_blocks_splits_mixed_block_into_ordered_parts():
+    from app.services import workflow_generation
+
+    blocks = workflow_generation._normalize_content_blocks_payload(
+        {
+            "content_blocks": [
+                {
+                    "section_title": "Somme et difference",
+                    "section_path": ["Rationnels", "Somme et difference"],
+                    "title": "Somme de rationnels",
+                    "kind": "lesson",
+                    "teaching_material": (
+                        "Definition: Pour additionner deux rationnels de meme denominateur, on garde le denominateur. "
+                        "Exemple 1: 3/8 + 1/8 = 4/8. "
+                        "Exercice 1: Calculer 5/9 + 2/9."
+                    ),
+                    "source_excerpt": "Bloc combine du document.",
+                }
+            ]
+        },
+        unit_map=None,
+        fallback_outline=None,
+    )
+    assert [row["kind"] for row in blocks] == ["definition", "example", "exercise"]
+    assert blocks[0]["title"] == "Definition"
+    assert "garde le denominateur" in blocks[0]["teaching_material"]
+    assert blocks[1]["title"] == "Exemple 1"
+    assert "3/8 + 1/8 = 4/8" in blocks[1]["teaching_material"]
+    assert blocks[2]["title"] == "Exercice 1"
+    assert "5/9 + 2/9" in blocks[2]["teaching_material"]
+
+
+def test_source_derived_leaf_content_uses_split_exact_block_for_matching():
+    from app.services import workflow_generation
+    from app.models import WorkflowChecklistItemKind
+
+    content_blocks = workflow_generation._normalize_content_blocks_payload(
+        {
+            "content_blocks": [
+                {
+                    "section_title": "Somme et difference",
+                    "section_path": ["Rationnels", "Somme et difference"],
+                    "title": "Somme de rationnels",
+                    "kind": "lesson",
+                    "teaching_material": (
+                        "Definition: Pour additionner deux rationnels de meme denominateur, on garde le denominateur. "
+                        "Exemple 1: 3/8 + 1/8 = 4/8. "
+                        "Exercice 1: Calculer 5/9 + 2/9."
+                    ),
+                    "source_excerpt": "Bloc combine du document.",
+                }
+            ]
+        },
+        unit_map=None,
+        fallback_outline=None,
+    )
+
+    example_payload = workflow_generation.build_source_derived_leaf_content_package(
+        item_title="Exemple 1",
+        item_kind=WorkflowChecklistItemKind.EXAMPLE,
+        item_path=["Rationnels", "Somme et difference", "Exemple 1"],
+        section_path=["Rationnels", "Somme et difference"],
+        content_blocks=content_blocks,
+    )
+    exercise_payload = workflow_generation.build_source_derived_leaf_content_package(
+        item_title="Exercice 1",
+        item_kind=WorkflowChecklistItemKind.EXERCISE,
+        item_path=["Rationnels", "Somme et difference", "Exercice 1"],
+        section_path=["Rationnels", "Somme et difference"],
+        content_blocks=content_blocks,
+    )
+
+    assert "3/8 + 1/8 = 4/8" in (example_payload["worked_example_md"] or "")
+    assert "5/9 + 2/9" in (exercise_payload["practice_md"] or "")
+    exact_blocks = example_payload["source_payload"]["extracted_blocks"]
+    assert exact_blocks
+    assert "3/8 + 1/8 = 4/8" in exact_blocks[0]["content_md"]
 
 
 def test_leaf_content_generate_requires_blueprint(client):

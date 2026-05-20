@@ -311,3 +311,19 @@ Keep entries short and factual.
   - another AI can now start from a clear read order, known guardrails, and a shared handoff file
 - Follow-up:
   - next implementation step should be persisted leaf content records and one leaf reader/editor slice
+### 2026-05-20 14:05 - Codex
+
+- Status: done
+- Goal: improve exact-source leaf extraction when one PDF block contains multiple pedagogical parts
+- Files changed:
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/test_app_flows.py`
+- Notes:
+  - split mixed source blocks like `Definition: ... Exemple 1: ... Exercice 1: ...` into ordered normalized content blocks
+  - preserve richer teaching material in `source_payload.extracted_blocks` so lesson cards show the fuller exact source text
+  - added regression coverage for ordered splitting and leaf matching from split blocks
+- Validation:
+  - `python -m compileall -q backend/app`
+  - `PYTHONPATH=backend python -m pytest -p no:cacheprovider backend/tests/test_app_flows.py -k "leaf_content"`
+- Follow-up:
+  - next quality step is broader reconstruction for weak PDFs where one coarse block still mixes unlabeled explanation, example, and practice

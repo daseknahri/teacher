@@ -1052,7 +1052,8 @@ def _build_exact_source_segments_from_blocks(
         phase = str(block.get("teaching_phase") or "").strip() or _normalize_content_block_phase(None, kind=kind, title=title)
         excerpt = _normalize_content_block_text(block.get("source_excerpt"), limit=1200)
         material = _normalize_content_block_text(block.get("teaching_material"), limit=1200)
-        content_md = excerpt or material
+        use_material = bool(material) and len(material) >= len(excerpt)
+        content_md = material if use_material else (excerpt or material)
         if not content_md:
             continue
         segment_key = "|".join(
@@ -1073,7 +1074,7 @@ def _build_exact_source_segments_from_blocks(
                 "kind": kind,
                 "teaching_phase": phase,
                 "content_md": content_md,
-                "content_source": "source_excerpt" if excerpt else "teaching_material",
+                "content_source": "teaching_material" if use_material else "source_excerpt",
             }
         )
     return segments[:8]
@@ -3742,6 +3743,38 @@ GENERIC_SECTION_BUCKET_KEYS: set[str] = {
     "exercice",
 }
 
+CONTENT_BLOCK_SPLIT_KIND_MAP: tuple[tuple[str, str], ...] = (
+    ("activite", "activity"),
+    ("activity", "activity"),
+    ("definition", "definition"),
+    ("propriete", "property"),
+    ("regle", "property"),
+    ("remarque", "property"),
+    ("methode", "property"),
+    ("theoreme", "property"),
+    ("exemple", "example"),
+    ("application", "exercise"),
+    ("exercice", "exercise"),
+    ("evaluation", "evaluation"),
+    ("controle", "evaluation"),
+    ("quiz", "evaluation"),
+    ("correction", "evaluation"),
+    ("solution", "evaluation"),
+)
+CONTENT_BLOCK_SPLIT_LABEL_PATTERN = re.compile(
+    r"(?i)(?P<label>"
+    r"activite(?:s)?(?:\s+\d+)?|activity(?:ies)?(?:\s+\d+)?|"
+    r"definition(?:s)?(?:\s+\d+)?|d[eé]finition(?:s)?(?:\s+\d+)?|"
+    r"propri[eé]t[eé](?:s)?(?:\s+\d+)?|regle(?:s)?(?:\s+\d+)?|r[eè]gle(?:s)?(?:\s+\d+)?|"
+    r"remarque(?:s)?(?:\s+\d+)?|methode(?:s)?(?:\s+\d+)?|m[eé]thode(?:s)?(?:\s+\d+)?|"
+    r"theoreme(?:s)?(?:\s+\d+)?|th[eé]or[eè]me(?:s)?(?:\s+\d+)?|"
+    r"exemple(?:s)?(?:\s+\d+)?|application(?:s)?(?:\s+\d+)?|"
+    r"exercice(?:s)?(?:\s+\d+)?|evaluation(?:s)?(?:\s+\d+)?|"
+    r"[eé]valuation(?:s)?(?:\s+\d+)?|controle(?:s)?(?:\s+\d+)?|contr[oô]le(?:s)?(?:\s+\d+)?|"
+    r"quiz(?:\s+\d+)?|correction(?:s)?(?:\s+\d+)?|solution(?:s)?(?:\s+\d+)?)"
+    r"\s*[:\-]\s*"
+)
+
 
 def _is_generic_section_bucket_title(title: Any) -> bool:
     return _semantic_title_key(title) in GENERIC_SECTION_BUCKET_KEYS
@@ -3814,6 +3847,96 @@ def _normalize_content_block_text(value: Any, *, limit: int) -> str:
     if len(text) > limit:
         text = text[:limit].rstrip(" ;,-") + "..."
     return text
+
+
+def _kind_from_split_label(label: Any, *, fallback: str) -> str:
+    folded = _fold_text_key(label)
+    if not folded:
+        return fallback
+    for prefix, resolved in CONTENT_BLOCK_SPLIT_KIND_MAP:
+        if folded.startswith(prefix):
+            return resolved
+    return fallback
+
+
+def _split_content_block_source_text(
+    *,
+    title: str,
+    current_kind: str,
+    source_text: str,
+) -> list[dict[str, str]]:
+    normalized_source = re.sub(r"\s+", " ", str(source_text or "")).strip(" \t\r\n;")
+    if not normalized_source:
+        return []
+    matches = list(CONTENT_BLOCK_SPLIT_LABEL_PATTERN.finditer(normalized_source))
+    if not matches:
+        return []
+
+    segments: list[dict[str, str]] = []
+    leading_text = normalized_source[: matches[0].start()].strip(" ;,-")
+    if leading_text:
+        segments.append(
+            {
+                "title": title,
+                "kind": current_kind,
+                "content": leading_text,
+            }
+        )
+
+    for idx, match in enumerate(matches):
+        next_start = matches[idx + 1].start() if idx + 1 < len(matches) else len(normalized_source)
+        segment_text = normalized_source[match.start() : next_start].strip(" ;,-")
+        if not segment_text:
+            continue
+        label = _normalize_content_block_text(match.group("label"), limit=180) or title
+        segment_kind = _kind_from_split_label(label, fallback=current_kind)
+        segment_kind = _infer_content_block_kind_from_text(
+            title=label,
+            teaching_material=segment_text,
+            source_excerpt=segment_text,
+            current_kind=segment_kind,
+        )
+        segments.append(
+            {
+                "title": label,
+                "kind": segment_kind,
+                "content": segment_text,
+            }
+        )
+
+    if len(segments) == 1 and _semantic_title_key(segments[0]["title"]) == _semantic_title_key(title):
+        return []
+    return segments
+
+
+def _expand_raw_content_block_rows(
+    raw_blocks: list[Any] | None,
+) -> list[dict[str, Any]]:
+    expanded: list[dict[str, Any]] = []
+    for row in raw_blocks or []:
+        if not isinstance(row, dict):
+            continue
+        title = _normalize_content_block_text(row.get("title"), limit=180)
+        current_kind = _normalize_content_block_kind(row.get("kind"))
+        primary_text = str(row.get("teaching_material") or "").strip()
+        fallback_text = str(row.get("source_excerpt") or "").strip()
+        split_segments = _split_content_block_source_text(
+            title=title,
+            current_kind=current_kind,
+            source_text=primary_text or fallback_text,
+        )
+        if not split_segments:
+            expanded.append(row)
+            continue
+        for segment in split_segments:
+            clone = dict(row)
+            clone["title"] = segment["title"] or title or row.get("title")
+            clone["kind"] = segment["kind"] or current_kind
+            clone["teaching_material"] = segment["content"]
+            clone["source_excerpt"] = segment["content"]
+            clone["order_index"] = None
+            expanded.append(clone)
+    return expanded
 
 
 def _normalize_content_block_path(value: Any, *, fallback_section_title: str) -> list[str]:
@@ -3970,10 +4093,11 @@ def _normalize_content_blocks_payload(
     fallback_outline: list[dict[str, Any]] | None,
 ) -> list[dict[str, Any]]:
     raw_blocks = payload.get("content_blocks") if isinstance(payload, dict) and isinstance(payload.get("content_blocks"), list) else None
+    expanded_raw_blocks = _expand_raw_content_block_rows(raw_blocks)
     output: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
     last_section_title = ""
-    for index, row in enumerate(raw_blocks or []):
+    for index, row in enumerate(expanded_raw_blocks):
         if not isinstance(row, dict):
             continue
         title = _normalize_content_block_text(row.get("title"), limit=180)
@@ -3999,11 +4123,7 @@ def _normalize_content_blocks_payload(
         if _is_teacher_meta_outline_title(title) or _is_teacher_meta_outline_title(section_title):
             teacher_only = True if row.get("teacher_only") is not False else teacher_only
             student_visible = False if row.get("student_visible") is not True else student_visible
-        order_value = row.get("order_index")
-        try:
-            order_index = int(order_value)
-        except Exception:
-            order_index = index + 1
+        order_index = index + 1
         key = (_semantic_title_key(section_title), _semantic_title_key(title), kind)
         if not key[1] or key in seen:
             continue
