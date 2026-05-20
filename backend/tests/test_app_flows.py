@@ -7583,6 +7583,46 @@ def test_source_derived_leaf_content_keeps_heading_above_short_math_rows():
     assert exact_blocks[3]["content_md"] == "4/9 + 5/9 = 9/9"
 
 
+def test_source_derived_leaf_content_splits_pipe_separated_rows():
+    from app.services import workflow_generation
+    from app.models import WorkflowChecklistItemKind
+
+    content_blocks = workflow_generation._normalize_content_blocks_payload(
+        {
+            "content_blocks": [
+                {
+                    "section_title": "Produit et division",
+                    "section_path": ["Rationnels", "Produit et division"],
+                    "title": "Exercices tableau",
+                    "kind": "exercise",
+                    "teaching_material": "Calculer 3/7 + 2/7 | Simplifier 5/10 | Comparer 4/9 et 5/9",
+                    "source_excerpt": "Bloc d'exercices avec separateur pipe.",
+                }
+            ]
+        },
+        unit_map=None,
+        fallback_outline=None,
+    )
+
+    payload = workflow_generation.build_source_derived_leaf_content_package(
+        item_title="Exercices tableau",
+        item_kind=WorkflowChecklistItemKind.EXERCISE,
+        item_path=["Rationnels", "Produit et division", "Exercices tableau"],
+        section_path=["Rationnels", "Produit et division"],
+        content_blocks=content_blocks,
+    )
+
+    assert "Calculer 3/7 + 2/7" in (payload["practice_md"] or "")
+    assert "Simplifier 5/10" in (payload["practice_md"] or "")
+    assert "Comparer 4/9 et 5/9" in (payload["practice_md"] or "")
+    assert "\n" in (payload["practice_md"] or "")
+    exact_blocks = payload["source_payload"]["extracted_blocks"]
+    assert len(exact_blocks) == 3
+    assert exact_blocks[0]["content_md"] == "Calculer 3/7 + 2/7"
+    assert exact_blocks[1]["content_md"] == "Simplifier 5/10"
+    assert exact_blocks[2]["content_md"] == "Comparer 4/9 et 5/9"
+
+
 def test_leaf_content_generate_requires_blueprint(client):
     headers = _auth_headers(client)
     class_resp = client.post(

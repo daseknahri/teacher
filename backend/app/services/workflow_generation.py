@@ -4057,6 +4057,12 @@ def _normalize_content_block_markdown(value: Any, *, limit: int) -> str:
         if len(semicolon_parts) >= 2 and sum(1 for part in semicolon_parts if looks_like_mathish_fragment(part)) >= 2:
             expanded_lines.extend(semicolon_parts)
             continue
+        pipe_parts = [part.strip(" |") for part in re.split(r"\s*\|\s*", line) if part.strip(" |")]
+        if len(pipe_parts) >= 2 and sum(
+            1 for part in pipe_parts if looks_like_mathish_fragment(part) or looks_like_actionish_fragment(part)
+        ) >= 2:
+            expanded_lines.extend(pipe_parts)
+            continue
         column_parts = [part.strip() for part in re.split(r"(?:\t+|\s{2,})", line) if part.strip()]
         if len(column_parts) >= 2 and sum(
             1 for part in column_parts if looks_like_mathish_fragment(part) or looks_like_actionish_fragment(part)

@@ -38,6 +38,25 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-20 18:25 - Codex
+
+- Status: done
+- Goal: recover pipe-separated table-style source rows so flattened worksheet/table content stays teachable in the app
+- Files expected:
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/test_app_flows.py`
+- Assumptions:
+  - `|` separators often come from flattened table or column layouts and should become separate lesson rows when at least two parts look like math or action fragments
+  - this is a safe extension of the existing column-style split logic
+- Notes:
+  - kept the split narrow so ordinary prose with an occasional pipe is unlikely to be affected
+- Result:
+  - source markdown normalization now splits pipe-separated rows into separate lines
+  - the exact-source builder then turns those parts into separate teachable source blocks
+  - added regression coverage for a pipe-separated exercise row
+- Follow-up:
+  - we are reaching the practical limit of text-only recovery; the next major fidelity step would need PDF layout geometry or OCR box structure
+
 ### 2026-05-20 18:05 - Codex
 
 - Status: done
