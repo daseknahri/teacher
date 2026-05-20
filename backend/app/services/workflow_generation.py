@@ -1140,7 +1140,12 @@ def _build_exact_source_segments_from_blocks(
             if current_group:
                 groups.append(current_group)
         else:
-            groups = [[line] for line in compact_lines]
+            leading_heading = compact_lines[0] if compact_lines else ""
+            if leading_heading.endswith(":") and len(compact_lines) >= 3:
+                preamble = [leading_heading]
+                groups = [[line] for line in compact_lines[1:]]
+            else:
+                groups = [[line] for line in compact_lines]
         if len(groups) < 2:
             return []
 

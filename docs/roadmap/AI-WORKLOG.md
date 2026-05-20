@@ -38,6 +38,24 @@ Keep entries short and factual.
 
 ## Current Entries
 
+### 2026-05-20 18:05 - Codex
+
+- Status: done
+- Goal: preserve short source headings like `Calculer :` above separated substeps so the lesson keeps context instead of flattening the heading into another row
+- Files expected:
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/test_app_flows.py`
+- Assumptions:
+  - a short heading ending with `:` should stay as context when it is followed by several short math/action rows
+  - this should help worksheet-style blocks where the PDF gives a visible heading then several compact lines
+- Notes:
+  - limited this to the non-numbered/non-lettered split path so it does not interfere with explicit markers
+- Result:
+  - exact-source splitting now keeps a leading heading as a preamble and separates the following short rows into their own source steps
+  - added regression coverage for a `Calculer :` block followed by three short math rows
+- Follow-up:
+  - next fidelity pass should target true table-like layouts where row/column meaning is still weak after plain-text extraction
+
 ### 2026-05-20 17:45 - Codex
 
 - Status: done
