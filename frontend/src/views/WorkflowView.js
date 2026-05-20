@@ -2664,18 +2664,12 @@ function _renderWriteupSourcePayload(payload, { compact = false } = {}) {
     </div>
   `;
 
-  return `
-    <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 flex flex-col gap-3">
-      <div>
-        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">AI Context Used</p>
-        <p class="text-[12px] text-slate-500 mt-1">This shows which saved unit sections and guidance the write-up matched before generation.</p>
-        <div class="mt-2 flex flex-wrap gap-2">
-          ${summaryBadges.map(label => `<span class="badge badge-gray">${label}</span>`).join('')}
-        </div>
-      </div>
-      ${grid}
-    </div>
-  `;
+  return _renderWorkflowDetailDisclosure(
+    'AI Context Used',
+    'Open this only when you want to audit which saved unit sections and guidance shaped the write-up.',
+    grid,
+    { badges: summaryBadges },
+  );
 }
 
 function _renderImportedGuidanceSummary(payload) {
@@ -2698,6 +2692,31 @@ function _renderImportedGuidanceSummary(payload) {
         `).join('')}
       </div>
     </div>
+  `;
+}
+
+function _renderWorkflowDetailDisclosure(title, hint, body, { badges = [], open = false } = {}) {
+  const content = String(body || '').trim();
+  if (!content) return '';
+  const safeBadges = Array.isArray(badges) ? badges.filter(Boolean) : [];
+  return `
+    <details class="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-3"${open ? ' open' : ''}>
+      <summary class="cursor-pointer list-none select-none">
+        <div class="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">${_escapeHtml(title)}</p>
+            ${hint ? `<p class="mt-1 text-[12px] text-slate-500">${_escapeHtml(hint)}</p>` : ''}
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            ${safeBadges.map(label => `<span class="badge badge-gray">${_escapeHtml(label)}</span>`).join('')}
+            <span class="text-[11px] font-semibold text-slate-400">Show details</span>
+          </div>
+        </div>
+      </summary>
+      <div class="mt-3">
+        ${content}
+      </div>
+    </details>
   `;
 }
 
@@ -4032,11 +4051,7 @@ function _render(el, classId) {
                               : '<p class="text-[12px] text-slate-500">No saved route summary for this session yet.</p>'}
                           </div>
                         </div>
-                        <div class="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-3">
-                          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                            <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">${activeSessionPlanTitles.length ? 'Planned Route' : 'Checked In This Session'}</p>
-                            ${activeSessionPlanTitles.length ? _renderSessionPlannedTree(activeSessionPlanTree) : _renderSessionFallbackRouteRows(activeFallbackRouteRows)}
-                          </div>
+                        <div class="flex flex-col gap-3">
                           <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
                             <p class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Teacher Prep</p>
                             <p class="text-[12px] text-slate-500 mb-3">${activeSessionPlanTitles.length ? 'Notebook-backed suggestions tied to this planned route.' : 'Notebook-backed suggestions tied to the checklist work already captured in this session.'}</p>
@@ -4046,6 +4061,24 @@ function _render(el, classId) {
                               activeRouteSectionPaths.length ? activeRouteSectionPaths : activeSessionCheckedSectionPaths,
                             )}
                           </div>
+                          ${_renderWorkflowDetailDisclosure(
+                            activeSessionPlanTitles.length ? 'Route Details' : 'Recorded Route Details',
+                            activeSessionPlanTitles.length
+                              ? 'Open the raw saved route if you need to inspect the exact checklist rows behind this live session.'
+                              : 'Open the recorded checked rows when you need to inspect the exact checklist context captured so far.',
+                            `
+                              <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                                <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">${activeSessionPlanTitles.length ? 'Planned Route' : 'Checked In This Session'}</p>
+                                ${activeSessionPlanTitles.length ? _renderSessionPlannedTree(activeSessionPlanTree) : _renderSessionFallbackRouteRows(activeFallbackRouteRows)}
+                              </div>
+                            `,
+                            {
+                              badges: [
+                                `${activeMatchedChecklist.length} route row${activeMatchedChecklist.length === 1 ? '' : 's'}`,
+                                activeSummaryBadges.length ? `${activeSummaryBadges.length} summary badge${activeSummaryBadges.length === 1 ? '' : 's'}` : '',
+                              ],
+                            },
+                          )}
                         </div>
                       </div>`}
             </div>
@@ -4153,12 +4186,14 @@ function _render(el, classId) {
                       : ''}
                   </div>
                 </div>
-                ${_renderSessionMatchedGuidance(activeSessionMatchedGuidance, {
-                  canImport: Boolean(session),
-                  importedIds: activeSessionImportedGuidanceIds,
-                  hideImported: _sessionGuidanceHideImported,
-                  kindFilter: _sessionGuidanceKindFilter,
-                })}
+                ${activeSessionMatchedGuidance.length || activeSessionImportedGuidanceIds.size
+                  ? _renderSessionMatchedGuidance(activeSessionMatchedGuidance, {
+                    canImport: Boolean(session),
+                    importedIds: activeSessionImportedGuidanceIds,
+                    hideImported: _sessionGuidanceHideImported,
+                    kindFilter: _sessionGuidanceKindFilter,
+                  })
+                  : '<div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3 text-[12px] text-slate-500">No saved guidance matches this session yet. Use <span class="font-semibold">Ask This Unit</span> when you want reusable support here later.</div>'}
               </div>
               ${_renderSessionWriteupNextStep(sessionWriteupState.item, {
                 hasSession: Boolean(session),

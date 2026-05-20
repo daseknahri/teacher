@@ -490,18 +490,12 @@ function _renderCalendarWriteupSourcePayload(payload) {
       </div>`);
   }
   return rows.length
-    ? `
-      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-3 flex flex-col gap-3">
-        <div>
-          <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">AI Context Used</p>
-          <div class="mt-2 flex flex-wrap gap-2">
-            ${summaryBadges.map(label => `<span class="badge badge-gray">${label}</span>`).join('')}
-          </div>
-        </div>
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          ${rows.join('')}
-        </div>
-      </div>`
+    ? _renderCalendarDetailDisclosure(
+        'AI Context Used',
+        'Open this only when you want to audit which saved unit structure guided the write-up.',
+        `<div class="grid grid-cols-1 lg:grid-cols-2 gap-3">${rows.join('')}</div>`,
+        { badges: summaryBadges },
+      )
     : '';
 }
 
@@ -915,6 +909,31 @@ function _renderCalendarFallbackRouteRows(items, { classId = null, unitId = null
         `;
       }).join('')}
     </div>
+  `;
+}
+
+function _renderCalendarDetailDisclosure(title, hint, body, { badges = [], open = false } = {}) {
+  const content = String(body || '').trim();
+  if (!content) return '';
+  const safeBadges = Array.isArray(badges) ? badges.filter(Boolean) : [];
+  return `
+    <details class="mt-4 rounded-2xl border border-slate-200 bg-slate-50/80 p-3"${open ? ' open' : ''}>
+      <summary class="cursor-pointer list-none select-none">
+        <div class="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">${_escapeHtml(title)}</p>
+            ${hint ? `<p class="mt-1 text-[12px] text-slate-500">${_escapeHtml(hint)}</p>` : ''}
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            ${safeBadges.map(label => `<span class="badge badge-gray">${_escapeHtml(label)}</span>`).join('')}
+            <span class="text-[11px] font-semibold text-slate-400">Show details</span>
+          </div>
+        </div>
+      </summary>
+      <div class="mt-3">
+        ${content}
+      </div>
+    </details>
   `;
 }
 
@@ -4376,22 +4395,36 @@ function _renderCalendar(el, classId) {
                           </div>
                           ${_renderCalendarTeachingFlowGroups(selectedTeachingFlowGroups, { hasPlannedRoute: plannedSessionTitles.length > 0, resumeNodeId: plannedResumeNodeId, classId, unitId: selectedEvent?.unit_id ?? null })}
                         </div>
-                        <div class="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-3">
-                          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                            <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">${plannedSessionTitles.length ? 'Full Planned Route' : 'Recorded Checklist Route'}</p>
-                            ${plannedSessionTitles.length ? _renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId, classId, unitId: selectedEvent?.unit_id ?? null, lineage: [] }) : _renderCalendarFallbackRouteRows(selectedFallbackRouteItems, { classId, unitId: selectedEvent?.unit_id ?? null })}
-                          </div>
-                          <div class="flex flex-col gap-3">
-                            ${plannedResumeNode ? _renderCalendarNextFocusActions(plannedResumeSectionPlan, plannedResumePlaybookEntry, plannedResumeNode.title, { classId, unitId: selectedEvent?.unit_id }) : ''}
-                            <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                              <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Matched Section Plans</p>
-                              ${_renderCalendarSectionPlans(
-                                selectedSectionPlans,
-                                selectedEffectiveRouteTitles,
-                                selectedRouteSectionPaths.length ? selectedRouteSectionPaths : selectedCheckedSectionPaths,
-                              )}
-                            </div>
-                          </div>
+                        <div class="flex flex-col gap-3">
+                          ${plannedResumeNode ? _renderCalendarNextFocusActions(plannedResumeSectionPlan, plannedResumePlaybookEntry, plannedResumeNode.title, { classId, unitId: selectedEvent?.unit_id }) : ''}
+                          ${_renderCalendarDetailDisclosure(
+                            plannedSessionTitles.length ? 'Route Details' : 'Recorded Route Details',
+                            plannedSessionTitles.length
+                              ? 'Open the raw planned checklist route and the matched unit sections when you need to inspect the exact saved mapping.'
+                              : 'Open the recorded checklist route and matched unit sections when you need the exact saved rows behind this session.',
+                            `
+                              <div class="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-3">
+                                <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">${plannedSessionTitles.length ? 'Full Planned Route' : 'Recorded Checklist Route'}</p>
+                                  ${plannedSessionTitles.length ? _renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId, classId, unitId: selectedEvent?.unit_id ?? null, lineage: [] }) : _renderCalendarFallbackRouteRows(selectedFallbackRouteItems, { classId, unitId: selectedEvent?.unit_id ?? null })}
+                                </div>
+                                <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
+                                  <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Matched Section Plans</p>
+                                  ${_renderCalendarSectionPlans(
+                                    selectedSectionPlans,
+                                    selectedEffectiveRouteTitles,
+                                    selectedRouteSectionPaths.length ? selectedRouteSectionPaths : selectedCheckedSectionPaths,
+                                  )}
+                                </div>
+                              </div>
+                            `,
+                            {
+                              badges: [
+                                `${selectedTeachingFlowGroups.length} teaching section${selectedTeachingFlowGroups.length === 1 ? '' : 's'}`,
+                                `${plannedSessionPaths.length || selectedFallbackRouteItems.length} route row${(plannedSessionPaths.length || selectedFallbackRouteItems.length) === 1 ? '' : 's'}`,
+                              ],
+                            },
+                          )}
                         </div>
                       </div>`}
           </div>
@@ -4477,36 +4510,39 @@ function _renderCalendar(el, classId) {
             ${_calendarCollapseWriteup
               ? '<p class="text-[12px] text-slate-500 mt-3">The textbook write-up is collapsed. Expand it when you want to review, edit, or reuse the lesson summary.</p>'
               : `
-            <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 mt-3">
-              <div class="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
-                  <p class="text-[12px] text-slate-500 mt-1">${plannedSessionTitles.length ? 'Reusable unit help that matches this planned session route.' : 'Reusable unit help that matches the checklist work already recorded in this session.'}</p>
-                  ${_renderCalendarSessionGuidanceSummary(selectedMatchedGuidance.length, selectedImportedGuidanceIds.size, _calendarSessionGuidanceHideImported)}
-                  ${_calendarSessionGuidanceKindFilter !== 'all' ? `<div class="mt-2"><span class="badge badge-blue">Filtered: ${_escapeHtml(_assistantArtifactKindLabel(_calendarSessionGuidanceKindFilter))}</span></div>` : ''}
-                  ${_renderCalendarSessionGuidanceKindFilters(selectedMatchedGuidance, _calendarSessionGuidanceKindFilter)}
+            ${selectedMatchedGuidance.length || selectedImportedGuidanceIds.size
+              ? `
+              <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 mt-3">
+                <div class="flex items-start justify-between gap-3 flex-wrap">
+                  <div>
+                    <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
+                    <p class="text-[12px] text-slate-500 mt-1">${plannedSessionTitles.length ? 'Reusable unit help that matches this planned session route.' : 'Reusable unit help that matches the checklist work already recorded in this session.'}</p>
+                    ${_renderCalendarSessionGuidanceSummary(selectedMatchedGuidance.length, selectedImportedGuidanceIds.size, _calendarSessionGuidanceHideImported)}
+                    ${_calendarSessionGuidanceKindFilter !== 'all' ? `<div class="mt-2"><span class="badge badge-blue">Filtered: ${_escapeHtml(_assistantArtifactKindLabel(_calendarSessionGuidanceKindFilter))}</span></div>` : ''}
+                    ${_renderCalendarSessionGuidanceKindFilters(selectedMatchedGuidance, _calendarSessionGuidanceKindFilter)}
+                  </div>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    ${selectedEvent.unit_id != null && !selectedIsFuture && selectedVisibleRemainingGuidanceCount > 0
+                      ? `<button id="btn-calendar-session-guidance-import-remaining" class="btn btn-secondary btn-sm">${_calendarSessionGuidanceKindFilter === 'all' ? 'Import Remaining' : 'Import Visible'} (${selectedVisibleRemainingGuidanceCount})</button>`
+                      : ''}
+                    ${selectedImportedGuidanceIds.size > 0
+                      ? `<button id="btn-calendar-session-guidance-hide-imported-toggle" class="btn btn-ghost btn-sm">${_calendarSessionGuidanceHideImported ? 'Show Imported' : 'Hide Imported'}</button>`
+                      : ''}
+                    ${_hasCalendarSessionGuidanceFilters(_calendarSessionGuidanceHideImported, _calendarSessionGuidanceKindFilter)
+                      ? '<button id="btn-calendar-session-guidance-reset-filters" class="btn btn-ghost btn-sm">Reset Filters</button>'
+                      : ''}
+                  </div>
                 </div>
-                <div class="flex items-center gap-2 flex-wrap">
-                  ${selectedEvent.unit_id != null && !selectedIsFuture && selectedVisibleRemainingGuidanceCount > 0
-                    ? `<button id="btn-calendar-session-guidance-import-remaining" class="btn btn-secondary btn-sm">${_calendarSessionGuidanceKindFilter === 'all' ? 'Import Remaining' : 'Import Visible'} (${selectedVisibleRemainingGuidanceCount})</button>`
-                    : ''}
-                  ${selectedImportedGuidanceIds.size > 0
-                    ? `<button id="btn-calendar-session-guidance-hide-imported-toggle" class="btn btn-ghost btn-sm">${_calendarSessionGuidanceHideImported ? 'Show Imported' : 'Hide Imported'}</button>`
-                    : ''}
-                  ${_hasCalendarSessionGuidanceFilters(_calendarSessionGuidanceHideImported, _calendarSessionGuidanceKindFilter)
-                    ? '<button id="btn-calendar-session-guidance-reset-filters" class="btn btn-ghost btn-sm">Reset Filters</button>'
-                    : ''}
+                <div class="mt-3">
+                  ${_renderCalendarSessionMatchedGuidance(selectedMatchedGuidance, {
+                    canImport: selectedEvent.unit_id != null && !selectedIsFuture,
+                    importedIds: selectedImportedGuidanceIds,
+                    hideImported: _calendarSessionGuidanceHideImported,
+                    kindFilter: _calendarSessionGuidanceKindFilter,
+                  })}
                 </div>
-              </div>
-              <div class="mt-3">
-                ${_renderCalendarSessionMatchedGuidance(selectedMatchedGuidance, {
-                  canImport: selectedEvent.unit_id != null && !selectedIsFuture,
-                  importedIds: selectedImportedGuidanceIds,
-                  hideImported: _calendarSessionGuidanceHideImported,
-                  kindFilter: _calendarSessionGuidanceKindFilter,
-                })}
-              </div>
-            </div>
+              </div>`
+              : '<div class="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[12px] text-slate-500">No saved guidance matches this session yet. Use <span class="font-semibold">Ask This Unit</span> when you want reusable support here later.</div>'}
             ${_renderCalendarWriteupNextStep(selectedWriteup, {
               isFuture: selectedIsFuture,
               hasUnit: selectedEvent.unit_id != null,
