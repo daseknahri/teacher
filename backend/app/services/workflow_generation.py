@@ -3737,31 +3737,33 @@ def _build_notebooklm_content_pack_prompt(
             "Lis ce PDF comme une unite pedagogique complete.",
             "Retourne uniquement un JSON strict avec la forme suivante:",
             "{",
-            '  "content_blocks": [',
+            '  "unit_title": "titre de l\'unite",',
+            '  "sections": [',
             "    {",
-            '      "section_title": "titre de la section ou sous-section pedagogique la plus precise",',
-            '      "section_path": ["grande section", "sous-section precise"],',
-            '      "kind": "activity|lesson|definition|property|example|exercise|evaluation",',
-            '      "teaching_phase": "activity|discovery|content|example|practice|assessment",',
-            '      "title": "titre du bloc",',
-            '      "source_excerpt": "court extrait fidele du document",',
-            '      "teaching_material": "version concise et bien formulee pour enseigner ce bloc",',
-            '      "student_visible": true,',
-            '      "teacher_only": false,',
-            '      "order_index": 1',
+            '      "section_title": "titre exact de la section pedagogique la plus precise",',
+            '      "section_path": ["grand titre", "sous-titre exact", "sous-section exacte si visible"],',
+            '      "order_index": 1,',
+            '      "blocks": [',
+            "        {",
+            '          "kind": "activity|lesson|definition|property|example|exercise|evaluation|content",',
+            '          "title": "titre exact du bloc si visible",',
+            '          "exact_text": "texte exact utile du document pour ce bloc, sans resume et sans ajout",',
+            '          "order_index": 1',
+            "        }",
+            "      ]",
             "    }",
             "  ]",
             "}",
             "Contraintes:",
-            "- Garde les content_blocks dans l'ordre pedagogique du document.",
-            "- section_title et section_path doivent pointer vers la section d'enseignement la plus precise, pas vers des rubriques generiques comme 'Contenu de la lecon' s'il existe un vrai titre pedagogique plus bas.",
-            "- Pour une activite, un exemple ou un exercice, rattache le bloc a la section exacte qu'il prepare, illustre ou evalue. N'utilise 'Activites', 'Contenu de la lecon' ou 'Exercices' comme section_path finale que s'il n'existe vraiment aucun titre pedagogique plus precis.",
-            "- Inclure les activites, notions, definitions, proprietes, methodes, exemples, exercices et evaluation visibles ou clairement relies a la progression.",
-            "- source_excerpt doit rester court, fidele au document, et sans longues corrections detaillees.",
-            "- teaching_material doit etre une formulation propre et exploitable en classe, en 1 a 3 phrases maximum.",
-            "- teacher_only = true seulement pour un bloc reserve a l'enseignant; dans ce cas student_visible = false.",
-            "- Exclure les rubriques meta enseignant ordinaires comme Objectifs, Prerequis, Outils didactiques, Gestion du temps, sauf si elles apportent une vraie valeur pedagogique et alors marque-les teacher_only.",
-            "- Si l'ordre naturel d'une section est ambigu, privilegie: activite -> contenu/notion -> definition/propriete/regle -> exemple -> exercice -> evaluation.",
+            "- Garde les sections dans l'ordre exact du document.",
+            "- N'utilise PAS des sections generiques comme 'Activites', 'Contenu de la lecon', 'Exercices' ou 'Evaluation' comme section principale s'il existe une section pedagogique plus precise dans le document.",
+            "- Chaque activite, exemple, propriete ou exercice doit etre rattache a la section exacte qu'il prepare, illustre ou evalue.",
+            "- Garde les grands titres et sous-titres visibles comme chemins de section.",
+            "- Pour chaque bloc, copie le contenu utile du PDF de la maniere la plus fidele possible.",
+            "- N'ajoute aucune reformulation pedagogique, aucune synthese, aucune activite nouvelle.",
+            "- N'inclus pas les rubriques meta enseignant comme objectifs, prerequis, outils, gestion du temps, competences.",
+            "- Si une section contient plusieurs exemples ou exercices, garde-les dans l'ordre comme plusieurs blocks.",
+            "- Garde les mathematiques, les listes et les suites d'exercices aussi fidelement que possible.",
             "- Ne renvoie aucun commentaire hors JSON.",
             f"Type d'unite: {unit_type.value}",
             f"Titre attendu: {title or 'Unite'}",
@@ -4482,13 +4484,75 @@ def _derive_content_blocks_from_outline(items: list[dict[str, Any]]) -> list[dic
     return blocks[:240]
 
 
+def _raw_content_blocks_from_payload(payload: dict[str, Any] | None) -> list[dict[str, Any]] | None:
+    if not isinstance(payload, dict):
+        return None
+    direct_blocks = payload.get("content_blocks")
+    if isinstance(direct_blocks, list):
+        return direct_blocks
+
+    sections = payload.get("sections")
+    if not isinstance(sections, list):
+        return None
+
+    flattened: list[dict[str, Any]] = []
+    running_index = 0
+    for section_position, section in enumerate(sections, start=1):
+        if not isinstance(section, dict):
+            continue
+        section_title = _normalize_content_block_text(section.get("section_title"), limit=180)
+        section_path = _normalize_content_block_path(section.get("section_path"), fallback_section_title=section_title)
+        if section_path:
+            section_title = section_path[-1]
+        if not section_title:
+            continue
+        try:
+            section_order = int(section.get("order_index") or section_position)
+        except Exception:
+            section_order = section_position
+        blocks = section.get("blocks")
+        if not isinstance(blocks, list):
+            continue
+        for block_position, block in enumerate(blocks, start=1):
+            if not isinstance(block, dict):
+                continue
+            raw_title = _normalize_content_block_text(block.get("title"), limit=180)
+            raw_kind = _normalize_content_block_kind(block.get("kind"))
+            exact_text = _normalize_content_block_markdown(block.get("exact_text"), limit=6000)
+            title = raw_title or section_title or raw_kind.title() or "Bloc"
+            if not title:
+                continue
+            try:
+                block_order = int(block.get("order_index") or block_position)
+            except Exception:
+                block_order = block_position
+            running_index += 1
+            flattened.append(
+                {
+                    "section_title": section_title,
+                    "section_path": section_path,
+                    "kind": raw_kind,
+                    "teaching_phase": _normalize_content_block_phase(None, kind=raw_kind, title=title),
+                    "title": title,
+                    "source_excerpt": exact_text or title,
+                    "teaching_material": exact_text or title,
+                    "source_excerpt_raw": exact_text or title,
+                    "teaching_material_raw": exact_text or title,
+                    "student_visible": True,
+                    "teacher_only": False,
+                    "order_index": (section_order * 1000) + block_order if section_order or block_order else running_index,
+                }
+            )
+    return flattened or None
+
+
 def _normalize_content_blocks_payload(
     payload: dict[str, Any] | None,
     *,
     unit_map: dict[str, Any] | None,
     fallback_outline: list[dict[str, Any]] | None,
 ) -> list[dict[str, Any]]:
-    raw_blocks = payload.get("content_blocks") if isinstance(payload, dict) and isinstance(payload.get("content_blocks"), list) else None
+    raw_blocks = _raw_content_blocks_from_payload(payload)
     expanded_raw_blocks = _expand_raw_content_block_rows(raw_blocks)
     output: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
@@ -7134,6 +7198,9 @@ def _json_object_from_text(text: str) -> dict | None:
     text = (text or "").strip()
     if not text:
         return None
+    fenced_match = re.search(r"```(?:json)?\s*(\{[\s\S]*\})\s*```", text, re.IGNORECASE)
+    if fenced_match:
+        text = fenced_match.group(1).strip()
     try:
         return json.loads(text)
     except Exception:

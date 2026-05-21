@@ -75,7 +75,7 @@ def _extract_json_payload(text: str) -> dict | None:
 def _summarize_payload(label: str, payload: dict | None) -> str:
     if not isinstance(payload, dict):
         return f"{label}: invalid JSON"
-    if label == "current":
+    if isinstance(payload.get("content_blocks"), list):
         rows = payload.get("content_blocks") if isinstance(payload.get("content_blocks"), list) else []
         sections: list[str] = []
         for row in rows:

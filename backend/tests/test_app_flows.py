@@ -3557,6 +3557,118 @@ def test_normalize_content_blocks_payload_retargets_generic_paths_to_precise_sec
     assert normalized[0]["section_title"] == "1) Les denominateurs sont les memes"
 
 
+def test_normalize_content_blocks_payload_accepts_refined_sections_schema():
+    from app.services import workflow_generation
+
+    normalized = workflow_generation._normalize_content_blocks_payload(
+        {
+            "unit_title": "Les nombres rationnels : Somme et difference",
+            "sections": [
+                {
+                    "section_title": "1) Les denominateurs sont les memes",
+                    "section_path": ["I- Addition et soustraction", "1) Les denominateurs sont les memes"],
+                    "order_index": 1,
+                    "blocks": [
+                        {
+                            "kind": "property",
+                            "title": "Regle",
+                            "exact_text": "On garde le meme denominateur.\nOn additionne les numerateurs.",
+                            "order_index": 1,
+                        },
+                        {
+                            "kind": "example",
+                            "title": "Exemple 1",
+                            "exact_text": "3/7 + 2/7 = 5/7",
+                            "order_index": 2,
+                        },
+                    ],
+                }
+            ],
+        },
+        unit_map=None,
+        fallback_outline=[],
+    )
+
+    assert [row["title"] for row in normalized] == ["Regle", "Exemple 1"]
+    assert normalized[0]["section_path"] == ["I- Addition et soustraction", "1) Les denominateurs sont les memes"]
+    assert normalized[0]["source_excerpt_raw"].startswith("On garde le meme denominateur.")
+    assert normalized[0]["teaching_material_raw"].startswith("On garde le meme denominateur.")
+    assert normalized[1]["kind"] == "example"
+
+
+def test_generate_unit_checklist_package_accepts_refined_notebooklm_sections(monkeypatch):
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    outline_items = [
+        {
+            "title": "Les nombres rationnels : Somme et difference",
+            "kind": "chapter",
+            "children": [
+                {"title": "I- Addition et soustraction", "kind": "section", "children": []},
+            ],
+        }
+    ]
+    refined_content_pack = {
+        "unit_title": "Les nombres rationnels : Somme et difference",
+        "sections": [
+            {
+                "section_title": "1) Les denominateurs sont les memes",
+                "section_path": ["I- Addition et soustraction", "1) Les denominateurs sont les memes"],
+                "order_index": 1,
+                "blocks": [
+                    {
+                        "kind": "activity",
+                        "title": "Activite 1 : Calculer",
+                        "exact_text": "Calcule 3/7 + 2/7 puis compare avec 5/7.",
+                        "order_index": 1,
+                    },
+                    {
+                        "kind": "property",
+                        "title": "Regle",
+                        "exact_text": "On garde le meme denominateur.\nOn additionne les numerateurs.",
+                        "order_index": 2,
+                    },
+                ],
+            }
+        ],
+    }
+
+    monkeypatch.setattr(workflow_generation.app_config, "OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(
+        workflow_generation,
+        "_notebooklm_generate_checklist",
+        lambda **kwargs: (
+            outline_items,
+            {"provider": "notebooklm"},
+            {"response_mode": "outline", "content_pack": refined_content_pack, "responses": []},
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_generation,
+        "_openai_generate_checklist",
+        lambda **kwargs: (_ for _ in ()).throw(RuntimeError("shadow_should_not_run")),
+    )
+
+    package = workflow_generation.generate_unit_checklist_package(
+        unit_type=WorkflowUnitType.CHAPTER,
+        title="Les nombres rationnels : Somme et difference",
+        source_text="Activite 1\nRegle",
+        provider="notebooklm",
+    )
+
+    assert package["source"] == "notebooklm"
+    assert package["content_blocks"][0]["title"] == "Activite 1 : Calculer"
+    assert package["content_blocks"][0]["teaching_material_raw"] == "Calcule 3/7 + 2/7 puis compare avec 5/7."
+    assert package["content_blocks"][1]["title"] == "Regle"
+    assert package["content_blocks"][1]["source_excerpt_raw"].startswith("On garde le meme denominateur.")
+    section_plans = package["unit_map"]["section_plans"]
+    activity_plan = next(plan for plan in section_plans if plan["section_title"] == "1) Les denominateurs sont les memes")
+    assert activity_plan["delivery_sequence"] == ["Activite 1 : Calculer", "Regle"]
+    assert activity_plan["blocks"][1]["teaching_material"].startswith("On garde le meme denominateur.")
+
+
 def test_workflow_unit_start_returns_clear_error_when_notebooklm_refresh_is_required(client, monkeypatch):
     from app.routers import workflow as workflow_router
     from app.services.workflow_generation import NotebookLMGenerationUnavailableError
