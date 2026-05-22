@@ -3541,40 +3541,58 @@ function _render(el, classId) {
           <div class="p-5 flex flex-col gap-5">
             ${unit ? `
             <!-- Current unit: progress ring + info -->
-            <div class="flex flex-col sm:flex-row gap-5 items-start">
-              <div class="flex items-center gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-200 flex-shrink-0">
-                <svg width="90" height="90" class="-rotate-90">
-                  <circle cx="45" cy="45" r="${r}" stroke-width="8" class="progress-ring-track"/>
-                  <circle cx="45" cy="45" r="${r}" stroke-width="8"
-                    stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
-                    class="progress-ring-fill transition-all duration-500"/>
-                </svg>
-                <div>
-                  <div class="text-3xl font-bold text-slate-800 tracking-tight leading-none">${pct}%</div>
-                  <div class="text-[12px] text-slate-400 mt-1">${done}/${total} items done</div>
+            <div class="grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] gap-4 items-start">
+              <div class="rounded-3xl border border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.9),rgba(255,255,255,0.98))] p-4 shadow-sm">
+                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Current Unit Progress</p>
+                <div class="mt-3 flex items-center gap-4">
+                  <svg width="96" height="96" class="-rotate-90 flex-shrink-0">
+                    <circle cx="48" cy="48" r="${r}" stroke-width="8" class="progress-ring-track"/>
+                    <circle cx="48" cy="48" r="${r}" stroke-width="8"
+                      stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
+                      class="progress-ring-fill transition-all duration-500"/>
+                  </svg>
+                  <div class="min-w-0">
+                    <div class="text-[34px] font-bold text-slate-800 tracking-tight leading-none">${pct}%</div>
+                    <div class="text-[12px] text-slate-400 mt-1">${done}/${total} items done</div>
+                    <p class="mt-3 text-[12px] leading-relaxed text-slate-500">The checklist is the live progress record for this unit.</p>
+                  </div>
                 </div>
               </div>
-              <div class="flex-1 flex flex-col gap-3">
-                <div>
-                  <h2 class="text-lg font-bold text-slate-800">${unit.title || unit.name || ''}</h2>
-                  <p class="text-[12px] text-slate-500 mt-0.5">Created ${fmtDate(unit.created_at || unit.createdAt)}</p>
-                  <div class="flex items-center gap-2 flex-wrap mt-1">
-                    ${unit.unit_type ? `<span class="badge badge-blue">${unit.unit_type}</span>` : ''}
-                    <span class="badge ${extractionBadgeClass}">Extraction ${_escapeHtml(extractionLabel)}</span>
-                    <span class="badge ${extractionReviewPending ? 'badge-amber' : 'badge-green'}">${extractionReviewPending ? 'Review Pending' : 'Reviewed'}</span>
+              <div class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-4">
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div class="min-w-0">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Current Unit</p>
+                    <h2 class="mt-1 text-[24px] font-semibold tracking-tight leading-tight text-slate-800 break-words">${unit.title || unit.name || ''}</h2>
+                    <p class="text-[12px] text-slate-500 mt-1">Created ${fmtDate(unit.created_at || unit.createdAt)}</p>
+                    <div class="flex items-center gap-2 flex-wrap mt-3">
+                      ${unit.unit_type ? `<span class="badge badge-blue">${unit.unit_type}</span>` : ''}
+                      <span class="badge ${extractionBadgeClass}">Extraction ${_escapeHtml(extractionLabel)}</span>
+                      <span class="badge ${extractionReviewPending ? 'badge-amber' : 'badge-green'}">${extractionReviewPending ? 'Review Pending' : 'Reviewed'}</span>
+                    </div>
                   </div>
-                  ${extractionError ? `<p class="text-[11px] text-amber-700 mt-1">Provider note: ${_escapeHtml(extractionError)}</p>` : ''}
-                  ${extractionReviewPending ? `<p class="text-[11px] text-amber-700 mt-1">Review the extracted checklist before you rely on it for teaching. You can approve it once the outline looks right.</p>` : ''}
+                  <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 lg:max-w-[320px]">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focus For Now</p>
+                    <p class="mt-2 text-[12px] leading-relaxed text-slate-700">${extractionReviewPending ? 'Approve the extracted checklist once the structure looks right, then continue planning and teaching from it.' : 'The checklist is ready to drive planning and teaching. Keep building one reliable layer at a time.'}</p>
+                  </div>
                 </div>
-                <div class="flex gap-2 flex-wrap mt-auto">
-                  ${!session ? `<button id="btn-start-session" class="btn btn-success">Start Session</button>` : ''}
-                  ${unit.document_name ? `<button id="btn-download-unit-doc" class="btn btn-secondary btn-sm">Unit PDF</button>` : ''}
-                  <button id="btn-toggle-extraction-review" class="btn ${extractionReviewPending ? 'btn-primary' : 'btn-secondary'} btn-sm">${extractionReviewPending ? 'Approve Extraction' : 'Mark Needs Review'}</button>
-                  <button id="btn-rerun-ai-extraction" class="btn btn-secondary btn-sm">Re-run AI</button>
-                  <button id="btn-plan-active-unit" class="btn btn-secondary btn-sm">Plan Sessions</button>
-                  <button id="btn-add-item-root" class="btn btn-secondary btn-sm">Add Item</button>
-                  <button id="btn-close-unit" class="btn btn-ghost btn-sm !text-slate-400">Close Unit</button>
-                  <button id="btn-delete-unit" class="btn btn-danger btn-sm btn-delete-unit" data-unit-id="${unit.id}">Delete Unit</button>
+                ${extractionError ? `<div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">Provider note: ${_escapeHtml(extractionError)}</div>` : ''}
+                ${extractionReviewPending ? `<div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">Review the extracted checklist before you rely on it for teaching.</div>` : ''}
+                <div class="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-start">
+                  <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Main Actions</p>
+                    <div class="mt-3 flex gap-2 flex-wrap">
+                      ${!session ? `<button id="btn-start-session" class="btn btn-success">Start Session</button>` : ''}
+                      ${unit.document_name ? `<button id="btn-download-unit-doc" class="btn btn-secondary btn-sm">Unit PDF</button>` : ''}
+                      <button id="btn-toggle-extraction-review" class="btn ${extractionReviewPending ? 'btn-primary' : 'btn-secondary'} btn-sm">${extractionReviewPending ? 'Approve Extraction' : 'Mark Needs Review'}</button>
+                      <button id="btn-rerun-ai-extraction" class="btn btn-secondary btn-sm">Re-run AI</button>
+                      <button id="btn-plan-active-unit" class="btn btn-secondary btn-sm">Plan Sessions</button>
+                      <button id="btn-add-item-root" class="btn btn-secondary btn-sm">Add Item</button>
+                    </div>
+                  </div>
+                  <div class="flex gap-2 flex-wrap lg:justify-end">
+                    <button id="btn-close-unit" class="btn btn-ghost btn-sm !text-slate-400">Close Unit</button>
+                    <button id="btn-delete-unit" class="btn btn-danger btn-sm btn-delete-unit" data-unit-id="${unit.id}">Delete Unit</button>
+                  </div>
                 </div>
               </div>
             </div>
