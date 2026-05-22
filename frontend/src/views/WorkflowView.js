@@ -3930,14 +3930,26 @@ function _render(el, classId) {
         <!-- TAB 1: Attendance Grid -->
         <div class="${_activeTab === 1 ? 'block' : 'hidden'}">
           <div class="p-5 flex flex-col gap-4">
-            <div class="flex items-center justify-between gap-3 flex-wrap">
-              <div>
-                <h3 class="font-semibold text-slate-700">Mark Attendance</h3>
-                <p class="text-[12px] text-slate-400">Tap to toggle absent / present</p>
-              </div>
-              <div class="flex gap-2">
-                <span class="badge badge-red">${getAbsentIds().size} absent</span>
-                <span class="badge badge-green">${students.length - getAbsentIds().size} present</span>
+            <div class="rounded-2xl border border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,0.98))] p-4 shadow-sm">
+              <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.2fr)_minmax(260px,0.8fr)] gap-3 items-start">
+                <div class="min-w-0 rounded-2xl border border-white/80 bg-white/75 px-4 py-4 shadow-sm">
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Attendance</p>
+                  <h3 class="mt-1 text-[22px] font-semibold tracking-tight text-slate-800">Mark Attendance</h3>
+                  <p class="mt-2 text-[12px] leading-relaxed text-slate-500">Tap a student to toggle absent or present before you start or update the session.</p>
+                  <div class="mt-3 flex gap-2 flex-wrap">
+                    <span class="badge badge-red">${getAbsentIds().size} absent</span>
+                    <span class="badge badge-green">${students.length - getAbsentIds().size} present</span>
+                    <span class="badge badge-gray">${students.length} total</span>
+                  </div>
+                </div>
+                <div class="rounded-2xl border border-white/80 bg-white/90 px-4 py-4 shadow-sm">
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">What To Do</p>
+                  <div class="mt-2 flex flex-col gap-2 text-[12px] text-slate-700">
+                    <p>1. Mark who is absent.</p>
+                    <p>2. Save attendance when it matches the classroom.</p>
+                    <p>3. Keep the rest of the workflow simple.</p>
+                  </div>
+                </div>
               </div>
             </div>
             ${students.length === 0 ? `
@@ -3945,25 +3957,39 @@ function _render(el, classId) {
               <div class="text-xl font-black opacity-30">ROSTER</div>
               <p class="text-[13px] text-slate-400">No students - import a roster first.</p>
             </div>` : `
+            <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Student Grid</p>
+                  <p class="mt-1 text-[11px] text-slate-500">Green means present. Red means absent.</p>
+                </div>
+              </div>
             <div class="workflow-attendance-grid">
               ${students.map(s => {
             const absent = getAbsentIds().has(s.id);
             return `
-                  <div class="attendance-card group relative ${absent ? 'absent bg-red-50 border-red-200' : 'present bg-green-50 border-green-200'} p-3 rounded-2xl border-2 transition-all hover:scale-[1.02] cursor-pointer"
+                  <div class="attendance-card group relative ${absent ? 'absent' : 'present'}"
                        data-sid="${s.id}"
                        role="button"
                        tabindex="0"
                        aria-pressed="${absent ? 'true' : 'false'}"
                        aria-label="${absent ? 'Mark present: ' : 'Mark absent: '}${_escapeHtmlAttr(s.full_name || 'student')}">
-                    <div class="text-[20px] mb-1">${absent ? 'ABS' : 'OK'}</div>
-                    <div class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">${s.student_code || 'ID'}</div>
-                    <div class="text-[13px] font-bold text-slate-800 text-center leading-tight mt-1 line-clamp-2">${s.full_name || 'N/A'}</div>
+                    <div class="attendance-status-icon">${absent ? 'ABS' : 'OK'}</div>
+                    <div class="student-code">${s.student_code || 'ID'}</div>
+                    <div class="student-name">${s.full_name || 'N/A'}</div>
                   </div>`;
           }).join('')}
+            </div>
             </div>`}
-            <div class="flex gap-2">
+            <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between shadow-sm">
+              <div>
+                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Save Attendance</p>
+                <p class="mt-1 text-[12px] text-slate-500">${session ? 'Update the live session attendance after reviewing the grid.' : 'Start the session and save the attendance in one step.'}</p>
+              </div>
+              <div class="flex gap-2 flex-wrap">
               ${!session ? `<button id="btn-start-session-att" class="btn btn-success">Start Session (save attendance)</button>` : ''}
               ${session ? `<button id="btn-save-attendance" class="btn btn-primary">Update Attendance</button>` : ''}
+              </div>
             </div>
           </div>
         </div>
