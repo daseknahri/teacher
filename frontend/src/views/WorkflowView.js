@@ -3561,8 +3561,6 @@ function _render(el, classId) {
                   <div class="flex items-center gap-2 flex-wrap mt-1">
                     ${unit.unit_type ? `<span class="badge badge-blue">${unit.unit_type}</span>` : ''}
                     <span class="badge ${extractionBadgeClass}">Extraction ${_escapeHtml(extractionLabel)}</span>
-                    ${unit.extraction_model ? `<span class="badge badge-gray">${_escapeHtml(String(unit.extraction_model))}</span>` : ''}
-                    ${extractionStatus ? `<span class="badge badge-gray">${_escapeHtml(extractionStatus)}</span>` : ''}
                     <span class="badge ${extractionReviewPending ? 'badge-amber' : 'badge-green'}">${extractionReviewPending ? 'Review Pending' : 'Reviewed'}</span>
                   </div>
                   ${extractionError ? `<p class="text-[11px] text-amber-700 mt-1">Provider note: ${_escapeHtml(extractionError)}</p>` : ''}
@@ -3573,9 +3571,6 @@ function _render(el, classId) {
                   ${unit.document_name ? `<button id="btn-download-unit-doc" class="btn btn-secondary btn-sm">Unit PDF</button>` : ''}
                   <button id="btn-toggle-extraction-review" class="btn ${extractionReviewPending ? 'btn-primary' : 'btn-secondary'} btn-sm">${extractionReviewPending ? 'Approve Extraction' : 'Mark Needs Review'}</button>
                   <button id="btn-rerun-ai-extraction" class="btn btn-secondary btn-sm">Re-run AI</button>
-                  <button id="btn-ask-unit-assistant" class="btn btn-secondary btn-sm">Ask This Unit</button>
-                  <button id="btn-open-material-studio" class="btn btn-secondary btn-sm">Material Studio</button>
-                  <button id="btn-view-ai-details" class="btn btn-secondary btn-sm">AI Details</button>
                   <button id="btn-plan-active-unit" class="btn btn-secondary btn-sm">Plan Sessions</button>
                   <button id="btn-add-item-root" class="btn btn-secondary btn-sm">Add Item</button>
                   <button id="btn-close-unit" class="btn btn-ghost btn-sm !text-slate-400">Close Unit</button>
@@ -3595,15 +3590,8 @@ function _render(el, classId) {
                   <span class="badge ${previewRouteStatus.className}">${_escapeHtml(previewRouteStatus.label)}</span>
                   ${previewMatchedChecklist.length ? `<span class="text-[11px] text-blue-700">${_escapeHtml(previewRouteStatus.hint)}</span>` : ''}
                 </div>
-                ${previewSummaryBadges.length ? `
-                <div class="mt-3 flex flex-wrap gap-2">
-                  ${previewSummaryBadges.map(label => `<span class="badge badge-blue">${_escapeHtml(label)}</span>`).join('')}
-                </div>` : ''}
                 <div class="mt-3 flex gap-2 flex-wrap">
                   ${!session ? `<button id="btn-start-preview-session" class="btn btn-success btn-sm">Start This Session</button>` : ''}
-                  <button id="btn-preview-session-assistant" class="btn btn-primary btn-sm">Ask This Unit</button>
-                  <button id="btn-preview-session-materials" class="btn btn-secondary btn-sm">Material Studio</button>
-                  <button id="btn-preview-session-ai-details" class="btn btn-secondary btn-sm">AI Details</button>
                 </div>
               </div>
               <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -3908,8 +3896,8 @@ function _render(el, classId) {
             ${session ? `
             <div class="rounded-2xl border border-amber-200 bg-[linear-gradient(180deg,rgba(255,247,237,0.96),rgba(255,255,255,0.98))] p-4 sm:p-5 shadow-sm">
               <div class="flex flex-col gap-4">
-                <div class="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-5">
-                  <div class="min-w-0 xl:flex-1">
+                <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                  <div class="min-w-0 lg:flex-1">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Session Active</p>
                     <p class="mt-1 text-[21px] font-semibold tracking-tight text-slate-900">${_escapeHtml(unit?.title || session?.unit_title || 'Active session')}</p>
                     <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500">
@@ -3920,384 +3908,41 @@ function _render(el, classId) {
                     </div>
                     <div class="mt-3 flex gap-2 flex-wrap">
                       <span class="badge badge-amber">Live now</span>
-                      <span class="badge ${activeRouteStatus.className}">${_escapeHtml(activeRouteStatus.label)}</span>
-                      <span class="badge ${activeWriteupStateClass}">${_escapeHtml(activeWriteupStateLabel)}</span>
-                    </div>
-                    <div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                      <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3 shadow-sm">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Route Coverage</p>
-                        <p class="mt-1 text-[13px] font-semibold text-slate-900">${_escapeHtml(activeRouteStatus.label)}</p>
-                        <p class="mt-1 text-[12px] leading-relaxed text-slate-600">${_escapeHtml(activeRouteStatus.hint)}</p>
-                      </div>
-                      <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3 shadow-sm">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Saved Guidance</p>
-                        <p class="mt-1 text-[13px] font-semibold text-slate-900">${activeSessionRemainingGuidanceCount === 0 ? 'Nothing left to import' : 'Reusable help is ready'}</p>
-                        <p class="mt-1 text-[12px] leading-relaxed text-slate-600">${_escapeHtml(activeGuidanceCaption)}</p>
-                      </div>
-                      <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3 shadow-sm">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Write-Up Readiness</p>
-                        <p class="mt-1 text-[13px] font-semibold ${activeWriteupToneClass}">${_escapeHtml(activeWriteupStateLabel)}</p>
-                        <p class="mt-1 text-[12px] leading-relaxed text-slate-600">${_escapeHtml(activeWriteupHeroCaption)}</p>
-                      </div>
+                      <span class="badge badge-gray">${activeSessionCheckedChecklist.length} checked</span>
                     </div>
                   </div>
-                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 xl:min-w-[360px] xl:max-w-[420px]">
-                    <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
-                      <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Route</p>
-                      <div class="mt-1 flex items-end justify-between gap-2">
-                        <p class="text-[19px] font-semibold text-slate-900">${_escapeHtml(activeRouteValueLabel)}</p>
-                        <span class="text-[11px] font-semibold ${activeCompletionPct >= 100 ? 'text-emerald-600' : activeCompletionPct > 0 ? 'text-amber-600' : 'text-slate-400'}">${activeCompletionPct}%</span>
-                      </div>
-                      <div class="mt-2 h-2 rounded-full bg-slate-200 overflow-hidden">
-                        <div class="h-full rounded-full ${activeCompletionPct >= 100 ? 'bg-emerald-500' : activeCompletionPct > 0 ? 'bg-amber-500' : 'bg-slate-300'}" style="width:${activeCompletionPct}%;"></div>
-                      </div>
-                      <p class="mt-2 text-[11px] text-slate-500">${_escapeHtml(activeRouteProgressCaption)}</p>
-                    </div>
-                    <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
-                      <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Progress</p>
-                      <div class="mt-1 flex items-end justify-between gap-2">
-                        <p class="text-[19px] font-semibold text-slate-900">${activeProgressCount}</p>
-                        <span class="text-[11px] font-semibold ${activeProgressCount > 0 ? 'text-blue-600' : 'text-slate-400'}">${activeProgressCount > 0 ? 'Saved' : 'Empty'}</span>
-                      </div>
-                      <p class="mt-2 text-[11px] text-slate-500">${_escapeHtml(activeProgressCaption)}</p>
-                    </div>
-                    <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
-                      <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Guidance</p>
-                      <div class="mt-1 flex items-end justify-between gap-2">
-                        <p class="text-[19px] font-semibold text-slate-900">${activeSessionRemainingGuidanceCount}</p>
-                        <span class="text-[11px] font-semibold ${activeSessionRemainingGuidanceCount > 0 ? 'text-amber-600' : 'text-emerald-600'}">${activeSessionRemainingGuidanceCount > 0 ? 'Ready' : 'Clear'}</span>
-                      </div>
-                      <p class="mt-2 text-[11px] text-slate-500">${_escapeHtml(activeGuidanceCaption)}</p>
-                    </div>
-                    <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
-                      <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Write-Up</p>
-                      <p class="mt-1 text-[15px] font-semibold ${activeWriteupToneClass}">${_escapeHtml(activeWriteupStateLabel)}</p>
-                      <p class="mt-2 text-[11px] text-slate-500">${_escapeHtml(activeWriteupHeroCaption)}</p>
-                    </div>
+                  <div class="rounded-2xl border border-white/80 bg-white/90 px-4 py-4 shadow-sm lg:min-w-[280px]">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focus For Now</p>
+                    <p class="mt-2 text-[13px] leading-relaxed text-slate-700">The checklist is the main session record. Check only what was really covered. We will preserve this structure and use it later when we talk to NotebookLM.</p>
                   </div>
                 </div>
-                <div class="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-3">
-                  <div class="rounded-2xl border border-amber-100 bg-white/92 px-4 py-4 shadow-sm">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Next Move</p>
-                    <p class="mt-2 text-[15px] font-semibold text-slate-800">What the teacher should do now</p>
-                    <p class="mt-2 text-[13px] leading-relaxed text-slate-600">${_escapeHtml(activeSessionNextMoveText)}</p>
-                  </div>
-                  <div class="rounded-2xl border border-white/80 bg-white/92 px-4 py-4 shadow-sm">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Live Tools</p>
-                    <div class="mt-3 flex flex-col gap-3">
-                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <label class="btn btn-secondary cursor-pointer">
-                          Extract Session Image
-                          <input id="session-upload" type="file" accept=".png,.jpg,.jpeg,.webp,.bmp" class="hidden" />
-                        </label>
-                        <button id="btn-resume-extraction" class="btn btn-ghost btn-sm w-full sm:w-auto">Resume Last Extraction</button>
-                      </div>
-                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[12px] text-slate-600">
-                        <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3">
-                          <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Route coverage</p>
-                          <p class="mt-1 text-[13px] font-medium text-slate-800">${_escapeHtml(activeRouteStatus.hint)}</p>
-                        </div>
-                        <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3">
-                          <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Saved guidance</p>
-                          <p class="mt-1 text-[13px] font-medium text-slate-800">${activeSessionRemainingGuidanceCount ? `${activeSessionRemainingGuidanceCount} reusable item${activeSessionRemainingGuidanceCount === 1 ? '' : 's'} ready` : 'No reusable saved guidance left'}</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                <div class="rounded-2xl border border-amber-100 bg-white/92 px-4 py-4 shadow-sm">
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Simple Workflow</p>
+                  <ul class="mt-2 pl-4 list-disc text-[13px] leading-relaxed text-slate-700">
+                    <li>Follow the checklist in teaching order.</li>
+                    <li>Check rows only when they were really taught.</li>
+                    <li>Add extra AI features later, one by one, only after they work well.</li>
+                  </ul>
                 </div>
               </div>
-            </div>
-            <div class="bg-slate-50 rounded-2xl border border-slate-200 p-4 flex flex-col gap-3">
-              <div class="flex items-center justify-between gap-2 flex-wrap">
-                <div>
-                  <h4 class="text-[13px] font-semibold text-slate-700">Planned Session Route</h4>
-                  <p class="text-[12px] text-slate-500">${activeHasPlannedRoute ? 'What this unit session was planned to cover before live teaching started.' : 'Using the checklist work already recorded in this live session as the route context.'}</p>
-                </div>
-                <div class="flex items-center gap-2 flex-wrap w-full sm:w-auto">
-                  ${session?.unit_session_number ? `<span class="badge badge-blue">Unit Session ${session.unit_session_number}</span>` : ''}
-                  <button id="btn-toggle-session-planned-route" class="btn btn-ghost btn-sm w-full sm:w-auto">${_workflowCollapsePlannedRoute ? 'Expand' : 'Collapse'}</button>
-                </div>
-              </div>
-              ${_workflowCollapsePlannedRoute
-                ? '<p class="text-[12px] text-slate-500">Planned session route is collapsed. Expand it when you want to review the saved route and teacher prep for this lesson.</p>'
-                : unitBlueprintState.loading && !activeBlueprint ? '<p class="text-[12px] text-slate-500">Loading planned route...</p>'
-                : unitBlueprintState.error ? `<p class="text-[12px] text-red-600">${_escapeHtml(unitBlueprintState.error)}</p>`
-                  : !session?.unit_session_number && !activeFallbackRouteRows.length ? '<p class="text-[12px] text-slate-500">This session has no saved unit-session number yet.</p>'
-                    : `
-                      <div class="flex flex-col gap-3">
-                        <div class="grid grid-cols-1 lg:grid-cols-[0.85fr_1.15fr] gap-3">
-                          <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                            <p class="text-[12px] font-semibold text-slate-700">${session?.unit_session_number ? `Unit Session ${Number(session.unit_session_number)}` : 'Live session route'}</p>
-                            <div class="mt-2 flex items-center gap-2 flex-wrap">
-                              <span class="badge ${activeRouteStatus.className}">${_escapeHtml(activeRouteStatus.label)}</span>
-                            </div>
-                            <p class="mt-2 text-[12px] text-slate-600 leading-relaxed">${_escapeHtml(activeRouteStatus.hint)}</p>
-                            <p class="mt-2 text-[11px] text-slate-400">${activeSessionPlanTitles.length ? 'Saved checklist route for this live unit session.' : 'Using the checklist rows already checked in this session as the live route context.'}</p>
-                          </div>
-                          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                            <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">Session Route Brief</p>
-                            ${activeSummaryBadges.length
-                              ? `<div class="flex flex-wrap gap-2">
-                                  ${activeSummaryBadges.map(label => `<span class="badge badge-gray">${_escapeHtml(label)}</span>`).join('')}
-                                </div>`
-                              : '<p class="text-[12px] text-slate-500">No saved route summary for this session yet.</p>'}
-                          </div>
-                        </div>
-                        <div class="flex flex-col gap-3">
-                          <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                            <p class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Teacher Prep</p>
-                            <p class="text-[12px] text-slate-500 mb-3">${activeSessionPlanTitles.length ? 'Notebook-backed suggestions tied to this planned route.' : 'Notebook-backed suggestions tied to the checklist work already captured in this session.'}</p>
-                            ${_renderSessionPlaybookPreview(
-                              activeUnitMap,
-                              activeEffectiveRouteTitles,
-                              activeRouteSectionPaths.length ? activeRouteSectionPaths : activeSessionCheckedSectionPaths,
-                            )}
-                          </div>
-                          ${_renderWorkflowDetailDisclosure(
-                            activeSessionPlanTitles.length ? 'Route Details' : 'Recorded Route Details',
-                            activeSessionPlanTitles.length
-                              ? 'Open the raw saved route if you need to inspect the exact checklist rows behind this live session.'
-                              : 'Open the recorded checked rows when you need to inspect the exact checklist context captured so far.',
-                            `
-                              <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                                <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">${activeSessionPlanTitles.length ? 'Planned Route' : 'Checked In This Session'}</p>
-                                ${activeSessionPlanTitles.length ? _renderSessionPlannedTree(activeSessionPlanTree) : _renderSessionFallbackRouteRows(activeFallbackRouteRows)}
-                              </div>
-                            `,
-                            {
-                              badges: [
-                                `${activeMatchedChecklist.length} route row${activeMatchedChecklist.length === 1 ? '' : 's'}`,
-                                activeSummaryBadges.length ? `${activeSummaryBadges.length} summary badge${activeSummaryBadges.length === 1 ? '' : 's'}` : '',
-                              ],
-                            },
-                          )}
-                        </div>
-                      </div>`}
-            </div>
-            <div class="bg-slate-50 rounded-2xl border border-slate-200 p-4 flex flex-col gap-3">
-              <div class="flex items-center justify-between gap-2 flex-wrap">
-                <div>
-                  <h4 class="text-[13px] font-semibold text-slate-700">Session Progress</h4>
-                  <p class="text-[12px] text-slate-500">Confirmed extraction items saved in this session.</p>
-                </div>
-                <div class="flex gap-2 flex-wrap w-full sm:w-auto">
-                  ${!sessionProgressState.loaded ? '<button id="btn-load-session-progress" class="btn btn-ghost btn-sm">Load</button>' : ''}
-                  <button id="btn-refresh-session-progress" class="btn btn-ghost btn-sm">Refresh</button>
-                  <button id="btn-toggle-session-progress" class="btn btn-ghost btn-sm w-full sm:w-auto">${_workflowCollapseSessionProgress ? 'Expand' : 'Collapse'}</button>
-                </div>
-              </div>
-              ${_workflowCollapseSessionProgress
-        ? '<p class="text-[12px] text-slate-500">Session progress is collapsed. Expand it when you want to review confirmed progress rows from this lesson.</p>'
-        : sessionProgressState.loading
-        ? '<p class="text-[12px] text-slate-500">Loading session progress...</p>'
-        : sessionProgressState.error
-          ? `<p class="text-[12px] text-red-600">${_escapeHtml(sessionProgressState.error)}</p>`
-          : activeSavedProgressCount > 0
-              ? `<div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
-                  <div>
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Confirmed Progress</p>
-                    <p class="mt-1 text-[12px] text-slate-500">Items that were already saved as confirmed session progress.</p>
-                  </div>
-                  <span class="badge badge-gray">${activeSavedProgressCount} saved</span>
-                </div>
-                <div class="flex flex-col gap-1">
-                ${sessionProgressState.items.map(item => `
-                  <div class="session-progress-item-row">
-                    <span class="session-progress-type-badge type-${String(item.item_type || 'lesson').toLowerCase()}">${_progressItemTypeLabel(item.item_type)}</span>
-                    <span class="session-progress-item-text">${_escapeHtml(_progressItemLabel(item))}</span>
-                  </div>
-                `).join('')}
-              </div></div>`
-            : activeSessionCheckedChecklist.length
-              ? `<div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
-                  <div>
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Checked Checklist Progress</p>
-                    <p class="mt-1 text-[12px] text-slate-500">Using the checklist rows already checked in this live session.</p>
-                  </div>
-                  <span class="badge badge-blue">${activeSessionCheckedChecklist.length} recorded</span>
-                </div>
-                <div class="flex flex-col gap-1">
-                ${activeSessionCheckedChecklist.map(item => `
-                  <div class="session-progress-item-row">
-                    <span class="session-progress-type-badge type-${String(item.item_kind || 'lesson').toLowerCase()}">${_progressItemTypeLabel(item.item_kind)}</span>
-                    <span class="session-progress-item-text">${_escapeHtml(String(item.title || 'Checklist item'))}</span>
-                  </div>
-                `).join('')}
-              </div></div>`
-              : sessionProgressState.loaded
-                ? '<p class="text-[12px] text-slate-500">No confirmed progress items yet. Check checklist rows or extract and apply session notes to populate this list.</p>'
-                : '<p class="text-[12px] text-slate-500">Load to preview confirmed progress items for this session.</p>'}
-            </div>
-            <div class="bg-slate-50 rounded-2xl border border-slate-200 p-4 flex flex-col gap-3">
-              <div class="flex items-center justify-between gap-2 flex-wrap">
-                <div>
-                  <h4 class="text-[13px] font-semibold text-slate-700">Session Write-Up</h4>
-                  <p class="text-[12px] text-slate-500">Generate and review the saved lesson brief for this session.</p>
-                </div>
-                <div class="flex flex-col items-stretch sm:items-end gap-2 w-full lg:w-auto">
-                  <button id="btn-toggle-session-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto">${_workflowCollapseSessionWriteup ? 'Expand' : 'Collapse'}</button>
-                <div class="rounded-2xl border border-slate-200 bg-white px-3 py-3 flex flex-col gap-2 w-full sm:min-w-[250px]">
-                  <div>
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Main actions</p>
-                    <div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <button id="btn-generate-session-writeup" class="btn btn-primary btn-sm w-full sm:w-auto">${session?.has_saved_writeup ? 'Re-generate' : 'Generate'}</button>
-                      <button id="btn-import-session-guidance" class="btn btn-secondary btn-sm w-full sm:w-auto">Use Saved Guidance</button>
-                    </div>
-                  </div>
-                  <div class="pt-2 border-t border-slate-200">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Tools</p>
-                    <div class="mt-2 grid grid-cols-1 gap-2">
-                      <button id="btn-edit-session-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto" ${sessionWriteupState.item ? '' : 'disabled'}>Edit</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              ${_workflowCollapseSessionWriteup
-                ? '<p class="text-[12px] text-slate-500">Session write-up is collapsed. Expand it when you want to review, edit, or reuse the saved lesson summary.</p>'
-                : `
-              <div class="rounded-xl border border-slate-200 bg-white p-3 flex flex-col gap-2">
-                <div class="flex items-start justify-between gap-3 flex-wrap">
-                <div>
-                  <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
-                  <p class="text-[12px] text-slate-500 mt-1">${activeHasPlannedRoute ? 'Reusable section help that matches this planned session route.' : 'Reusable section help that matches the checklist work already recorded in this session.'}</p>
-                    ${_renderSessionGuidanceSummary(activeSessionMatchedGuidance.length, activeSessionImportedGuidanceIds.size, _sessionGuidanceHideImported)}
-                    ${_sessionGuidanceKindFilter !== 'all' ? `<div class="mt-2"><span class="badge badge-blue">Filtered: ${_escapeHtml(_assistantArtifactKindLabel(_sessionGuidanceKindFilter))}</span></div>` : ''}
-                    ${_renderSessionGuidanceKindFilters(activeSessionMatchedGuidance, _sessionGuidanceKindFilter)}
-                  </div>
-                  <div class="flex items-center gap-2 flex-wrap">
-                    ${Boolean(session) && activeSessionVisibleRemainingGuidanceCount > 0
-                      ? `<button id="btn-session-guidance-import-remaining" class="btn btn-secondary btn-sm">${_sessionGuidanceKindFilter === 'all' ? 'Import Remaining' : 'Import Visible'} (${activeSessionVisibleRemainingGuidanceCount})</button>`
-                      : ''}
-                    ${activeSessionImportedGuidanceIds.size > 0
-                      ? `<button id="btn-session-guidance-hide-imported-toggle" class="btn btn-ghost btn-sm">${_sessionGuidanceHideImported ? 'Show Imported' : 'Hide Imported'}</button>`
-                      : ''}
-                    ${_hasSessionGuidanceFilters(_sessionGuidanceHideImported, _sessionGuidanceKindFilter)
-                      ? '<button id="btn-session-guidance-reset-filters" class="btn btn-ghost btn-sm">Reset Filters</button>'
-                      : ''}
-                  </div>
-                </div>
-                ${activeSessionMatchedGuidance.length || activeSessionImportedGuidanceIds.size
-                  ? _renderSessionMatchedGuidance(activeSessionMatchedGuidance, {
-                    canImport: Boolean(session),
-                    importedIds: activeSessionImportedGuidanceIds,
-                    hideImported: _sessionGuidanceHideImported,
-                    kindFilter: _sessionGuidanceKindFilter,
-                  })
-                  : '<div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3 text-[12px] text-slate-500">No saved guidance matches this session yet. Use <span class="font-semibold">Ask This Unit</span> when you want reusable support here later.</div>'}
-              </div>
-              ${_renderSessionWriteupNextStep(sessionWriteupState.item, {
-                hasSession: Boolean(session),
-                matchedGuidanceCount: activeSessionMatchedGuidance.length,
-                remainingGuidanceCount: activeSessionRemainingGuidanceCount,
-                bestRemainingGuidanceTitle: String(activeSessionBestRemainingGuidance?.title || '').trim(),
-                quickGuidanceItems: activeSessionRemainingGuidance,
-              })}
-              ${sessionWriteupState.loading
-        ? '<p class="text-[12px] text-slate-500">Loading session write-up...</p>'
-        : sessionWriteupState.error
-          ? `<p class="text-[12px] text-red-600">${_escapeHtml(sessionWriteupState.error)}</p>`
-          : sessionWriteupState.item
-            ? `
-              <div class="rounded-xl border border-slate-200 bg-white p-3 flex flex-col gap-3">
-                <div class="flex items-center justify-between gap-2 flex-wrap">
-                  <div>
-                    <p class="text-[15px] font-semibold text-slate-800">${_escapeHtml(sessionWriteupState.item.title || 'Session write-up')}</p>
-                    <p class="mt-1 text-[12px] text-slate-500">A classroom-facing lesson brief covering what was taught, reinforced, and practiced.</p>
-                  </div>
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <span class="badge ${sessionWriteupState.item.approved === false ? 'badge-amber' : 'badge-green'}">${sessionWriteupState.item.approved === false ? 'Draft' : 'Approved'}</span>
-                    <button id="btn-copy-session-writeup" class="btn btn-ghost btn-sm">Copy</button>
-                    <button id="btn-download-session-writeup" class="btn btn-ghost btn-sm">Download</button>
-                  </div>
-                </div>
-                <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                  <div class="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-3 items-start">
-                    <div>
-                      <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Lesson Brief</p>
-                      <p class="mt-1 text-[12px] text-slate-500">The write-up is organized so you can quickly review focus, delivery, and practice.</p>
-                    </div>
-                    <div class="grid grid-cols-3 gap-2">
-                      <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center">
-                        <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Focus</p>
-                        <p class="mt-1 text-[15px] font-semibold text-slate-900">${Array.isArray(sessionWriteupState.item.learning_focus) ? sessionWriteupState.item.learning_focus.length : 0}</p>
-                      </div>
-                      <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center">
-                        <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Content</p>
-                        <p class="mt-1 text-[15px] font-semibold text-slate-900">${Array.isArray(sessionWriteupState.item.teaching_content) ? sessionWriteupState.item.teaching_content.length : 0}</p>
-                      </div>
-                      <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center">
-                        <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Practice</p>
-                        <p class="mt-1 text-[15px] font-semibold text-slate-900">${Array.isArray(sessionWriteupState.item.practice_items) ? sessionWriteupState.item.practice_items.length : 0}</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                ${_renderImportedGuidanceSummary(sessionWriteupState.item.source_payload)}
-                <div class="grid grid-cols-1 xl:grid-cols-[0.9fr_1.1fr] gap-3">
-                  <div class="flex flex-col gap-3">
-                    ${Array.isArray(sessionWriteupState.item.learning_focus) && sessionWriteupState.item.learning_focus.length ? `
-                      <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Learning Focus</p>
-                        <p class="mt-1 text-[12px] text-slate-500">The main ideas that shaped the lesson.</p>
-                        <ul class="mt-2 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
-                          ${sessionWriteupState.item.learning_focus.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
-                        </ul>
-                      </div>` : ''}
-                    ${Array.isArray(sessionWriteupState.item.practice_items) && sessionWriteupState.item.practice_items.length ? `
-                      <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                        <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Practice</p>
-                        <p class="mt-1 text-[12px] text-slate-500">Exercises or checks for understanding used in class.</p>
-                        <ul class="mt-2 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
-                          ${sessionWriteupState.item.practice_items.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
-                        </ul>
-                      </div>` : ''}
-                  </div>
-                  ${Array.isArray(sessionWriteupState.item.teaching_content) && sessionWriteupState.item.teaching_content.length ? `
-                    <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4 flex flex-col gap-2">
-                      <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Teaching Content</p>
-                      <p class="text-[12px] text-slate-500">What was explained, modeled, or discussed with students.</p>
-                      <div class="flex flex-col gap-2">
-                        ${sessionWriteupState.item.teaching_content.map(row => `<div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3"><p class="text-[13px] text-slate-700 leading-relaxed">${_escapeHtml(row)}</p></div>`).join('')}
-                      </div>
-                    </div>` : ''}
-                </div>
-                ${_renderWriteupSourcePayload(sessionWriteupState.item.source_payload, { compact: false })}
-              </div>`
-            : '<p class="text-[12px] text-slate-500">No saved write-up yet. Generate one after checking the completed items.</p>'}
-              `}
             </div>
             ${checklist.length ? `
             <div class="flex flex-col gap-1">
               <div class="flex items-center justify-between gap-2 mb-1">
                 <div>
                   <h4 class="text-[12px] font-semibold text-slate-600">Session Checklist</h4>
-                  <p class="text-[11px] text-slate-400 mt-1">Use the teaching-flow view to work in classroom order, or scroll the full checklist when you need the whole unit tree.</p>
+                  <p class="text-[11px] text-slate-400 mt-1">This checklist is the main structure we preserve. Use it carefully now, then add extra tools later only when they are ready.</p>
                 </div>
                 <div class="flex items-center gap-1">
                   <button data-checklist-expand-all class="btn btn-ghost btn-sm !text-slate-500" title="Expand all checklist branches">Expand All</button>
                   <button data-checklist-collapse-all class="btn btn-ghost btn-sm !text-slate-500" title="Collapse all checklist branches">Collapse All</button>
                 </div>
               </div>
-              <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4 mb-3">
-                <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
-                  <div>
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Teaching Flow View</p>
-                    <p class="mt-1 text-[12px] text-slate-500">${activeHasPlannedRoute ? 'This session route is grouped the way the lesson is taught: launch, teach, model, practice, and check.' : 'As you check rows, the session builds a live teaching flow grouped around the classroom experience.'}</p>
-                  </div>
-                  <div class="flex items-center gap-2 flex-wrap">
-                    ${activeTeachingFlowGroups.length ? `<span class="badge badge-blue">${activeTeachingFlowGroups.length} section${activeTeachingFlowGroups.length === 1 ? '' : 's'}</span>` : ''}
-                    ${activeMatchedChecklist.length ? `<span class="badge badge-gray">${activeMatchedChecklist.length} route row${activeMatchedChecklist.length === 1 ? '' : 's'}</span>` : ''}
-                  </div>
-                </div>
-                ${_renderSessionTeachingChecklistGroups(activeTeachingFlowGroups, { hasPlannedRoute: activeHasPlannedRoute, classId, unitId: Number(unit?.id || 0) || null })}
-              </div>
               <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                 <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
                   <div>
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Full Unit Checklist</p>
-                    <p class="mt-1 text-[12px] text-slate-500">The complete unit tree stays here so you can still check, expand, and manage every row.</p>
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Teaching Structure</p>
+                    <p class="mt-1 text-[12px] text-slate-500">Keep this tree clean. It is the foundation we will reuse when communicating with NotebookLM.</p>
                   </div>
                 </div>
               ${visibleChecklist.map(item => {
