@@ -3934,18 +3934,18 @@ function _render(el, classId) {
               <div class="flex items-center justify-between gap-2 mb-1">
                 <div>
                   <h4 class="text-[12px] font-semibold text-slate-600">Session Checklist</h4>
-                  <p class="text-[11px] text-slate-400 mt-1">This checklist is the main structure we preserve. Use it carefully now, then add extra tools later only when they are ready.</p>
+                  <p class="text-[11px] text-slate-400 mt-1">This checklist is the main structure we preserve.</p>
                 </div>
                 <div class="flex items-center gap-1">
                   <button data-checklist-expand-all class="btn btn-ghost btn-sm !text-slate-500" title="Expand all checklist branches">Expand All</button>
                   <button data-checklist-collapse-all class="btn btn-ghost btn-sm !text-slate-500" title="Collapse all checklist branches">Collapse All</button>
                 </div>
               </div>
-              <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                <div class="flex items-center justify-between gap-2 mb-3 flex-wrap">
+              <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
                   <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Teaching Structure</p>
-                    <p class="mt-1 text-[12px] text-slate-500">Keep this tree clean. It is the foundation we will reuse when communicating with NotebookLM.</p>
+                    <p class="mt-1 text-[11px] text-slate-500">Keep this tree clean. We will reuse it when communicating with NotebookLM.</p>
                   </div>
                 </div>
               ${visibleChecklist.map(item => {
@@ -3964,13 +3964,13 @@ function _render(el, classId) {
                 ${hasChildren
       ? `<button class="btn btn-ghost btn-sm !text-slate-500 btn-checklist-toggle" data-item-id="${item.id}" title="${isCollapsed ? 'Expand branch' : 'Collapse branch'}" aria-label="${isCollapsed ? 'Expand branch' : 'Collapse branch'}">${isCollapsed ? '+' : '-'}</button>`
       : '<span class="inline-block w-6 h-6 flex-shrink-0"></span>'}
-                <div class="w-[18px] h-[18px] rounded-[4px] border-2 flex-shrink-0 flex items-center justify-center
+                <div class="w-[17px] h-[17px] rounded-[4px] border-2 flex-shrink-0 flex items-center justify-center
                      transition-all mt-px text-[10px] cursor-pointer
                      ${item.is_completed || item.done ? 'bg-green-600 border-green-600 text-white' : isStructural ? 'border-slate-200 bg-slate-50 text-slate-300' : 'border-slate-300 bg-white hover:border-green-400'}">
                   ${item.is_completed || item.done ? 'Y' : (isStructural ? '·' : '')}
                 </div>
-                <span class="todo-title text-[13px] leading-snug flex-1">${item.title}</span>
-                ${isStructural ? '<span class="text-[10px] text-slate-400 whitespace-nowrap">Auto-completes when all child rows are done</span>' : ''}
+                <span class="todo-title text-[12px] leading-snug flex-1">${item.title}</span>
+                ${isStructural ? '<span class="text-[10px] text-slate-400 whitespace-nowrap">Auto-completes with child rows</span>' : ''}
                 ${hasChildren ? `<button class="btn btn-ghost btn-sm !text-sky-600 btn-checklist-group-complete" data-item-id="${item.id}" title="Mark all unfinished lesson steps under this heading">Check group</button>` : ''}
               </div>`;
     }).join('')}
