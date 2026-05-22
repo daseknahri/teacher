@@ -1042,6 +1042,17 @@ def _build_leaf_content_markdown_from_blocks(
 def _build_exact_source_segments_from_blocks(
     blocks: list[dict[str, Any]] | None,
 ) -> list[dict[str, Any]]:
+    SOURCE_SEGMENT_LABELS = {
+        "activity": "Activity",
+        "lesson": "Lesson",
+        "definition": "Definition",
+        "property": "Property",
+        "example": "Example",
+        "exercise": "Exercise",
+        "evaluation": "Assessment",
+        "content": "Content",
+    }
+
     def split_exact_source_rows(
         *,
         title: str,
@@ -1454,6 +1465,124 @@ def build_source_section_lesson_package(
     }
 
 
+def _raw_sections_from_content_pack(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    kind_labels = {
+        "activity": "Activity",
+        "lesson": "Lesson",
+        "definition": "Definition",
+        "property": "Property",
+        "example": "Example",
+        "exercise": "Exercise",
+        "evaluation": "Assessment",
+        "content": "Content",
+    }
+    sections = payload.get("sections")
+    if not isinstance(sections, list):
+        return []
+    normalized_rows: list[dict[str, Any]] = []
+    for index, section in enumerate(sections, start=1):
+        if not isinstance(section, dict):
+            continue
+        section_title = _normalize_outline_title(section.get("section_title"))
+        section_path = _normalize_content_block_path(section.get("section_path"), fallback_section_title=section_title)
+        if section_path:
+            section_title = section_path[-1]
+        if not section_title:
+            continue
+        try:
+            order_index = int(section.get("order_index") or index)
+        except Exception:
+            order_index = index
+        raw_blocks = section.get("blocks")
+        if not isinstance(raw_blocks, list):
+            raw_blocks = []
+        blocks: list[dict[str, Any]] = []
+        for block_index, block in enumerate(raw_blocks, start=1):
+            if not isinstance(block, dict):
+                continue
+            kind = _normalize_content_block_kind(block.get("kind"))
+            title = _normalize_outline_title(block.get("title"))
+            exact_text = _normalize_content_block_markdown(block.get("exact_text"), limit=12000)
+            if not exact_text:
+                continue
+            try:
+                block_order = int(block.get("order_index") or block_index)
+            except Exception:
+                block_order = block_index
+            blocks.append(
+                {
+                    "title": title or None,
+                    "kind": kind,
+                    "kind_label": kind_labels.get(kind, "Content"),
+                    "teaching_phase": _normalize_content_block_phase(None, kind=kind, title=title or section_title),
+                    "content_md": exact_text,
+                    "content_source": "exact_text",
+                    "order_index": block_order,
+                }
+            )
+        blocks.sort(key=lambda row: (int(row.get("order_index") or 0), _semantic_title_key(row.get("title"))))
+        normalized_rows.append(
+            {
+                "section_title": section_title,
+                "section_path_json": section_path,
+                "order_index": order_index,
+                "source_blocks": blocks,
+                "source_excerpt_md": "\n\n".join(
+                    str(row.get("content_md") or "").strip()
+                    for row in blocks
+                    if str(row.get("content_md") or "").strip()
+                ).strip()
+                or None,
+            }
+        )
+    normalized_rows.sort(key=lambda row: (int(row.get("order_index") or 0), _semantic_title_key(row.get("section_title"))))
+    return normalized_rows
+
+
+def build_raw_section_lesson_package(
+    *,
+    section_title: str | None,
+    section_path: list[str] | None,
+    item_path: list[str] | None = None,
+    item_title: str | None = None,
+    content_pack: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    normalized_section_path = [
+        _normalize_outline_title(value)
+        for value in (section_path or [])
+        if _normalize_outline_title(value)
+    ]
+    normalized_item_path = [
+        _normalize_outline_title(value)
+        for value in (item_path or [])
+        if _normalize_outline_title(value)
+    ]
+    normalized_section_title = _normalize_outline_title(section_title) or (
+        normalized_section_path[-1] if normalized_section_path else "Section"
+    )
+    section_key = build_section_key(normalized_section_path, fallback_title=normalized_section_title)
+    for row in _raw_sections_from_content_pack(content_pack):
+        row_path = row.get("section_path_json") if isinstance(row.get("section_path_json"), list) else []
+        row_title = _normalize_outline_title(row.get("section_title"))
+        row_key = build_section_key(row_path, fallback_title=row_title)
+        if row_key != section_key:
+            continue
+        source_blocks = row.get("source_blocks") if isinstance(row.get("source_blocks"), list) else []
+        source_excerpt_md = str(row.get("source_excerpt_md") or "").strip() or None
+        return {
+            "section_title": row_title or normalized_section_title,
+            "section_path_json": row_path or normalized_section_path,
+            "item_path_json": normalized_item_path,
+            "item_title": _normalize_outline_title(item_title) or None,
+            "source_block_count": len(source_blocks),
+            "source_blocks": source_blocks,
+            "source_excerpt_md": source_excerpt_md,
+        }
+    return None
+
+
 def build_section_key(section_path: list[str] | None, *, fallback_title: str | None = None) -> str:
     normalized_path = [
         _normalize_outline_title(value)
@@ -1506,6 +1635,26 @@ def build_source_section_index(
             }
         )
     return section_rows
+
+
+def build_raw_section_index(content_pack: dict[str, Any] | None) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for index, section in enumerate(_raw_sections_from_content_pack(content_pack)):
+        section_title = _normalize_outline_title(section.get("section_title"))
+        section_path = section.get("section_path_json") if isinstance(section.get("section_path_json"), list) else []
+        source_blocks = section.get("source_blocks") if isinstance(section.get("source_blocks"), list) else []
+        if not section_title or not section_path:
+            continue
+        rows.append(
+            {
+                "section_key": build_section_key(section_path, fallback_title=section_title),
+                "section_title": section_title,
+                "section_path_json": section_path,
+                "order_index": int(section.get("order_index") or index),
+                "source_block_count": len(source_blocks),
+            }
+        )
+    return rows
 
 
 def render_section_latex_source(

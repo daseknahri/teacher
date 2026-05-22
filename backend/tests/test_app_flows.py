@@ -7787,6 +7787,49 @@ def test_build_source_section_lesson_package_keeps_exact_section_content():
     assert "3/7 + 2/7" not in combined
 
 
+def test_build_raw_section_lesson_package_prefers_exact_notebooklm_section_blocks():
+    from app.services import workflow_generation
+
+    content_pack = {
+        "unit_title": "Les nombres rationnels",
+        "sections": [
+            {
+                "section_title": "Produit et division",
+                "section_path": ["Rationnels", "Produit et division"],
+                "order_index": 1,
+                "blocks": [
+                    {
+                        "kind": "example",
+                        "title": "Exemple 1",
+                        "exact_text": "Calculer 2/3 × 4/5 = 8/15.",
+                        "order_index": 1,
+                    },
+                    {
+                        "kind": "exercise",
+                        "title": "Exercice 1",
+                        "exact_text": "1) Calculer 3/7 × 2/7.\n2) Simplifier 5/10 × 1/2.",
+                        "order_index": 2,
+                    },
+                ],
+            }
+        ],
+    }
+
+    payload = workflow_generation.build_raw_section_lesson_package(
+        section_title="Produit et division",
+        section_path=["Rationnels", "Produit et division"],
+        item_path=["Rationnels", "Produit et division", "Exemple 1"],
+        item_title="Exemple 1",
+        content_pack=content_pack,
+    )
+
+    assert payload is not None
+    assert payload["section_title"] == "Produit et division"
+    assert payload["source_block_count"] == 2
+    assert payload["source_blocks"][0]["content_md"] == "Calculer 2/3 × 4/5 = 8/15."
+    assert payload["source_blocks"][1]["content_md"] == "1) Calculer 3/7 × 2/7.\n2) Simplifier 5/10 × 1/2."
+
+
 def test_build_source_section_index_orders_unique_sections():
     from app.services import workflow_generation
 
@@ -7827,6 +7870,33 @@ def test_build_source_section_index_orders_unique_sections():
     assert rows[0]["order_index"] == 0
     assert rows[1]["order_index"] == 1
     assert rows[0]["section_key"]
+
+
+def test_build_raw_section_index_uses_notebooklm_section_order():
+    from app.services import workflow_generation
+
+    rows = workflow_generation.build_raw_section_index(
+        {
+            "sections": [
+                {
+                    "section_title": "Produit et division",
+                    "section_path": ["Rationnels", "Produit et division"],
+                    "order_index": 2,
+                    "blocks": [{"kind": "example", "title": "Exemple", "exact_text": "Calculer 2/3 × 4/5.", "order_index": 1}],
+                },
+                {
+                    "section_title": "Somme et difference",
+                    "section_path": ["Rationnels", "Somme et difference"],
+                    "order_index": 1,
+                    "blocks": [{"kind": "example", "title": "Exemple", "exact_text": "Calculer 3/7 + 2/7.", "order_index": 1}],
+                },
+            ]
+        }
+    )
+
+    assert [row["section_title"] for row in rows] == ["Somme et difference", "Produit et division"]
+    assert rows[0]["source_block_count"] == 1
+    assert rows[1]["section_path_json"] == ["Rationnels", "Produit et division"]
 
 
 def test_section_lesson_endpoint_returns_matching_section_content(client):

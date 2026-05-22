@@ -143,6 +143,8 @@ from ..services.workflow_content import (
 from ..services.workflow_generation import (
     NotebookLMGenerationUnavailableError,
     build_section_key,
+    build_raw_section_index,
+    build_raw_section_lesson_package,
     build_source_section_index,
     build_source_derived_leaf_content_package,
     build_source_section_lesson_package,
@@ -668,14 +670,24 @@ def _normalize_section_path_input(section_path: list[str] | None, *, fallback_ti
     return [fallback] if fallback else []
 
 
+def _blueprint_content_pack(blueprint: WorkflowUnitBlueprint | None) -> dict | None:
+    if blueprint is None or not isinstance(blueprint.raw_provider_response, dict):
+        return None
+    payload = blueprint.raw_provider_response.get("content_pack")
+    return payload if isinstance(payload, dict) else None
+
+
 def _index_unit_prepared_sections(
     db: Session,
     *,
     unit: WorkflowUnit,
     blueprint: WorkflowUnitBlueprint,
 ) -> list[WorkflowPreparedSection]:
-    content_blocks = blueprint.content_blocks_json if isinstance(blueprint.content_blocks_json, list) else []
-    section_rows = build_source_section_index(content_blocks)
+    content_pack = _blueprint_content_pack(blueprint)
+    section_rows = build_raw_section_index(content_pack) if content_pack else []
+    if not section_rows:
+        content_blocks = blueprint.content_blocks_json if isinstance(blueprint.content_blocks_json, list) else []
+        section_rows = build_source_section_index(content_blocks)
     db.execute(delete(WorkflowPreparedSection).where(WorkflowPreparedSection.unit_id == int(unit.id)))
     created: list[WorkflowPreparedSection] = []
     provider_name = str(blueprint.provider or "notebooklm").strip() or "notebooklm"
@@ -724,11 +736,18 @@ def _upsert_prepared_section_from_blueprint(
     if record is None:
         record = WorkflowPreparedSection(unit_id=int(unit.id), section_key=section_key)
         db.add(record)
-    lesson = build_source_section_lesson_package(
+    content_pack = _blueprint_content_pack(blueprint)
+    lesson = build_raw_section_lesson_package(
         section_title=normalized_section_path[-1],
         section_path=normalized_section_path,
-        content_blocks=blueprint.content_blocks_json if isinstance(blueprint.content_blocks_json, list) else [],
-    )
+        content_pack=content_pack,
+    ) if content_pack else None
+    if lesson is None:
+        lesson = build_source_section_lesson_package(
+            section_title=normalized_section_path[-1],
+            section_path=normalized_section_path,
+            content_blocks=blueprint.content_blocks_json if isinstance(blueprint.content_blocks_json, list) else [],
+        )
     source_blocks = lesson.get("source_blocks") if isinstance(lesson.get("source_blocks"), list) else []
     source_excerpt_md = str(lesson.get("source_excerpt_md") or "").strip() or None
     record.section_key = section_key
@@ -736,7 +755,9 @@ def _upsert_prepared_section_from_blueprint(
     record.section_path_json = normalized_section_path
     record.provider = str(blueprint.provider or "notebooklm").strip() or "notebooklm"
     record.model = str(blueprint.model or "").strip() or None
-    indexed_rows = build_source_section_index(blueprint.content_blocks_json if isinstance(blueprint.content_blocks_json, list) else [])
+    indexed_rows = build_raw_section_index(content_pack) if content_pack else []
+    if not indexed_rows:
+        indexed_rows = build_source_section_index(blueprint.content_blocks_json if isinstance(blueprint.content_blocks_json, list) else [])
     index_lookup = {str(row.get("section_key") or "").strip(): row for row in indexed_rows}
     record.order_index = int((index_lookup.get(section_key) or {}).get("order_index") or 0)
     if source_blocks or source_excerpt_md:
@@ -6984,7 +7005,9 @@ def index_unit_sections(
     if unit is None or int(unit.class_id) != int(class_id):
         raise HTTPException(status_code=404, detail="Workflow unit not found.")
     blueprint = db.scalar(select(WorkflowUnitBlueprint).where(WorkflowUnitBlueprint.unit_id == int(unit_id)))
-    if blueprint is None or not isinstance(blueprint.content_blocks_json, list) or not blueprint.content_blocks_json:
+    has_content_pack = isinstance(_blueprint_content_pack(blueprint), dict)
+    has_content_blocks = isinstance(getattr(blueprint, "content_blocks_json", None), list) and bool(blueprint.content_blocks_json)
+    if blueprint is None or (not has_content_pack and not has_content_blocks):
         raise HTTPException(status_code=409, detail="Unit extracted content is required before sections can be prepared.")
     rows = _index_unit_prepared_sections(db, unit=unit, blueprint=blueprint)
     db.commit()
@@ -7023,7 +7046,9 @@ def prepare_unit_section(
     if unit is None or int(unit.class_id) != int(class_id):
         raise HTTPException(status_code=404, detail="Workflow unit not found.")
     blueprint = db.scalar(select(WorkflowUnitBlueprint).where(WorkflowUnitBlueprint.unit_id == int(unit_id)))
-    if blueprint is None or not isinstance(blueprint.content_blocks_json, list) or not blueprint.content_blocks_json:
+    has_content_pack = isinstance(_blueprint_content_pack(blueprint), dict)
+    has_content_blocks = isinstance(getattr(blueprint, "content_blocks_json", None), list) and bool(blueprint.content_blocks_json)
+    if blueprint is None or (not has_content_pack and not has_content_blocks):
         raise HTTPException(status_code=409, detail="Unit extracted content is required before a section can be prepared.")
     record = _upsert_prepared_section_from_blueprint(
         db,
@@ -7114,15 +7139,25 @@ def get_section_lesson(
         ).model_dump()
 
     blueprint = db.scalar(select(WorkflowUnitBlueprint).where(WorkflowUnitBlueprint.unit_id == int(unit_id)))
-    if blueprint is None or not isinstance(blueprint.content_blocks_json, list) or not blueprint.content_blocks_json:
+    content_pack = _blueprint_content_pack(blueprint)
+    has_content_blocks = isinstance(getattr(blueprint, "content_blocks_json", None), list) and bool(blueprint.content_blocks_json)
+    if blueprint is None or (not isinstance(content_pack, dict) and not has_content_blocks):
         raise HTTPException(status_code=409, detail="Unit extracted content is required before opening a section lesson.")
-    lesson = build_source_section_lesson_package(
+    lesson = build_raw_section_lesson_package(
         section_title=normalized_section_path[-1] if normalized_section_path else None,
         section_path=normalized_section_path,
         item_path=normalized_item_path,
         item_title=payload.item_title,
-        content_blocks=blueprint.content_blocks_json,
-    )
+        content_pack=content_pack,
+    ) if content_pack else None
+    if lesson is None:
+        lesson = build_source_section_lesson_package(
+            section_title=normalized_section_path[-1] if normalized_section_path else None,
+            section_path=normalized_section_path,
+            item_path=normalized_item_path,
+            item_title=payload.item_title,
+            content_blocks=blueprint.content_blocks_json,
+        )
     if int(lesson.get("source_block_count") or 0) <= 0 and not str(lesson.get("source_excerpt_md") or "").strip():
         raise HTTPException(status_code=404, detail="No extracted section content found for this lesson.")
     return lesson
