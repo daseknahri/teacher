@@ -3669,6 +3669,75 @@ def test_generate_unit_checklist_package_accepts_refined_notebooklm_sections(mon
     assert activity_plan["blocks"][1]["teaching_material"].startswith("On garde le meme denominateur.")
 
 
+def test_notebooklm_generate_checklist_async_uses_outline_only_flow(monkeypatch):
+    import asyncio
+
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    recorded_prompts: list[str] = []
+
+    class _FakeNotebook:
+        id = "nb-test-123"
+
+    class _FakeNotebooks:
+        async def create(self, _title):
+            return _FakeNotebook()
+
+    class _FakeOpened:
+        def __init__(self):
+            self.notebooks = _FakeNotebooks()
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class _FakeAnswer:
+        def __init__(self, answer, conversation_id):
+            self.answer = answer
+            self.conversation_id = conversation_id
+
+    async def _fake_create_client():
+        return _FakeOpened()
+
+    monkeypatch.setattr(workflow_generation, "_create_notebooklm_client", _fake_create_client)
+    monkeypatch.setattr(
+        workflow_generation,
+        "_notebooklm_attach_source",
+        lambda **kwargs: asyncio.sleep(0, result=["source-1"]),
+    )
+
+    async def _fake_ask(**kwargs):
+        prompt = str(kwargs.get("prompt") or "")
+        recorded_prompts.append(prompt)
+        return _FakeAnswer(
+            "- Les nombres rationnels : Somme et difference\n  - I- Addition et soustraction\n    - 1) Les denominateurs sont les memes",
+            f"conv-{len(recorded_prompts)}",
+        )
+
+    monkeypatch.setattr(workflow_generation, "_ask_notebooklm_with_source_retry", _fake_ask)
+
+    items, provider_context, raw_result, error_message = asyncio.run(
+        workflow_generation._notebooklm_generate_checklist_async(
+            unit_type=WorkflowUnitType.CHAPTER,
+            title="Les nombres rationnels : Somme et difference",
+            source_text="source",
+            session_count=6,
+            document_path="",
+            outline_hint_lines=None,
+        )
+    )
+
+    assert error_message is None
+    assert items
+    assert provider_context["notebook_id"] == "nb-test-123"
+    assert raw_result["response_mode"] == "outline_only"
+    assert "content_pack" not in raw_result
+    assert len(recorded_prompts) == 2
+
+
 def test_workflow_unit_start_returns_clear_error_when_notebooklm_refresh_is_required(client, monkeypatch):
     from app.routers import workflow as workflow_router
     from app.services.workflow_generation import NotebookLMGenerationUnavailableError

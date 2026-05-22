@@ -2125,8 +2125,6 @@ async def _notebooklm_generate_checklist_async(
     notebook_id = ""
     notebook_title = f"{app_config.NOTEBOOKLM_NOTEBOOK_PREFIX}{title or 'Unit'}".strip()
     raw_result: dict[str, Any] | None = None
-    unit_map_payload: dict[str, Any] | None = None
-    content_pack_payload: dict[str, Any] | None = None
     try:
         async with client as opened:
             notebook = await opened.notebooks.create(notebook_title)
@@ -2138,38 +2136,6 @@ async def _notebooklm_generate_checklist_async(
                 source_text=source_text,
                 document_path=document_path,
             )
-            unit_map_prompt = _build_notebooklm_unit_map_prompt(
-                unit_type=unit_type,
-                title=title,
-            )
-            unit_map_result = await _ask_notebooklm_with_source_retry(
-                opened=opened,
-                notebook_id=notebook_id,
-                prompt=unit_map_prompt,
-                source_ids=source_ids,
-                retries=3,
-            )
-            unit_map_answer = str(getattr(unit_map_result, "answer", "") or "").strip()
-            unit_map_payload = _normalize_unit_map_payload(
-                _json_object_from_text(unit_map_answer),
-                fallback_outline=None,
-                unit_title=title,
-                unit_type=unit_type,
-                source_mode="notebooklm-unit-map",
-            )
-            content_pack_prompt = _build_notebooklm_content_pack_prompt(
-                unit_type=unit_type,
-                title=title,
-            )
-            content_pack_result = await _ask_notebooklm_with_source_retry(
-                opened=opened,
-                notebook_id=notebook_id,
-                prompt=content_pack_prompt,
-                source_ids=source_ids,
-                retries=3,
-            )
-            content_pack_answer = str(getattr(content_pack_result, "answer", "") or "").strip()
-            content_pack_payload = _json_object_from_text(content_pack_answer)
             prompt_variants = [
                 (
                     "primary",
@@ -2212,22 +2178,8 @@ async def _notebooklm_generate_checklist_async(
             raw_result = {
                 "notebook_id": notebook_id,
                 "source_ids": source_ids,
-                "unit_map": unit_map_payload,
-                "content_pack": content_pack_payload,
+                "response_mode": "outline_only",
                 "responses": [
-                    {
-                        "variant": "unit_map",
-                        "prompt": unit_map_prompt,
-                        "answer": unit_map_answer,
-                        "conversation_id": str(getattr(unit_map_result, "conversation_id", "") or "").strip() or None,
-                    },
-                    {
-                        "variant": "content_pack",
-                        "prompt": content_pack_prompt,
-                        "answer": content_pack_answer,
-                        "conversation_id": str(getattr(content_pack_result, "conversation_id", "") or "").strip() or None,
-                    },
-                ] + [
                     {
                         "variant": row["variant"],
                         "prompt": row["prompt"],
@@ -2268,7 +2220,7 @@ async def _notebooklm_generate_checklist_async(
             raw_result["selected_variant"] = selected_variant
     if outline_items:
         unit_map_payload = _normalize_unit_map_payload(
-            unit_map_payload,
+            None,
             fallback_outline=outline_items,
             unit_title=title,
             unit_type=unit_type,
@@ -2277,12 +2229,12 @@ async def _notebooklm_generate_checklist_async(
         if isinstance(raw_result, dict):
             raw_result["unit_map"] = unit_map_payload
             raw_result["content_blocks"] = _normalize_content_blocks_payload(
-                content_pack_payload,
+                None,
                 unit_map=unit_map_payload,
                 fallback_outline=outline_items,
             )
         if isinstance(raw_result, dict):
-            raw_result["response_mode"] = "outline"
+            raw_result["response_mode"] = "outline_only"
         return outline_items, provider_context, raw_result, None
 
     answer = ""
