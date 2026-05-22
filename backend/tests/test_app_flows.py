@@ -2876,8 +2876,9 @@ def test_notebooklm_prompt_omits_noisy_source_hint_when_pdf_is_attached():
     )
 
     assert "Indice textuel de secours" not in prompt
-    assert "Retourne uniquement la liste ordonnee de tous les titres et sous-titres pedagogiques visibles." in prompt
-    assert "Ne reorganise pas l'ordre pedagogique et n'invente pas de structure implicite." in prompt
+    assert "Retourne la liste hierarchique de tous les headlines pedagogiques visibles utiles pour enseigner." in prompt
+    assert "A l'interieur de chaque concept ou section, organise les headlines visibles dans l'ordre de classe suivant" in prompt
+    assert "Si une activite prepare clairement un concept, rattache-la au debut de ce concept" in prompt
     assert "N'inclus pas les rubriques meta enseignant" in prompt
     assert "indentation de deux espaces par niveau" in prompt
     assert "aucun commentaire avant ou apres la liste" in prompt
@@ -3026,6 +3027,39 @@ def test_parse_notebooklm_outline_response_drops_generic_buckets_and_itemized_ro
     assert "Activite 1 :" not in child_titles
     assert "Exercice 1 :" not in child_titles
     assert child_titles == ["I- Addition et soustraction de deux nombres rationnels :"]
+
+
+def test_parse_notebooklm_outline_response_keeps_itemized_rows_when_nested_under_real_concepts():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    answer = "\n".join(
+        [
+            "- Les nombres rationnels : Produit et division",
+            "  - I- Multiplication de nombres rationnels :",
+            "    - Activite 1 :",
+            "    - Regle :",
+            "    - Exercice 1 :",
+            "  - II- Division de nombres rationnels :",
+            "    - 1) Inverse d'un nombre rationnel :",
+            "      - Activite 2 :",
+            "      - Definition :",
+            "      - Exercice 2 :",
+        ]
+    )
+
+    items = workflow_generation._parse_notebooklm_outline_response(
+        answer,
+        unit_type=WorkflowUnitType.CHAPTER,
+        unit_title="Les nombres rationnels : Produit et division",
+    )
+
+    assert items
+    chapter = items[0]
+    first_children = [str(row.get("title") or "") for row in chapter["children"][0]["children"]]
+    second_children = [str(row.get("title") or "") for row in chapter["children"][1]["children"][0]["children"]]
+    assert first_children == ["Activite 1 :", "Regle :", "Exercice 1 :"]
+    assert second_children == ["Activite 2 :", "Definition :", "Exercice 2 :"]
 
 
 def test_pdf_text_extraction_preserves_line_break_structure():

@@ -3914,17 +3914,17 @@ def _build_notebooklm_checklist_prompt(
     del session_count
     prompt_parts = [
         "Lis ce PDF comme un manuel scolaire de mathematiques.",
-        "Retourne uniquement la liste ordonnee de tous les titres et sous-titres pedagogiques visibles.",
+        "Retourne la liste hierarchique de tous les headlines pedagogiques visibles utiles pour enseigner.",
         "Regles:",
         "- Garde le titre du chapitre comme racine.",
         "- Garde l'ordre exact du document.",
-        "- Garde la hierarchie exacte du document avec indentation.",
-        "- Garde uniquement les headlines visibles: titres, sous-titres, rubriques, sections et sous-sections.",
+        "- Garde une hierarchie claire avec indentation.",
+        "- Garde les headlines visibles utiles pour l'enseignement: titres, sous-titres, rubriques, sections, sous-sections, activites, regles, proprietes, definitions, exemples, exercices, evaluation.",
         "- Conserve exactement le texte et le systeme de numerotation visibles dans le document (I, II, 1, 1.1, A, etc.).",
-        "- Ne reorganise pas l'ordre pedagogique et n'invente pas de structure implicite.",
-        "- Ne transforme pas un paragraphe ou un exercice en nouveau titre s'il n'est pas deja affiche comme headline dans le document.",
-        "- Ignore les conteneurs generiques comme Activites, Contenu de la lecon, Exercices ou Evaluation s'ils ne servent qu'a regrouper des parties plus precises.",
-        "- Ignore les lignes d'execution comme Activite 1, Activite 2, Exercice 1, Exercice 2 quand elles sont seulement des items de fiche; garde plutot les vrais titres structurels qui organisent l'apprentissage.",
+        "- A l'interieur de chaque concept ou section, organise les headlines visibles dans l'ordre de classe suivant quand ils existent dans le document: activite, puis regle/propriete/definition, puis exemple, puis exercice/evaluation.",
+        "- Si une activite prepare clairement un concept, rattache-la au debut de ce concept au lieu de la laisser dans un bloc generique separe.",
+        "- Si une rubrique generique comme Activites, Contenu de la lecon, Exercices ou Evaluation ne sert qu'a regrouper des parties plus precises, rattache plutot les headlines visibles a la section ou au concept pedagogique exact.",
+        "- Ne transforme pas un paragraphe ou un contenu interne en nouveau titre s'il n'est pas deja affiche comme headline dans le document.",
         "- N'inclus pas les rubriques meta enseignant comme Objectifs d'apprentissage, Competences, Capacites, Prerequis, Outils didactiques, Ressources, Gestion du temps, Demarche pedagogique ou rubriques similaires.",
         "- N'inclus pas les paragraphes de contenu, calculs detailles, reponses, questions internes, ni les sous-exemples A / B / C / D s'ils ne sont pas presentes comme titres visibles.",
         "- Si un titre est coupe sur deux lignes, reconstitue-le.",
@@ -3954,13 +3954,13 @@ def _build_notebooklm_checklist_review_prompt() -> str:
             "Je veux uniquement la version finale la plus fidele aux headlines visibles du document.",
             "Regles:",
             "- Garde le titre du chapitre comme racine.",
-            "- Garde l'ordre exact et la hierarchie exacte du document.",
-            "- Verifie surtout les titres numerotes et les vraies rubriques structurelles visibles.",
+            "- Garde l'ordre exact du document et une hierarchie claire.",
+            "- Verifie surtout les titres numerotes ainsi que les rubriques pedagogiques visibles: activites, regles, proprietes, definitions, exemples, exercices, evaluation.",
+            "- A l'interieur de chaque concept, prefere l'ordre de classe suivant quand ces headlines existent: activite, puis regle/propriete/definition, puis exemple, puis exercice/evaluation.",
             "- Exclue les rubriques meta enseignant comme Objectifs d'apprentissage, Competences, Capacites, Prerequis, Outils didactiques, Ressources, Gestion du temps, Demarche pedagogique ou rubriques equivalentes.",
             "- Ne saute aucun titre visible, meme s'il est repetitif ou similaire a un autre.",
             "- N'ajoute aucun titre implicite et ne reformule pas les titres.",
-            "- Ignore les conteneurs generiques comme Activites, Contenu de la lecon, Exercices ou Evaluation si des rubriques plus precises sont visibles dessous.",
-            "- Ignore les items de fiche comme Activite 1, Activite 2, Exercice 1, Exercice 2 quand ils ne sont pas de vrais titres de structure.",
+            "- Si une rubrique generique comme Activites, Contenu de la lecon, Exercices ou Evaluation ne sert qu'a regrouper des headlines plus precises, rattache ces headlines au concept exact.",
             "- Ne garde pas les paragraphes de contenu, les calculs detailles, les reponses, ni les sous-exemples A / B / C / D s'ils ne sont pas des headlines visibles.",
             "- Si une rubrique est coupee sur plusieurs pages, reconstruis seulement le titre visible complet.",
             "Format attendu:",
@@ -5734,7 +5734,8 @@ def _normalize_notebooklm_outline_items(
     unit_type: WorkflowUnitType,
     unit_title: str,
 ) -> list[dict[str, Any]]:
-    def walk(nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def walk(nodes: list[dict[str, Any]], ancestors: list[str] | None = None) -> list[dict[str, Any]]:
+        ancestor_titles = list(ancestors or [])
         output: list[dict[str, Any]] = []
         for node in nodes:
             if not isinstance(node, dict):
@@ -5745,12 +5746,27 @@ def _normalize_notebooklm_outline_items(
             raw_kind = str(node.get("kind") or WorkflowChecklistItemKind.OTHER.value).strip().lower()
             allowed = {kind.value for kind in WorkflowChecklistItemKind}
             kind = raw_kind if raw_kind in allowed else WorkflowChecklistItemKind.OTHER.value
-            children = walk(node.get("children") if isinstance(node.get("children"), list) else [])
+            children = walk(
+                node.get("children") if isinstance(node.get("children"), list) else [],
+                [*ancestor_titles, title],
+            )
             session_number = _normalize_session_number(node.get("session_number"))
             if unit_type == WorkflowUnitType.CHAPTER and _is_generic_section_bucket_title(title):
                 output.extend(children)
                 continue
-            if unit_type == WorkflowUnitType.CHAPTER and _is_itemized_activity_or_exercise_outline_title(title):
+            has_specific_ancestor = any(
+                anc
+                and not _titles_equivalent(anc, unit_title)
+                and not _is_generic_section_bucket_title(anc)
+                and (
+                    NUMBERED_HEADING_PATTERN.match(anc)
+                    or ROMAN_HEADING_PATTERN.match(anc)
+                    or ALPHA_HEADING_PATTERN.match(anc)
+                    or _fold_text_key(anc).startswith(("i-", "ii-", "iii-", "iv-"))
+                )
+                for anc in ancestor_titles
+            )
+            if unit_type == WorkflowUnitType.CHAPTER and _is_itemized_activity_or_exercise_outline_title(title) and not has_specific_ancestor:
                 output.extend(children)
                 continue
             normalized_node: dict[str, Any] = {"title": title, "kind": kind, "children": children}
@@ -5759,7 +5775,7 @@ def _normalize_notebooklm_outline_items(
             output.append(normalized_node)
         return _dedupe_sibling_nodes(output)
 
-    normalized = _collapse_duplicate_outline_branches(walk(items))
+    normalized = _collapse_duplicate_outline_branches(walk(items, []))
     if unit_type != WorkflowUnitType.CHAPTER or not normalized:
         return normalized
     return _ensure_notebooklm_chapter_root(normalized, unit_title=unit_title)
