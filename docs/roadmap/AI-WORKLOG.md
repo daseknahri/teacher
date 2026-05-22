@@ -1,6 +1,6 @@
 # AI Worklog
 
-Last updated: 2026-05-20
+Last updated: 2026-05-22
 
 Use this file as a shared handoff log between coding sessions, AI helpers, and engineers.
 
@@ -20,6 +20,36 @@ After finishing:
 Keep entries short and factual.
 
 ---
+
+### 2026-05-22 00:40 - Codex
+
+- Status: done
+- Goal: Prepare a stricter local NotebookLM benchmark for exact content extraction, where the model first builds a named content bank and then returns a pedagogy sequence that references only those names.
+- Files expected:
+  - `backend/scripts/test_notebooklm_content_bank_extract.py`
+  - `docs/roadmap/AI-WORKLOG.md`
+- Assumptions:
+  - The current section extraction is still too weak and repetitive, so we need to benchmark a different NotebookLM contract before changing more UI.
+  - The right experiment is `content_bank + pedagogy_sequence`, not leaf generation or teaching rewrite.
+- Notes:
+  - Added a dedicated benchmark script that compares:
+    - the current app `content_pack` prompt
+    - the strict section-first prompt
+    - a new strict `content_bank + pedagogy_sequence` prompt
+  - The new prompt explicitly forbids:
+    - rewriting
+    - synthetic sub-item names like `Exercice 1 : 1`
+    - added pedagogy
+  - It requires NotebookLM to:
+    - extract named content exactly once into `content_bank`
+    - build `pedagogy_sequence` only by reusing those exact names
+- Result:
+  - The script is ready and syntax-valid locally.
+  - A fresh live run still requires renewed local NotebookLM auth via `python -m notebooklm login`.
+- Follow-up:
+  - Re-authenticate NotebookLM locally.
+  - Run the new benchmark on 3 representative PDFs.
+  - Compare whether `content_bank + pedagogy_sequence` is materially cleaner than the current section-first output before rewiring the app to it.
 
 ## Entry Template
 
