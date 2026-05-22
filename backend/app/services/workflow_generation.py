@@ -3923,7 +3923,8 @@ def _build_notebooklm_checklist_prompt(
         "- Conserve exactement le texte et le systeme de numerotation visibles dans le document (I, II, 1, 1.1, A, etc.).",
         "- Ne reorganise pas l'ordre pedagogique et n'invente pas de structure implicite.",
         "- Ne transforme pas un paragraphe ou un exercice en nouveau titre s'il n'est pas deja affiche comme headline dans le document.",
-        "- Si une rubrique contient Activite 1, Activite 2, Exercice 1, Exercice 2 ou des rubriques similaires et qu'elles sont visibles comme titres distincts, garde-les comme enfants de cette rubrique.",
+        "- Ignore les conteneurs generiques comme Activites, Contenu de la lecon, Exercices ou Evaluation s'ils ne servent qu'a regrouper des parties plus precises.",
+        "- Ignore les lignes d'execution comme Activite 1, Activite 2, Exercice 1, Exercice 2 quand elles sont seulement des items de fiche; garde plutot les vrais titres structurels qui organisent l'apprentissage.",
         "- N'inclus pas les rubriques meta enseignant comme Objectifs d'apprentissage, Competences, Capacites, Prerequis, Outils didactiques, Ressources, Gestion du temps, Demarche pedagogique ou rubriques similaires.",
         "- N'inclus pas les paragraphes de contenu, calculs detailles, reponses, questions internes, ni les sous-exemples A / B / C / D s'ils ne sont pas presentes comme titres visibles.",
         "- Si un titre est coupe sur deux lignes, reconstitue-le.",
@@ -3954,10 +3955,12 @@ def _build_notebooklm_checklist_review_prompt() -> str:
             "Regles:",
             "- Garde le titre du chapitre comme racine.",
             "- Garde l'ordre exact et la hierarchie exacte du document.",
-            "- Verifie surtout les titres numerotes et les rubriques visibles comme Activite 1, Activite 2, Exercice 1, Exercice 2, Definition, Propriete, Regle, Exemple, Evaluation.",
+            "- Verifie surtout les titres numerotes et les vraies rubriques structurelles visibles.",
             "- Exclue les rubriques meta enseignant comme Objectifs d'apprentissage, Competences, Capacites, Prerequis, Outils didactiques, Ressources, Gestion du temps, Demarche pedagogique ou rubriques equivalentes.",
             "- Ne saute aucun titre visible, meme s'il est repetitif ou similaire a un autre.",
             "- N'ajoute aucun titre implicite et ne reformule pas les titres.",
+            "- Ignore les conteneurs generiques comme Activites, Contenu de la lecon, Exercices ou Evaluation si des rubriques plus precises sont visibles dessous.",
+            "- Ignore les items de fiche comme Activite 1, Activite 2, Exercice 1, Exercice 2 quand ils ne sont pas de vrais titres de structure.",
             "- Ne garde pas les paragraphes de contenu, les calculs detailles, les reponses, ni les sous-exemples A / B / C / D s'ils ne sont pas des headlines visibles.",
             "- Si une rubrique est coupee sur plusieurs pages, reconstruis seulement le titre visible complet.",
             "Format attendu:",
@@ -5744,13 +5747,19 @@ def _normalize_notebooklm_outline_items(
             kind = raw_kind if raw_kind in allowed else WorkflowChecklistItemKind.OTHER.value
             children = walk(node.get("children") if isinstance(node.get("children"), list) else [])
             session_number = _normalize_session_number(node.get("session_number"))
+            if unit_type == WorkflowUnitType.CHAPTER and _is_generic_section_bucket_title(title):
+                output.extend(children)
+                continue
+            if unit_type == WorkflowUnitType.CHAPTER and _is_itemized_activity_or_exercise_outline_title(title):
+                output.extend(children)
+                continue
             normalized_node: dict[str, Any] = {"title": title, "kind": kind, "children": children}
             if session_number is not None:
                 normalized_node["session_number"] = session_number
             output.append(normalized_node)
         return _dedupe_sibling_nodes(output)
 
-    normalized = _resequence_outline_for_teaching_flow(walk(items))
+    normalized = _collapse_duplicate_outline_branches(walk(items))
     if unit_type != WorkflowUnitType.CHAPTER or not normalized:
         return normalized
     return _ensure_notebooklm_chapter_root(normalized, unit_title=unit_title)
@@ -5778,6 +5787,13 @@ def _is_assessment_outline_title(title: str, kind: str) -> bool:
     if kind == WorkflowChecklistItemKind.EXERCISE.value:
         return True
     return folded.startswith(("evaluation", "exercice", "exercices", "application", "applications"))
+
+
+def _is_itemized_activity_or_exercise_outline_title(title: str) -> bool:
+    raw = _normalize_outline_title(title)
+    if not raw:
+        return False
+    return bool(re.match(r"^\s*(activite|activité|exercice|exercise|application)\s+\d+\b", raw, re.IGNORECASE))
 
 
 def _is_explicit_topic_outline_title(title: str, kind: str) -> bool:
@@ -5827,6 +5843,37 @@ def _resequence_outline_for_teaching_flow(items: list[dict[str, Any]]) -> list[d
     indexed = list(enumerate(resequenced))
     indexed.sort(key=lambda pair: (_outline_teaching_flow_rank(pair[1]), pair[0]))
     return [node for _, node in indexed]
+
+
+def _collapse_duplicate_outline_branches(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    for raw_node in items:
+        if not isinstance(raw_node, dict):
+            continue
+        node = dict(raw_node)
+        children = node.get("children") if isinstance(node.get("children"), list) else []
+        node["children"] = _collapse_duplicate_outline_branches(children)
+        while (
+            isinstance(node.get("children"), list)
+            and len(node["children"]) == 1
+            and isinstance(node["children"][0], dict)
+        ):
+            child = node["children"][0]
+            parent_title = _normalize_outline_title(node.get("title"))
+            child_title = _normalize_outline_title(child.get("title"))
+            if not parent_title or not child_title or _title_key(parent_title) != _title_key(child_title):
+                break
+            merged = dict(node)
+            merged["children"] = child.get("children") if isinstance(child.get("children"), list) else []
+            child_session = _normalize_session_number(child.get("session_number"))
+            if _normalize_session_number(merged.get("session_number")) is None and child_session is not None:
+                merged["session_number"] = child_session
+            child_kind = str(child.get("kind") or "").strip().lower()
+            if child_kind and child_kind != WorkflowChecklistItemKind.OTHER.value:
+                merged["kind"] = child_kind
+            node = merged
+        output.append(node)
+    return _dedupe_sibling_nodes(output)
 
 
 def _ensure_notebooklm_chapter_root(items: list[dict[str, Any]], *, unit_title: str) -> list[dict[str, Any]]:

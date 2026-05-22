@@ -2933,9 +2933,99 @@ def test_parse_notebooklm_outline_response_preserves_heading_tree():
     assert chapter["children"][0]["children"][0]["title"].startswith("5.1.1")
     assert chapter["children"][0]["children"][0]["children"][0]["kind"] == WorkflowChecklistItemKind.PROPERTY.value
     assert chapter["children"][0]["children"][0]["children"][1]["kind"] == WorkflowChecklistItemKind.EXAMPLE.value
-    assert chapter["children"][1]["children"][0]["title"] == "Activités"
+    assert chapter["children"][1]["title"].startswith("5.2")
     assert "**" not in chapter["title"]
     assert "[" not in chapter["title"]
+
+
+def test_parse_notebooklm_outline_response_keeps_document_order_without_resequencing():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    answer = "\n".join(
+        [
+            "- Chapitre 1 : Produit et division",
+            "  - II- Division de nombres rationnels :",
+            "  - Activite 1 :",
+            "  - I- Multiplication de nombres rationnels :",
+        ]
+    )
+
+    items = workflow_generation._parse_notebooklm_outline_response(
+        answer,
+        unit_type=WorkflowUnitType.CHAPTER,
+        unit_title="Produit et division",
+    )
+
+    assert items
+    chapter = items[0]
+    child_titles = [str(row.get("title") or "") for row in chapter.get("children", [])]
+    assert child_titles == [
+        "II- Division de nombres rationnels :",
+        "I- Multiplication de nombres rationnels :",
+    ]
+
+
+
+def test_parse_notebooklm_outline_response_collapses_duplicate_parent_child_titles():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    answer = "\n".join(
+        [
+            "- Les nombres rationnels : Produit et division",
+            "  - I- Multiplication de nombres rationnels :",
+            "    - I- Multiplication de nombres rationnels :",
+            "      - 1) Inverse d'un nombre rationnel :",
+        ]
+    )
+
+    items = workflow_generation._parse_notebooklm_outline_response(
+        answer,
+        unit_type=WorkflowUnitType.CHAPTER,
+        unit_title="Produit et division",
+    )
+
+    assert items
+    chapter = items[0]
+    child_titles = [str(row.get("title") or "") for row in chapter.get("children", [])]
+    assert child_titles == ["I- Multiplication de nombres rationnels :"]
+    assert chapter["children"][0]["children"][0]["title"] == "1) Inverse d'un nombre rationnel :"
+
+
+def test_parse_notebooklm_outline_response_drops_generic_buckets_and_itemized_rows_for_chapters():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    answer = "\n".join(
+        [
+            "- Les nombres rationnels : Somme et difference",
+            "  - Activites",
+            "    - Activite 1 :",
+            "    - Activite 2 :",
+            "  - Contenu de la lecon",
+            "    - I- Addition et soustraction de deux nombres rationnels :",
+            "      - 1) Les denominateurs sont les memes :",
+            "  - Evaluation",
+            "    - Exercice 1 :",
+        ]
+    )
+
+    items = workflow_generation._parse_notebooklm_outline_response(
+        answer,
+        unit_type=WorkflowUnitType.CHAPTER,
+        unit_title="Les nombres rationnels : Somme et difference",
+    )
+
+    assert items
+    chapter = items[0]
+    child_titles = [str(row.get("title") or "") for row in chapter.get("children", [])]
+    assert "Activites" not in child_titles
+    assert "Contenu de la lecon" not in child_titles
+    assert "Evaluation" not in child_titles
+    assert "Activite 1 :" not in child_titles
+    assert "Exercice 1 :" not in child_titles
+    assert child_titles == ["I- Addition et soustraction de deux nombres rationnels :"]
 
 
 def test_pdf_text_extraction_preserves_line_break_structure():
