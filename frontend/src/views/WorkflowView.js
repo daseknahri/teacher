@@ -3597,23 +3597,27 @@ function _render(el, classId) {
               </div>
             </div>
             ${previewSessionNumber ? `
-            <div class="rounded-2xl border border-blue-200 bg-blue-50 p-4 flex flex-col gap-4">
-              <div>
-                <p class="text-[13px] font-semibold text-blue-800">Calendar Session Prep</p>
-                <p class="text-[12px] text-blue-700 mt-1">
-                  ${_escapeHtml(_workflowEntryContext?.session_label || `Unit Session ${previewSessionNumber}`)}
-                  ${_workflowEntryContext?.session_date ? ` • ${_escapeHtml(fmtDate(_workflowEntryContext.session_date))}` : ''}
-                </p>
-                <div class="mt-2 flex items-center gap-2 flex-wrap">
-                  <span class="badge ${previewRouteStatus.className}">${_escapeHtml(previewRouteStatus.label)}</span>
-                  ${previewMatchedChecklist.length ? `<span class="text-[11px] text-blue-700">${_escapeHtml(previewRouteStatus.hint)}</span>` : ''}
+            <div class="rounded-3xl border border-blue-200 bg-[linear-gradient(180deg,rgba(239,246,255,0.95),rgba(255,255,255,0.98))] p-4 flex flex-col gap-4 shadow-sm">
+              <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(260px,0.9fr)] gap-3 items-start">
+                <div class="rounded-2xl border border-white/80 bg-white/85 px-4 py-4 shadow-sm">
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">Calendar Session Prep</p>
+                  <p class="mt-1 text-[18px] font-semibold tracking-tight text-slate-800">${_escapeHtml(_workflowEntryContext?.session_label || `Unit Session ${previewSessionNumber}`)}</p>
+                  <p class="mt-1 text-[12px] text-slate-500">${_workflowEntryContext?.session_date ? _escapeHtml(fmtDate(_workflowEntryContext.session_date)) : 'Scheduled from calendar'}</p>
+                  <div class="mt-3 flex items-center gap-2 flex-wrap">
+                    <span class="badge ${previewRouteStatus.className}">${_escapeHtml(previewRouteStatus.label)}</span>
+                    ${previewMatchedChecklist.length ? `<span class="badge badge-gray">${previewMatchedChecklist.length} matched row${previewMatchedChecklist.length === 1 ? '' : 's'}</span>` : ''}
+                  </div>
                 </div>
-                <div class="mt-3 flex gap-2 flex-wrap">
-                  ${!session ? `<button id="btn-start-preview-session" class="btn btn-success btn-sm">Start This Session</button>` : ''}
+                <div class="rounded-2xl border border-white/80 bg-white/90 px-4 py-4 shadow-sm">
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Ready To Do</p>
+                  <p class="mt-2 text-[12px] leading-relaxed text-slate-700">${previewMatchedChecklist.length ? _escapeHtml(previewRouteStatus.hint) : 'Review the planned route below, then start this session when you are ready to teach.'}</p>
+                  <div class="mt-3 flex gap-2 flex-wrap">
+                    ${!session ? `<button id="btn-start-preview-session" class="btn btn-success btn-sm">Start This Session</button>` : ''}
+                  </div>
                 </div>
               </div>
               <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                <div class="rounded-xl border border-blue-100 bg-white p-3">
+                <div class="rounded-2xl border border-slate-200 bg-white p-3">
                   <h4 class="text-[12px] font-semibold text-slate-700">Planned Session Route</h4>
                   <div class="mt-2">
                     ${previewSessionPlanTree.length
@@ -3621,7 +3625,7 @@ function _render(el, classId) {
                       : '<p class="text-[12px] text-slate-500">No planned checklist flow saved for this unit session yet.</p>'}
                   </div>
                 </div>
-                <div class="rounded-xl border border-blue-100 bg-white p-3">
+                <div class="rounded-2xl border border-slate-200 bg-white p-3">
                   <h4 class="text-[12px] font-semibold text-slate-700">Teacher Prep Suggestions</h4>
                   <div class="mt-2">
                     ${_renderSessionPlaybookPreview(
@@ -3635,19 +3639,21 @@ function _render(el, classId) {
                 </div>
               </div>
               ${previewResumeItem ? `
-                <div class="mt-3">
+                <div>
                   ${_renderPreviewNextFocusActions(previewResumeSectionPlan, previewResumePlaybookEntry, previewResumeItem.title, { classId, unitId: unit?.id })}
                 </div>` : ''}
             </div>` : ''}
             <!-- Checklist tree -->
             ${checklist.length ? `
-            <div class="flex flex-col gap-1 checklist-dnd-root" data-checklist-dnd-root>
-              <div class="flex items-center justify-between gap-2 mb-1">
-                <div class="flex items-center gap-2 flex-wrap">
+            <div class="flex flex-col gap-2 checklist-dnd-root" data-checklist-dnd-root>
+              <div class="flex items-start justify-between gap-3 mb-1 flex-wrap">
+                <div class="min-w-0">
                   <h4 class="text-[12px] font-semibold text-slate-600">Checklist</h4>
-                  ${previewSessionNumber ? `<span class="badge badge-blue">Focused on Session ${previewSessionNumber}</span>` : ''}
-                  ${previewSessionNumber && _workflowPreviewFocusOnly ? `<span class="badge badge-green">Planned route only</span>` : ''}
-                  ${previewSessionNumber && _workflowPreviewFocusOnly && _workflowPreviewHideDone ? `<span class="badge badge-amber">Remaining only</span>` : ''}
+                  <div class="mt-1 flex items-center gap-2 flex-wrap">
+                    ${previewSessionNumber ? `<span class="badge badge-blue">Focused on Session ${previewSessionNumber}</span>` : ''}
+                    ${previewSessionNumber && _workflowPreviewFocusOnly ? `<span class="badge badge-green">Planned route only</span>` : ''}
+                    ${previewSessionNumber && _workflowPreviewFocusOnly && _workflowPreviewHideDone ? `<span class="badge badge-amber">Remaining only</span>` : ''}
+                  </div>
                 </div>
                 <div class="flex items-center gap-1 flex-wrap">
                   ${previewSessionNumber ? `<button id="btn-checklist-preview-focus-toggle" class="btn btn-ghost btn-sm !text-blue-600" title="Switch between the planned route and the full unit checklist">${_workflowPreviewFocusOnly ? 'Show Full Unit' : 'Show Planned Route Only'}</button>` : ''}
@@ -3657,15 +3663,17 @@ function _render(el, classId) {
                 </div>
               </div>
               ${previewSessionNumber ? `
-              <div class="flex items-center gap-2 px-2 py-1.5 bg-blue-50 rounded-lg border border-blue-100 mb-1">
-                <span class="text-[10px] font-bold text-blue-700">FOCUS</span>
-                <p class="text-[11px] text-blue-700 leading-tight">
+              <div class="rounded-xl border border-blue-100 bg-blue-50/70 px-3 py-2.5 mb-1">
+                <div class="flex items-start gap-2">
+                  <span class="text-[10px] font-bold text-blue-700 mt-0.5">FOCUS</span>
+                  <p class="text-[11px] text-blue-700 leading-tight">
                   ${_workflowPreviewFocusOnly
                     ? `${_workflowPreviewHideDone
                       ? `Showing only the remaining planned route for ${_escapeHtml(_workflowEntryContext?.session_label || `Unit Session ${previewSessionNumber}`)}.`
                       : `Showing only the planned route for ${_escapeHtml(_workflowEntryContext?.session_label || `Unit Session ${previewSessionNumber}`)}.`} Use "Show Full Unit" if you want the complete checklist.`
                     : `Highlighted rows belong to the planned route for ${_escapeHtml(_workflowEntryContext?.session_label || `Unit Session ${previewSessionNumber}`)}.`}
-                </p>
+                  </p>
+                </div>
               </div>` : ''}
               ${previewSessionNumber && previewSummaryBadges.length ? `
               <div class="flex flex-wrap gap-2 px-1 mb-1">
