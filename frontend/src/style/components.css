@@ -330,32 +330,43 @@
     display: none;
 }
 
+.workflow-top-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+    padding: 8px 10px 0;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.75), rgba(255, 255, 255, 0.98));
+}
+
 .tab-btn {
     display: flex;
     align-items: center;
     gap: var(--s-2);
     font-size: 13px;
     font-weight: 500;
-    padding: var(--s-3) var(--s-4);
+    padding: 11px 14px 12px;
     color: var(--text-secondary);
-    background: none;
+    background: transparent;
     border: none;
     border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
     cursor: pointer;
     white-space: nowrap;
     transition: color var(--duration-sm) var(--ease),
-        border-color var(--duration-sm) var(--ease);
+        border-color var(--duration-sm) var(--ease),
+        background-color var(--duration-sm) var(--ease);
+    border-radius: 14px 14px 0 0;
 }
 
 .tab-btn:hover {
     color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.72);
 }
 
 .tab-btn.active {
     color: var(--blue-700);
     border-bottom-color: var(--blue-600);
     font-weight: 600;
+    background: rgba(255, 255, 255, 0.96);
 }
 
 .tab-panel {
@@ -1118,21 +1129,41 @@
     display: flex;
     align-items: center;
     gap: var(--s-3);
-    padding: var(--s-3) var(--s-4);
-    background: linear-gradient(135deg, var(--amber-50), var(--white));
-    border: 1.5px solid var(--amber-400);
-    border-radius: var(--r-md);
+    padding: 12px 14px;
+    background: linear-gradient(90deg, rgba(255, 247, 237, 0.98), rgba(255, 255, 255, 0.98));
+    border: 1px solid #f6c56e;
+    border-radius: 18px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
     font-size: 13px;
     font-weight: 500;
 }
 
 .live-dot {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
     border-radius: var(--r-full);
     background: var(--amber-500);
     animation: pulse 1.5s infinite;
     flex-shrink: 0;
+}
+
+.live-banner-copy {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    min-width: 0;
+}
+
+.live-banner-title {
+    color: var(--amber-800);
+    font-weight: 600;
+}
+
+.live-banner-meta {
+    color: var(--amber-600);
+    font-size: 12px;
 }
 
 /* ---- OWNER TABLE ---- */

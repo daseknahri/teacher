@@ -3520,9 +3520,9 @@ function _render(el, classId) {
       ${session ? `
       <div class="live-banner">
         <div class="live-dot"></div>
-        <div class="flex-1">
-          <span class="font-semibold text-amber-800">Session in progress${session.unit_session_number ? ` • Unit Session ${session.unit_session_number}` : ''}</span>
-          <span class="text-amber-600 ml-2 text-[12px]">Started at ${fmtTime(session.start_time)} | ${fmtDate(session.session_date || session.date)}</span>
+        <div class="live-banner-copy">
+          <span class="live-banner-title">Session in progress${session.unit_session_number ? ` • Unit Session ${session.unit_session_number}` : ''}</span>
+          <span class="live-banner-meta">Started at ${fmtTime(session.start_time)} | ${fmtDate(session.session_date || session.date)}</span>
         </div>
         <button id="btn-end-session-banner"
           class="btn btn-danger btn-sm">End Session</button>
@@ -3530,7 +3530,7 @@ function _render(el, classId) {
 
       <!-- Tab strip -->
       <div class="card overflow-hidden">
-        <div class="flex border-b border-slate-100">
+        <div class="workflow-top-tabs border-b border-slate-100">
           ${tabs.map((t, i) => `
           <button class="tab-btn flex-1 justify-center ${i === _activeTab ? 'active' : ''} ${t.disabled ? 'disabled-tab' : ''}"
                   data-tab="${i}">${t.label}</button>`).join('')}
