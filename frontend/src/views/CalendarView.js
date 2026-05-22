@@ -4132,10 +4132,10 @@ function _renderCalendar(el, classId) {
         <div class="flex flex-col gap-4">
           <div class="rounded-2xl border border-blue-100 bg-[linear-gradient(180deg,rgba(239,246,255,0.95),rgba(255,255,255,0.98))] p-4 sm:p-5 shadow-sm">
             <div class="flex flex-col gap-4">
-              <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-                <div class="min-w-0 lg:flex-1">
+              <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)] gap-3 items-start">
+                <div class="min-w-0 rounded-2xl border border-white/80 bg-white/70 px-4 py-4 shadow-sm">
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">Session Record</p>
-                  <p class="mt-1 text-[21px] font-semibold tracking-tight text-slate-900">${_escapeHtml(selectedEvent.unit_title || 'Session')}</p>
+                  <p class="mt-1 text-[26px] font-semibold tracking-tight leading-tight text-slate-900 break-words">${_escapeHtml(selectedEvent.unit_title || 'Session')}</p>
                   <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500">
                     <span>${_escapeHtml(fmtDate(selectedEvent.session_date || selectedEvent.date))}</span>
                     <span class="text-slate-300">&middot;</span>
@@ -4148,9 +4148,10 @@ function _renderCalendar(el, classId) {
                     <span class="badge badge-gray">${selectedHeadlineCount} headlines</span>
                   </div>
                 </div>
-                <div class="rounded-2xl border border-white/80 bg-white/90 px-4 py-4 shadow-sm lg:min-w-[280px]">
+                <div class="rounded-2xl border border-white/80 bg-white/90 px-4 py-4 shadow-sm">
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focus For Now</p>
-                  <p class="mt-2 text-[13px] leading-relaxed text-slate-700">This session detail keeps the classroom record simple: attendance, recorded checklist structure, and teacher note. Extra AI tools can come back later one by one.</p>
+                  <p class="mt-2 text-[13px] leading-relaxed text-slate-700">This page keeps only the classroom record: attendance, recorded checklist structure, and teacher note.</p>
+                  <p class="mt-2 text-[12px] text-slate-500">Extra AI tools can come back later one by one.</p>
                 </div>
               </div>
               ${hasOtherActiveWorkflowSession ? `
