@@ -4130,32 +4130,32 @@ function _renderCalendar(el, classId) {
           </div>
         </div>
         <div class="flex flex-col gap-4">
-          <div class="rounded-2xl border border-blue-100 bg-[linear-gradient(180deg,rgba(239,246,255,0.95),rgba(255,255,255,0.98))] p-4 sm:p-5 shadow-sm">
-            <div class="flex flex-col gap-4">
-              <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)] gap-3 items-start">
-                <div class="min-w-0 rounded-2xl border border-white/80 bg-white/70 px-4 py-4 shadow-sm">
+          <div class="rounded-2xl border border-blue-100 bg-[linear-gradient(180deg,rgba(239,246,255,0.95),rgba(255,255,255,0.98))] p-3.5 sm:p-4 shadow-sm">
+            <div class="flex flex-col gap-3">
+              <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.55fr)] gap-3 items-start">
+                <div class="min-w-0 rounded-2xl border border-white/80 bg-white/75 px-4 py-3.5 shadow-sm">
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">Session Record</p>
-                  <p class="mt-1 text-[26px] font-semibold tracking-tight leading-tight text-slate-900 break-words">${_escapeHtml(selectedEvent.unit_title || 'Session')}</p>
-                  <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500">
+                  <p class="mt-1 text-[23px] font-semibold tracking-tight leading-tight text-slate-900 break-words">${_escapeHtml(selectedEvent.unit_title || 'Session')}</p>
+                  <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500">
                     <span>${_escapeHtml(fmtDate(selectedEvent.session_date || selectedEvent.date))}</span>
                     <span class="text-slate-300">&middot;</span>
                     <span>${_escapeHtml(`${fmtTime(selectedEvent.start_time)}${selectedEvent.end_time ? ` -> ${fmtTime(selectedEvent.end_time)}` : ''}`)}</span>
                     ${selectedSessionNumber ? `<span class="text-slate-300">&middot;</span><span>Unit Session ${Number(selectedSessionNumber)}</span>` : ''}
                   </div>
-                  <div class="mt-3 flex gap-2 flex-wrap">
+                  <div class="mt-2.5 flex gap-2 flex-wrap">
                     <span class="badge ${selectedSessionStateClass}">${_escapeHtml(selectedSessionStateLabel)}</span>
                     ${selectedMatchesActiveWorkflow ? '<span class="badge badge-amber">Live in Workflow</span>' : ''}
                     <span class="badge badge-gray">${selectedHeadlineCount} headlines</span>
                   </div>
                 </div>
-                <div class="rounded-2xl border border-white/80 bg-white/90 px-4 py-4 shadow-sm">
+                <div class="rounded-2xl border border-white/80 bg-white/90 px-4 py-3.5 shadow-sm">
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focus For Now</p>
-                  <p class="mt-2 text-[13px] leading-relaxed text-slate-700">This page keeps only the classroom record: attendance, recorded checklist structure, and teacher note.</p>
-                  <p class="mt-2 text-[12px] text-slate-500">Extra AI tools can come back later one by one.</p>
+                  <p class="mt-1.5 text-[12px] leading-relaxed text-slate-700">Keep only the classroom record here: attendance, recorded checklist structure, and teacher note.</p>
+                  <p class="mt-1.5 text-[11px] text-slate-500">We can add extra tools back later, one by one.</p>
                 </div>
               </div>
               ${hasOtherActiveWorkflowSession ? `
-                <div class="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3">
+                <div class="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5">
                   <p class="text-[12px] font-semibold text-amber-800">Another workflow session is currently active</p>
                   <p class="text-[12px] text-amber-700 mt-1">
                     ${_escapeHtml(String(activeWorkflowSession?.unit_title || 'Active unit session'))}
@@ -4168,12 +4168,12 @@ function _renderCalendar(el, classId) {
             </div>
           </div>
 
-          <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div class="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
             <div class="flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Classroom Record</p>
-                <p class="mt-1 text-[15px] font-semibold text-slate-800">Attendance, recorded checklist structure, and session note</p>
-                <p class="mt-1 text-[12px] text-slate-500">The saved session structure we keep for later work with NotebookLM.</p>
+                <p class="mt-1 text-[14px] font-semibold text-slate-800">Attendance, recorded checklist structure, and session note</p>
+                <p class="mt-1 text-[11px] text-slate-500">The saved session structure we keep for later work with NotebookLM.</p>
               </div>
               <div class="flex gap-2 flex-wrap text-[11px]">
                 <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600">${selectedPresentCount} present</span>
@@ -4182,12 +4182,12 @@ function _renderCalendar(el, classId) {
                 <span class="badge ${selectedSessionNotePreview ? 'badge-blue' : 'badge-gray'}">${selectedSessionNotePreview ? 'Note saved' : 'No note yet'}</span>
               </div>
             </div>
-            <div class="mt-3 grid grid-cols-1 xl:grid-cols-[0.92fr_1.08fr_0.9fr] gap-3">
-              <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+            <div class="mt-2.5 grid grid-cols-1 xl:grid-cols-[0.92fr_1.08fr_0.9fr] gap-3">
+              <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-2.5">
                 <div class="flex items-center justify-between gap-2">
                   <div>
                     <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Absent Students</h4>
-                    <p class="mt-1 text-[11px] text-slate-500">Who missed this lesson.</p>
+                    <p class="mt-0.5 text-[10px] text-slate-500">Who missed this lesson.</p>
                   </div>
                   <button id="btn-edit-selected-attendance" class="btn btn-ghost btn-sm" ${selectedCanAttendanceEdit ? '' : 'disabled'} title="${_escapeHtml(selectedAttendanceTitle)}">Edit Attendance</button>
                 </div>
@@ -4199,7 +4199,7 @@ function _renderCalendar(el, classId) {
              <button id="btn-retry-session-detail" class="btn btn-ghost btn-sm self-start">Retry details</button>
            </div>`
         : absentRows.length
-          ? `<div class="mt-2 flex flex-col gap-1.5 max-h-[180px] overflow-auto pr-1">
+          ? `<div class="mt-2 flex flex-col gap-1.5 max-h-[165px] overflow-auto pr-1">
                   ${absentRows.map(row => `
                   <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] text-slate-700">
                     ${_escapeHtml(row.name)}
@@ -4209,27 +4209,27 @@ function _renderCalendar(el, classId) {
           : '<div class="mt-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-2.5 text-[12px] text-emerald-700">No absent students were recorded for this session.</div>'}
               </div>
 
-              <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+              <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-2.5">
                 <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Headlines Structure</h4>
-                <p class="mt-1 text-[11px] text-slate-500">The captured structure of what was taught.</p>
+                <p class="mt-0.5 text-[10px] text-slate-500">The captured structure of what was taught.</p>
                 ${_selectedSessionLoading
       ? '<p class="text-[12px] text-slate-500 mt-2">Loading session progress...</p>'
       : _selectedSessionError
         ? '<p class="text-[12px] text-slate-500 mt-2">Unable to load detailed progress. Showing available calendar data only.</p>'
         : ''}
                 ${headlineBlocks.length
-      ? `<div class="mt-2 flex flex-col gap-1.5 max-h-[180px] overflow-auto pr-1">
+      ? `<div class="mt-2 flex flex-col gap-1.5 max-h-[165px] overflow-auto pr-1">
                  ${headlineBlocks.map(block => `
-                 <div class="rounded-xl border border-slate-200 bg-white px-3 py-2.5">
+                 <div class="rounded-xl border border-slate-200 bg-white px-3 py-2">
                    <div class="flex items-center justify-between gap-2">
                      <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(block.label)}</p>
                      <span class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">${Array.isArray(block.outlineRows) ? block.outlineRows.length : (Array.isArray(block.items) ? block.items.length : 0)} item${((Array.isArray(block.outlineRows) ? block.outlineRows.length : (Array.isArray(block.items) ? block.items.length : 0)) === 1) ? '' : 's'}</span>
                    </div>
-                   ${block.context ? `<p class="mt-1 text-[10px] text-slate-400 leading-relaxed">${_escapeHtml(block.context)}</p>` : ''}
+                   ${block.context ? `<p class="mt-0.5 text-[10px] text-slate-400 leading-relaxed">${_escapeHtml(block.context)}</p>` : ''}
                    ${Array.isArray(block.outlineRows) && block.outlineRows.length
         ? `<div class="mt-2 flex flex-col gap-1">
                        ${block.outlineRows.map(row => `
-                         <div class="rounded-lg border border-slate-100 bg-slate-50/60 px-2.5 py-1.5" style="margin-left:${Math.max(0, Number(row.depth || 0)) * 12}px">
+                         <div class="rounded-lg border border-slate-100 bg-slate-50/60 px-2.5 py-1.5" style="margin-left:${Math.max(0, Number(row.depth || 0)) * 10}px">
                            <p class="text-[11px] leading-relaxed ${row.isLeaf ? 'text-slate-700' : 'font-semibold text-slate-600'}">${_escapeHtml(row.text)}</p>
                          </div>
                        `).join('')}
@@ -4241,11 +4241,11 @@ function _renderCalendar(el, classId) {
                </div>`
       : '<div class="mt-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-[12px] text-slate-500">No headlines were recorded for this session.</div>'}
               </div>
-            <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-3">
+            <div class="rounded-2xl border border-slate-200 bg-slate-50/70 p-2.5">
               <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Session Note</h4>
-              <p class="mt-1 text-[11px] text-slate-500">Teacher note captured for this lesson.</p>
+              <p class="mt-0.5 text-[10px] text-slate-500">Teacher note captured for this lesson.</p>
               ${selectedSessionNotePreview
-      ? `<p class="mt-2 text-[12px] text-slate-700 whitespace-pre-wrap leading-relaxed">${_escapeHtml(selectedSessionNotePreview)}</p>${selectedSessionNote.length > selectedSessionNotePreview.length ? '<p class="mt-2 text-[11px] text-slate-400">The note is longer in full edit view.</p>' : ''}`
+      ? `<p class="mt-2 text-[12px] text-slate-700 whitespace-pre-wrap leading-relaxed">${_escapeHtml(selectedSessionNotePreview)}</p>${selectedSessionNote.length > selectedSessionNotePreview.length ? '<p class="mt-1.5 text-[10px] text-slate-400">The note is longer in full edit view.</p>' : ''}`
       : '<p class="text-[12px] text-slate-500 mt-2">No note for this session.</p>'}
             </div>
           </div>
