@@ -3711,10 +3711,26 @@ function _render(el, classId) {
             </div>` : '<p class="text-[13px] text-slate-400">No checklist items for this unit.</p>'}
             ` : `
             <!-- No active unit -->
-            <div class="text-center py-12 bg-slate-50/50 rounded-2xl border border-dashed border-slate-200">
-              <div class="text-xl font-black opacity-30 mb-4">UNIT</div>
-              <h3 class="font-bold text-slate-800 mb-2">No active unit</h3>
-              <p class="text-[13px] text-slate-500 max-w-[240px] mx-auto">Create a new unit below or upload a PDF to extract a curriculum.</p>
+            <div class="rounded-3xl border border-dashed border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.85),rgba(255,255,255,0.98))] px-5 py-6 flex flex-col gap-4">
+              <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div class="min-w-0">
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Start Here</p>
+                  <h3 class="mt-1 text-[22px] font-semibold tracking-tight text-slate-800">No active unit</h3>
+                  <p class="mt-2 text-[13px] leading-relaxed text-slate-500 max-w-[640px]">Create the next unit below or extract its checklist from a PDF. Once the checklist is right, we build the rest of the workflow on top of it.</p>
+                </div>
+                <div class="flex flex-wrap gap-2 text-[11px]">
+                  <span class="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-600">1. Create or extract</span>
+                  <span class="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-600">2. Review checklist</span>
+                  <span class="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-600">3. Start teaching</span>
+                </div>
+              </div>
+              <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p class="text-[12px] font-semibold text-slate-700">Next step</p>
+                  <p class="mt-1 text-[12px] text-slate-500">Use the creation panel below to add a unit manually or extract one from PDF.</p>
+                </div>
+                <span class="text-[18px] text-slate-300 self-end sm:self-auto">↓</span>
+              </div>
             </div>`}
 
             <!-- Create unit form -->
