@@ -3718,49 +3718,95 @@ function _render(el, classId) {
             </div>`}
 
             <!-- Create unit form -->
-            <div class="bg-slate-50 rounded-2xl border border-slate-200 p-4 flex flex-col gap-3">
-              <h4 class="text-[13px] font-semibold text-slate-600">New Unit</h4>
-              <!-- Unit type selector -->
-              <div>
-                <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Unit Type</p>
-                <div class="unit-type-selector">
-                  ${UNIT_TYPES.map(t => `
-                  <button class="unit-type-btn ${_selectedUnitType === t.key ? 'selected' : ''} ${unit ? 'cursor-not-allowed' : ''}" data-unit-type="${t.key}" ${unit ? 'disabled' : ''}>
-                    <span class="unit-type-icon">${t.icon}</span>
-                    ${t.label}
-                  </button>`).join('')}
+            <div class="bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,0.98))] rounded-3xl border border-slate-200 p-5 flex flex-col gap-4 shadow-sm">
+              <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div class="min-w-0">
+                  <h4 class="text-[17px] font-semibold tracking-tight text-slate-800">${unit ? 'Create Next Unit Later' : 'Create Next Unit'}</h4>
+                  <p class="mt-1 text-[12px] leading-relaxed text-slate-500 max-w-[680px]">
+                    ${unit
+                      ? 'Finish or close the current unit first. Then this is where the next extracted checklist enters the workflow.'
+                      : 'Start the next unit here. You can create it manually or extract its checklist from a PDF, then build the rest one layer at a time.'}
+                  </p>
+                </div>
+                <div class="flex flex-wrap gap-2 text-[11px]">
+                  <span class="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-600">Checklist first</span>
+                  <span class="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-600">PDF extraction ready</span>
+                  <span class="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-600">One layer at a time</span>
                 </div>
               </div>
-              <input id="unit-name" type="text" placeholder="Unit title (e.g. Chapter 4 - Photosynthesis)" ${unit ? 'disabled' : ''} />
-              <input id="unit-planned-hours" type="number" min="0.25" step="0.25" placeholder="Planned hours (optional, > 0)" ${unit ? 'disabled' : ''} />
-              <div class="rounded-xl border border-slate-200 bg-white p-3 flex flex-col gap-2">
-                <label class="inline-flex items-center gap-2 text-[12px] text-slate-700">
-                  <input id="unit-auto-plan-enable" type="checkbox" ${unit ? 'disabled' : ''} />
-                  <span class="font-semibold">Auto-create sessions from timetable</span>
-                </label>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div class="flex flex-col gap-1">
-                    <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Sessions Count</label>
-                    <input id="unit-auto-plan-count" type="number" min="1" max="120" step="1" value="6" disabled />
-                  </div>
-                  <div class="flex flex-col gap-1">
-                    <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Start From</label>
-                    <input id="unit-auto-plan-start-date" type="date" value="${_escapeHtml(todayDateValue)}" disabled />
-                  </div>
-                </div>
-                <p class="text-[11px] text-slate-500">Uses class emploi, skips blocked Morocco holidays, and jumps to next valid slots automatically.</p>
-              </div>
-              <p id="unit-form-error" class="text-[12px] text-red-600 hidden"></p>
-              <div class="flex gap-2 flex-wrap sm:flex-nowrap">
-                <button id="btn-create-unit" class="btn btn-primary flex-1 sm:flex-none ${unit ? 'opacity-60 cursor-not-allowed' : ''}" ${unit ? 'disabled title="Close the current active unit first."' : ''}> Create Unit</button>
-                <label id="pdf-upload-label" class="btn btn-secondary flex-1 sm:flex-none cursor-pointer ${unit ? 'opacity-60 pointer-events-none' : ''}" ${unit ? 'title="Close the current active unit first."' : ''}>
-                   Extract from PDF
-                  <input id="pdf-upload" type="file" accept=".pdf" class="hidden" ${unit ? 'disabled' : ''} />
-                </label>
-              </div>
+
               ${unit
-      ? '<p class="text-[12px] text-amber-700">Close the current active unit before creating or extracting a new one.</p>'
-      : '<p class="text-[12px] text-slate-500">Create a unit manually or extract one from a PDF.</p>'}
+                ? '<div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">A unit is already active. Close or finish it before creating or extracting the next one.</div>'
+                : ''}
+
+              <div class="grid grid-cols-1 xl:grid-cols-[1.05fr_0.95fr] gap-4">
+                <div class="rounded-2xl border border-slate-200 bg-white p-4 flex flex-col gap-3">
+                  <div>
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Basics</p>
+                    <p class="mt-1 text-[12px] text-slate-500">Choose the unit type and give it a clear title.</p>
+                  </div>
+                  <div>
+                    <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Unit Type</p>
+                    <div class="unit-type-selector">
+                      ${UNIT_TYPES.map(t => `
+                      <button class="unit-type-btn ${_selectedUnitType === t.key ? 'selected' : ''} ${unit ? 'cursor-not-allowed' : ''}" data-unit-type="${t.key}" ${unit ? 'disabled' : ''}>
+                        <span class="unit-type-icon">${t.icon}</span>
+                        ${t.label}
+                      </button>`).join('')}
+                    </div>
+                  </div>
+                  <div class="grid grid-cols-1 gap-3">
+                    <div class="flex flex-col gap-1">
+                      <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Unit Title</label>
+                      <input id="unit-name" type="text" placeholder="Unit title (e.g. Chapter 4 - Photosynthesis)" ${unit ? 'disabled' : ''} />
+                    </div>
+                    <div class="flex flex-col gap-1">
+                      <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Planned Hours</label>
+                      <input id="unit-planned-hours" type="number" min="0.25" step="0.25" placeholder="Optional, > 0" ${unit ? 'disabled' : ''} />
+                    </div>
+                  </div>
+                </div>
+
+                <div class="rounded-2xl border border-slate-200 bg-white p-4 flex flex-col gap-3">
+                  <div>
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Planning</p>
+                    <p class="mt-1 text-[12px] text-slate-500">Optionally create the first session plan from the timetable.</p>
+                  </div>
+                  <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3 flex flex-col gap-3">
+                    <label class="inline-flex items-center gap-2 text-[12px] text-slate-700">
+                      <input id="unit-auto-plan-enable" type="checkbox" ${unit ? 'disabled' : ''} />
+                      <span class="font-semibold">Auto-create sessions from timetable</span>
+                    </label>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div class="flex flex-col gap-1">
+                        <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Sessions Count</label>
+                        <input id="unit-auto-plan-count" type="number" min="1" max="120" step="1" value="6" disabled />
+                      </div>
+                      <div class="flex flex-col gap-1">
+                        <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Start From</label>
+                        <input id="unit-auto-plan-start-date" type="date" value="${_escapeHtml(todayDateValue)}" disabled />
+                      </div>
+                    </div>
+                    <p class="text-[11px] text-slate-500">Uses class emploi, skips blocked Morocco holidays, and jumps to the next valid slot automatically.</p>
+                  </div>
+                </div>
+              </div>
+
+              <p id="unit-form-error" class="text-[12px] text-red-600 hidden"></p>
+
+              <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Create Or Extract</p>
+                  <p class="mt-1 text-[12px] text-slate-500">${unit ? 'Unit creation is paused until the current active unit is closed.' : 'Create manually if you already know the structure, or extract the checklist directly from a PDF.'}</p>
+                </div>
+                <div class="flex gap-2 flex-wrap sm:flex-nowrap">
+                  <button id="btn-create-unit" class="btn btn-primary flex-1 sm:flex-none ${unit ? 'opacity-60 cursor-not-allowed' : ''}" ${unit ? 'disabled title="Close the current active unit first."' : ''}>Create Unit</button>
+                  <label id="pdf-upload-label" class="btn btn-secondary flex-1 sm:flex-none cursor-pointer ${unit ? 'opacity-60 pointer-events-none' : ''}" ${unit ? 'title="Close the current active unit first."' : ''}>
+                    Extract from PDF
+                    <input id="pdf-upload" type="file" accept=".pdf" class="hidden" ${unit ? 'disabled' : ''} />
+                  </label>
+                </div>
+              </div>
             </div>
 
             ${recentSessions.length ? `
