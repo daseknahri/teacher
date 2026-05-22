@@ -1465,9 +1465,186 @@ def build_source_section_lesson_package(
     }
 
 
+def _strip_non_json_control_chars(text: str) -> str:
+    return "".join(ch for ch in str(text or "") if ord(ch) >= 32 or ch in "\n\r\t")
+
+
+def _raw_sections_from_content_bank_payload(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return []
+    content_bank = payload.get("content_bank")
+    pedagogy_sequence = payload.get("pedagogy_sequence")
+    if not isinstance(content_bank, list) or not isinstance(pedagogy_sequence, list):
+        return []
+
+    bank_by_id: dict[str, dict[str, Any]] = {}
+    grouped_by_path: dict[tuple[str, ...], list[dict[str, Any]]] = {}
+    for row in content_bank:
+        if not isinstance(row, dict):
+            continue
+        content_id = str(row.get("content_id") or "").strip()
+        content_label = _normalize_outline_title(row.get("content_label"))
+        content_type = _normalize_content_block_kind(row.get("content_type"))
+        exact_content = _normalize_content_block_markdown(row.get("exact_content"), limit=12000)
+        source_path = _normalize_content_block_path(
+            row.get("source_heading_path"),
+            fallback_section_title=content_label or content_id,
+        )
+        pedagogical_path = _normalize_content_block_path(
+            row.get("pedagogical_section_path"),
+            fallback_section_title=source_path[-1] if source_path else (content_label or content_id),
+        )
+        if not content_id or not exact_content or not pedagogical_path:
+            continue
+        try:
+            source_order = int(row.get("source_order") or 0)
+        except Exception:
+            source_order = 0
+        normalized = {
+            "content_id": content_id,
+            "content_label": content_label or content_id,
+            "content_type": content_type,
+            "exact_content": exact_content,
+            "source_heading_path": source_path,
+            "pedagogical_section_path": pedagogical_path,
+            "source_order": source_order,
+        }
+        bank_by_id[content_id] = normalized
+        grouped_by_path.setdefault(tuple(pedagogical_path), []).append(normalized)
+
+    rows: list[dict[str, Any]] = []
+    seen_paths: set[tuple[str, ...]] = set()
+    for section_index, row in enumerate(pedagogy_sequence, start=1):
+        if not isinstance(row, dict):
+            continue
+        section_title = _normalize_outline_title(row.get("section_title"))
+        section_path = _normalize_content_block_path(row.get("section_path"), fallback_section_title=section_title)
+        if section_path:
+            section_title = section_path[-1]
+        if not section_title or not section_path:
+            continue
+        refs = row.get("content_ids") if isinstance(row.get("content_ids"), list) else []
+        blocks: list[dict[str, Any]] = []
+        for block_index, content_id in enumerate(refs, start=1):
+            entry = bank_by_id.get(str(content_id or "").strip())
+            if not entry:
+                continue
+            blocks.append(
+                {
+                    "title": entry["content_label"],
+                    "kind": entry["content_type"],
+                    "kind_label": {
+                        "activity": "Activity",
+                        "lesson": "Lesson",
+                        "definition": "Definition",
+                        "property": "Property",
+                        "example": "Example",
+                        "exercise": "Exercise",
+                        "evaluation": "Assessment",
+                        "content": "Content",
+                    }.get(entry["content_type"], "Content"),
+                    "teaching_phase": _normalize_content_block_phase(None, kind=entry["content_type"], title=entry["content_label"]),
+                    "content_md": entry["exact_content"],
+                    "content_source": "exact_content",
+                    "order_index": block_index,
+                    "content_id": entry["content_id"],
+                }
+            )
+        if not blocks:
+            path_key = tuple(section_path)
+            fallback_entries = grouped_by_path.get(path_key, [])
+            fallback_entries = sorted(fallback_entries, key=lambda item: (int(item.get("source_order") or 0), _semantic_title_key(item.get("content_label"))))
+            for block_index, entry in enumerate(fallback_entries, start=1):
+                blocks.append(
+                    {
+                        "title": entry["content_label"],
+                        "kind": entry["content_type"],
+                        "kind_label": {
+                            "activity": "Activity",
+                            "lesson": "Lesson",
+                            "definition": "Definition",
+                            "property": "Property",
+                            "example": "Example",
+                            "exercise": "Exercise",
+                            "evaluation": "Assessment",
+                            "content": "Content",
+                        }.get(entry["content_type"], "Content"),
+                        "teaching_phase": _normalize_content_block_phase(None, kind=entry["content_type"], title=entry["content_label"]),
+                        "content_md": entry["exact_content"],
+                        "content_source": "exact_content",
+                        "order_index": block_index,
+                        "content_id": entry["content_id"],
+                    }
+                )
+        rows.append(
+            {
+                "section_title": section_title,
+                "section_path_json": section_path,
+                "order_index": int(row.get("sequence_order") or section_index),
+                "source_blocks": blocks,
+                "source_excerpt_md": "\n\n".join(
+                    str(block.get("content_md") or "").strip()
+                    for block in blocks
+                    if str(block.get("content_md") or "").strip()
+                ).strip()
+                or None,
+            }
+        )
+        seen_paths.add(tuple(section_path))
+
+    if not rows:
+        ordered_group_keys = sorted(
+            grouped_by_path.keys(),
+            key=lambda key: min(int(entry.get("source_order") or 0) or 999999 for entry in grouped_by_path.get(key, [])),
+        )
+        for section_index, path_key in enumerate(ordered_group_keys, start=1):
+            entries = sorted(
+                grouped_by_path.get(path_key, []),
+                key=lambda item: (int(item.get("source_order") or 0), _semantic_title_key(item.get("content_label"))),
+            )
+            if not entries:
+                continue
+            section_path = list(path_key)
+            rows.append(
+                {
+                    "section_title": section_path[-1],
+                    "section_path_json": section_path,
+                    "order_index": section_index,
+                    "source_blocks": [
+                        {
+                            "title": entry["content_label"],
+                            "kind": entry["content_type"],
+                            "kind_label": {
+                                "activity": "Activity",
+                                "lesson": "Lesson",
+                                "definition": "Definition",
+                                "property": "Property",
+                                "example": "Example",
+                                "exercise": "Exercise",
+                                "evaluation": "Assessment",
+                                "content": "Content",
+                            }.get(entry["content_type"], "Content"),
+                            "teaching_phase": _normalize_content_block_phase(None, kind=entry["content_type"], title=entry["content_label"]),
+                            "content_md": entry["exact_content"],
+                            "content_source": "exact_content",
+                            "order_index": block_index,
+                            "content_id": entry["content_id"],
+                        }
+                        for block_index, entry in enumerate(entries, start=1)
+                    ],
+                    "source_excerpt_md": "\n\n".join(entry["exact_content"] for entry in entries if entry.get("exact_content")).strip() or None,
+                }
+            )
+    rows.sort(key=lambda row: (int(row.get("order_index") or 0), _semantic_title_key(row.get("section_title"))))
+    return rows
+
+
 def _raw_sections_from_content_pack(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
     if not isinstance(payload, dict):
         return []
+    content_bank_rows = _raw_sections_from_content_bank_payload(payload)
+    if content_bank_rows:
+        return content_bank_rows
     kind_labels = {
         "activity": "Activity",
         "lesson": "Lesson",
@@ -7350,6 +7527,7 @@ def _json_object_from_text(text: str) -> dict | None:
     fenced_match = re.search(r"```(?:json)?\s*(\{[\s\S]*\})\s*```", text, re.IGNORECASE)
     if fenced_match:
         text = fenced_match.group(1).strip()
+    text = _strip_non_json_control_chars(text)
     try:
         return json.loads(text)
     except Exception:

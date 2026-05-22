@@ -61,6 +61,56 @@ Regles obligatoires:
 """.strip()
 
 
+STRICT_CONTENT_BANK_V2_PROMPT = """
+Lis ce PDF comme une unite pedagogique complete de mathematiques.
+
+Ta mission a 2 etapes inseparables:
+1. extraire tous les contenus pedagogiques exacts du document dans une banque de contenus
+2. construire une sequence pedagogique ordonnee qui reutilise uniquement les identifiants de cette banque
+
+Retourne uniquement un JSON strict avec cette forme:
+{
+  "unit_title": "...",
+  "content_bank": [
+    {
+      "content_id": "S01-B01",
+      "content_label": "nom exact visible du contenu, nettoye sans puce ni etoile",
+      "content_type": "activity|lesson|definition|property|example|exercise|evaluation|content",
+      "source_heading_path": ["rubrique exacte du document", "sous-rubrique exacte"],
+      "pedagogical_section_path": ["grand titre d'apprentissage", "section exacte", "sous-section exacte si visible"],
+      "source_order": 1,
+      "exact_content": "contenu exact utile du PDF pour ce contenu, sans resume, sans ajout, sans reformulation"
+    }
+  ],
+  "pedagogy_sequence": [
+    {
+      "section_title": "titre pedagogique exact le plus precis",
+      "section_path": ["grand titre d'apprentissage", "section exacte", "sous-section exacte si visible"],
+      "sequence_order": 1,
+      "content_ids": ["S01-B01", "S01-B02", "S01-B03"]
+    }
+  ]
+}
+
+Regles obligatoires:
+- content_bank est la source de verite.
+- pedagogy_sequence doit reutiliser uniquement des content_ids deja presents dans content_bank.
+- N'invente aucun contenu nouveau.
+- N'ajoute aucune activite, aucune synthese, aucune reformulation pedagogique.
+- Garde l'ordre exact du document.
+- content_label doit reprendre le nom visible le plus proche, mais nettoye sans caracteres decoratifs comme "*", "-", puces ou doubles points inutiles.
+- Si le document montre seulement "Règle", "Exemples", "Exercice 1", garde exactement ce label nettoye comme content_label.
+- Si deux contenus partagent le meme content_label dans des sections differentes, garde le meme label mais donne des content_id differents.
+- source_heading_path doit garder le chemin physique exact du document, meme s'il contient une rubrique generique comme "Activités" ou "Evaluation".
+- pedagogical_section_path doit rattacher chaque contenu a la section d'apprentissage la plus precise; n'utilise PAS "Activités", "Evaluation", "Contenu de la leçon" comme chemin pedagogique principal s'il existe une section pedagogique plus precise.
+- Si un exercice contient plusieurs sous-questions a), b), c), garde un seul contenu nomme, et laisse les sous-questions dans exact_content.
+- Ne cree PAS de faux noms comme "Exercice 1 : 1", "Exemple 1 : 2", "Activité 1 : 1" sauf si ces noms sont visibles tels quels dans le PDF.
+- Garde les mathematiques, listes, numerotations et suites d'exercices aussi fidelement que possible.
+- Ignore les rubriques meta enseignant comme objectifs, prerequis, competences, outils, gestion du temps.
+- Ne retourne aucun commentaire hors JSON.
+""".strip()
+
+
 REFINED_SECTION_PROMPT = """
 Lis ce PDF comme une unite pedagogique complete de mathematiques.
 
@@ -110,6 +160,7 @@ def _extract_json_payload(text: str) -> dict | None:
         end = raw.rfind("}")
         if start >= 0 and end > start:
             raw = raw[start : end + 1]
+    raw = "".join(ch for ch in raw if ord(ch) >= 32 or ch in "\n\r\t")
     try:
         return json.loads(raw)
     except Exception:
@@ -150,8 +201,10 @@ def _summarize_payload(label: str, payload: dict | None) -> str:
             if not isinstance(row, dict):
                 continue
             path = " > ".join(str(part or "").strip() for part in (row.get("section_path") or []) if str(part or "").strip())
-            names = row.get("content_names") if isinstance(row.get("content_names"), list) else []
-            lines.append(f"- {path} | content_names={len(names)}")
+            refs = row.get("content_ids") if isinstance(row.get("content_ids"), list) else (
+                row.get("content_names") if isinstance(row.get("content_names"), list) else []
+            )
+            lines.append(f"- {path} | refs={len(refs)}")
         return "\n".join(lines)
     return f"{label}: unknown JSON shape"
 
@@ -180,11 +233,13 @@ async def _run(pdf_path: Path, *, title: str, unit_type: WorkflowUnitType, outpu
             current_answer = await opened.chat.ask(notebook_id, current_prompt, source_ids=[source_id])
             section_answer = await opened.chat.ask(notebook_id, REFINED_SECTION_PROMPT, source_ids=[source_id])
             bank_answer = await opened.chat.ask(notebook_id, STRICT_CONTENT_BANK_PROMPT, source_ids=[source_id])
+            bank_v2_answer = await opened.chat.ask(notebook_id, STRICT_CONTENT_BANK_V2_PROMPT, source_ids=[source_id])
 
             answers = {
                 "current": (current_prompt, str(getattr(current_answer, "answer", "") or "").strip()),
                 "section": (REFINED_SECTION_PROMPT, str(getattr(section_answer, "answer", "") or "").strip()),
                 "content_bank": (STRICT_CONTENT_BANK_PROMPT, str(getattr(bank_answer, "answer", "") or "").strip()),
+                "content_bank_v2": (STRICT_CONTENT_BANK_V2_PROMPT, str(getattr(bank_v2_answer, "answer", "") or "").strip()),
             }
 
             for name, (prompt, answer) in answers.items():

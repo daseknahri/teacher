@@ -7899,6 +7899,100 @@ def test_build_raw_section_index_uses_notebooklm_section_order():
     assert rows[1]["section_path_json"] == ["Rationnels", "Produit et division"]
 
 
+def test_build_raw_section_lesson_package_accepts_content_bank_sequence_shape():
+    from app.services import workflow_generation
+
+    payload = workflow_generation.build_raw_section_lesson_package(
+        section_title="1) Les dénominateurs sont les mêmes",
+        section_path=["I- Addition et soustraction", "1) Les dénominateurs sont les mêmes"],
+        item_path=["I- Addition et soustraction", "1) Les dénominateurs sont les mêmes", "Exemple 1"],
+        item_title="Exemple 1",
+        content_pack={
+            "content_bank": [
+                {
+                    "content_id": "S01-B01",
+                    "content_label": "Activité 1",
+                    "content_type": "activity",
+                    "source_heading_path": ["Activités"],
+                    "pedagogical_section_path": ["I- Addition et soustraction", "1) Les dénominateurs sont les mêmes"],
+                    "source_order": 1,
+                    "exact_content": "Calculer : 1/3 + 4/3 et 4/7 - 3/7",
+                },
+                {
+                    "content_id": "S01-B02",
+                    "content_label": "Règle",
+                    "content_type": "property",
+                    "source_heading_path": ["Contenu de la leçon", "I- Addition et soustraction", "1) Les dénominateurs sont les mêmes"],
+                    "pedagogical_section_path": ["I- Addition et soustraction", "1) Les dénominateurs sont les mêmes"],
+                    "source_order": 2,
+                    "exact_content": "On garde le dénominateur commun.",
+                },
+            ],
+            "pedagogy_sequence": [
+                {
+                    "section_title": "1) Les dénominateurs sont les mêmes",
+                    "section_path": ["I- Addition et soustraction", "1) Les dénominateurs sont les mêmes"],
+                    "sequence_order": 1,
+                    "content_ids": ["S01-B01", "S01-B02"],
+                }
+            ],
+        },
+    )
+
+    assert payload is not None
+    assert payload["source_block_count"] == 2
+    assert payload["source_blocks"][0]["title"] == "Activité 1"
+    assert payload["source_blocks"][1]["title"] == "Règle"
+    assert payload["source_blocks"][1]["content_md"] == "On garde le dénominateur commun."
+
+
+def test_build_raw_section_index_accepts_content_bank_sequence_shape():
+    from app.services import workflow_generation
+
+    rows = workflow_generation.build_raw_section_index(
+        {
+            "content_bank": [
+                {
+                    "content_id": "S01-B01",
+                    "content_label": "Définition",
+                    "content_type": "definition",
+                    "source_heading_path": ["Leçon"],
+                    "pedagogical_section_path": ["Chapitre", "Section A"],
+                    "source_order": 1,
+                    "exact_content": "Texte A",
+                },
+                {
+                    "content_id": "S02-B01",
+                    "content_label": "Exemple",
+                    "content_type": "example",
+                    "source_heading_path": ["Leçon"],
+                    "pedagogical_section_path": ["Chapitre", "Section B"],
+                    "source_order": 2,
+                    "exact_content": "Texte B",
+                },
+            ],
+            "pedagogy_sequence": [
+                {
+                    "section_title": "Section B",
+                    "section_path": ["Chapitre", "Section B"],
+                    "sequence_order": 2,
+                    "content_ids": ["S02-B01"],
+                },
+                {
+                    "section_title": "Section A",
+                    "section_path": ["Chapitre", "Section A"],
+                    "sequence_order": 1,
+                    "content_ids": ["S01-B01"],
+                },
+            ],
+        }
+    )
+
+    assert [row["section_title"] for row in rows] == ["Section A", "Section B"]
+    assert rows[0]["source_block_count"] == 1
+    assert rows[0]["section_path_json"] == ["Chapitre", "Section A"]
+
+
 def test_section_lesson_endpoint_returns_matching_section_content(client):
     headers = _auth_headers(client)
     class_resp = client.post(

@@ -51,6 +51,34 @@ Keep entries short and factual.
   - Run the new benchmark on 3 representative PDFs.
   - Compare whether `content_bank + pedagogy_sequence` is materially cleaner than the current section-first output before rewiring the app to it.
 
+### 2026-05-22 01:55 - Codex
+
+- Status: done
+- Goal: Validate whether a stricter `content_bank + pedagogy_sequence` NotebookLM contract is better than the current section-first extraction, and make the backend capable of understanding that shape directly.
+- Files expected:
+  - `backend/scripts/test_notebooklm_content_bank_extract.py`
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/test_app_flows.py`
+- Assumptions:
+  - The weak lesson output is caused mainly by the extraction contract, not only the app reader.
+  - A stable content bank plus pedagogy sequence is more useful than immediate section/leaf teaching text.
+- Notes:
+  - Ran real NotebookLM benchmarks locally after refreshing auth.
+  - Added a stronger V2 prompt that returns:
+    - `content_bank` with `content_id`, `content_label`, exact content, source path, pedagogical path
+    - `pedagogy_sequence` referencing only those `content_id` values
+  - Results:
+    - clearly better than the earlier content-bank prompt on the rationals PDF
+    - better on the fraction/trig PDF
+    - usable on the geometry PDF after stripping a stray raw control character from the JSON response
+  - Added backend support so raw section helpers can also consume the `content_bank + pedagogy_sequence` shape directly.
+- Result:
+  - The V2 contract looks like the strongest extraction shape tested so far.
+  - The backend is now ready to consume that shape when we switch production prompts.
+- Follow-up:
+  - Decide whether to switch the production NotebookLM extraction prompt from `sections[]` to `content_bank + pedagogy_sequence`.
+  - If we switch, the app should derive section lessons from the pedagogy sequence and exact content bank, not from rewritten section blocks.
+
 ## Entry Template
 
 ### YYYY-MM-DD HH:MM - Owner
