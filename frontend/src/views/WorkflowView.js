@@ -3896,10 +3896,10 @@ function _render(el, classId) {
             ${session ? `
             <div class="rounded-2xl border border-amber-200 bg-[linear-gradient(180deg,rgba(255,247,237,0.96),rgba(255,255,255,0.98))] p-4 sm:p-5 shadow-sm">
               <div class="flex flex-col gap-4">
-                <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
-                  <div class="min-w-0 lg:flex-1">
+                <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.35fr)_minmax(280px,0.65fr)] gap-3 items-start">
+                  <div class="min-w-0 rounded-2xl border border-white/80 bg-white/70 px-4 py-4 shadow-sm">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Session Active</p>
-                    <p class="mt-1 text-[21px] font-semibold tracking-tight text-slate-900">${_escapeHtml(unit?.title || session?.unit_title || 'Active session')}</p>
+                    <p class="mt-1 text-[26px] font-semibold tracking-tight leading-tight text-slate-900 break-words">${_escapeHtml(unit?.title || session?.unit_title || 'Active session')}</p>
                     <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500">
                       <span>${_escapeHtml(fmtDate(session.session_date || session.date))}</span>
                       <span class="text-slate-300">&middot;</span>
@@ -3911,18 +3911,21 @@ function _render(el, classId) {
                       <span class="badge badge-gray">${activeSessionCheckedChecklist.length} checked</span>
                     </div>
                   </div>
-                  <div class="rounded-2xl border border-white/80 bg-white/90 px-4 py-4 shadow-sm lg:min-w-[280px]">
+                  <div class="rounded-2xl border border-white/80 bg-white/90 px-4 py-4 shadow-sm">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focus For Now</p>
-                    <p class="mt-2 text-[13px] leading-relaxed text-slate-700">The checklist is the main session record. Check only what was really covered. We will preserve this structure and use it later when we talk to NotebookLM.</p>
+                    <p class="mt-2 text-[13px] leading-relaxed text-slate-700">The checklist is the main session record. Check only what was really covered.</p>
+                    <p class="mt-2 text-[12px] text-slate-500">We will preserve this structure and use it later when we talk to NotebookLM.</p>
                   </div>
                 </div>
-                <div class="rounded-2xl border border-amber-100 bg-white/92 px-4 py-4 shadow-sm">
-                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Simple Workflow</p>
-                  <ul class="mt-2 pl-4 list-disc text-[13px] leading-relaxed text-slate-700">
-                    <li>Follow the checklist in teaching order.</li>
-                    <li>Check rows only when they were really taught.</li>
-                    <li>Add extra AI features later, one by one, only after they work well.</li>
-                  </ul>
+                <div class="rounded-2xl border border-amber-100 bg-white/92 px-4 py-3 shadow-sm">
+                  <div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Simple Workflow</p>
+                    <div class="flex flex-wrap gap-x-4 gap-y-1 text-[12px] text-slate-700">
+                      <span>1. Follow the checklist in teaching order.</span>
+                      <span>2. Check only what was really taught.</span>
+                      <span>3. Add extra AI tools later, one by one.</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
