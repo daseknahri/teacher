@@ -85,15 +85,20 @@ def main() -> None:
 
     manual_answer, app_answer = asyncio.run(run_notebooklm_prompts(pdf_path, app_prompt))
 
-    source_text = workflow_service.extract_text_from_document(str(pdf_path))
-    package = generate_unit_checklist_package(
-        unit_type=unit_type,
-        title=args.title,
-        source_text=source_text,
-        session_count=args.session_count,
-        provider="notebooklm",
-        document_path=str(pdf_path),
-    )
+    package = None
+    package_error = None
+    try:
+        source_text = workflow_service.extract_text_from_document(str(pdf_path))
+        package = generate_unit_checklist_package(
+            unit_type=unit_type,
+            title=args.title,
+            source_text=source_text,
+            session_count=args.session_count,
+            provider="notebooklm",
+            document_path=str(pdf_path),
+        )
+    except Exception as exc:
+        package_error = f"{exc.__class__.__name__}: {exc}"
 
     (output_dir / "manual_prompt.txt").write_text(MANUAL_PROMPT, encoding="utf-8")
     (output_dir / "app_prompt.txt").write_text(app_prompt, encoding="utf-8")
@@ -107,12 +112,15 @@ def main() -> None:
     print("\n===== APP RESPONSE =====\n")
     print(app_answer)
     print("\n===== FULL PACKAGE =====\n")
-    print("SOURCE:", package["source"])
-    print("MODEL:", package["model"])
-    print("ERROR:", package["error_message"])
-    print("RAW RESPONSE MODE:", (package.get("raw_provider_response") or {}).get("response_mode"))
-    for row in _flatten_checklist_nodes(package["items"]):
-        print("-", row.get("kind"), "|", row.get("title"), "| session=", row.get("session_number"))
+    if package is None:
+        print("PACKAGE ERROR:", package_error)
+    else:
+        print("SOURCE:", package["source"])
+        print("MODEL:", package["model"])
+        print("ERROR:", package["error_message"])
+        print("RAW RESPONSE MODE:", (package.get("raw_provider_response") or {}).get("response_mode"))
+        for row in _flatten_checklist_nodes(package["items"]):
+            print("-", row.get("kind"), "|", row.get("title"), "| session=", row.get("session_number"))
 
 
 if __name__ == "__main__":

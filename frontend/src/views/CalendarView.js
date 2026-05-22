@@ -639,7 +639,6 @@ function _renderCalendarBlueprintTree(nodes, depth = 0, { resumeNodeId = null, c
             ${node?.kind ? `<span class="badge badge-gray">${_escapeHtml(String(node.kind))}</span>` : ''}
             ${node?.session_number ? `<span class="badge badge-blue">S${Number(node.session_number)}</span>` : ''}
             ${resumeNodeId != null && Number(node?.id || 0) === Number(resumeNodeId) ? `<span class="badge badge-amber">Resume here</span>` : node?.is_completed ? `<span class="badge badge-green">Done</span>` : ''}
-            ${hasLeafId ? `<button type="button" class="btn btn-ghost btn-sm btn-calendar-leaf-lesson !text-blue-600" data-item-id="${nodeId}" data-class-id="${Number(classId || 0)}" data-unit-id="${Number(unitId || 0)}" data-item-path="${_escapeHtmlAttr(JSON.stringify(path))}" data-section-path="${_escapeHtmlAttr(JSON.stringify(path.length > 1 ? path.slice(0, -1) : path))}" title="Open section lesson">Lesson</button>` : ''}
           </div>
           ${_renderCalendarBlueprintTree(node?.children || [], depth + 1, { resumeNodeId, classId, unitId, lineage: path })}
         </li>
@@ -838,7 +837,6 @@ function _renderCalendarTeachingFlowGroups(groups, { hasPlannedRoute = false, re
                                 </div>
                               </div>
                             </div>
-                            ${hasLeafId ? `<button type="button" class="btn btn-ghost btn-sm btn-calendar-leaf-lesson !text-blue-600 self-center flex-shrink-0" data-item-id="${rowItemId}" data-class-id="${Number(classId || 0)}" data-unit-id="${Number(unitId || 0)}" data-item-path="${_escapeHtmlAttr(JSON.stringify(Array.isArray(row?.path) ? row.path : []))}" data-section-path="${_escapeHtmlAttr(JSON.stringify(Array.isArray(row?.sectionPath) ? row.sectionPath : []))}" title="Open section lesson">Lesson</button>` : ''}
                           </div>
                         `;
                       }).join('')}
@@ -900,7 +898,6 @@ function _renderCalendarFallbackRouteRows(items, { classId = null, unitId = null
                 </div>
               </div>
             </div>
-            ${hasLeafId ? `<button type="button" class="btn btn-ghost btn-sm btn-calendar-leaf-lesson !text-blue-600 self-center flex-shrink-0" data-item-id="${rowItemId}" data-class-id="${Number(classId || 0)}" data-unit-id="${Number(unitId || 0)}" data-item-path="${_escapeHtmlAttr(JSON.stringify(path))}" data-section-path="${_escapeHtmlAttr(JSON.stringify(sectionPath))}" title="Open section lesson">Lesson</button>` : ''}
           </div>
         `;
       }).join('')}

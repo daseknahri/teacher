@@ -3914,21 +3914,21 @@ def _build_notebooklm_checklist_prompt(
     del session_count
     prompt_parts = [
         "Lis ce PDF comme un manuel scolaire de mathematiques.",
-        "Retourne une liste hierarchique complete du parcours reel fait avec les eleves, dans l'ordre exact du document.",
+        "Retourne uniquement la liste ordonnee de tous les titres et sous-titres pedagogiques visibles.",
         "Regles:",
         "- Garde le titre du chapitre comme racine.",
-        "- Garde seulement les rubriques que l'enseignant traite avec les eleves: activites, contenu de la lecon, sections, sous-sections, definitions, proprietes, regles, exemples, exercices, evaluation.",
-        "- Conserve le texte et le systeme de numerotation visibles dans le document (I, II, 1, 1.1, A, etc.).",
-        "- Quand l'ordre pedagogique est implicite ou ambigu, organise la progression comme un enseignant: activites d'amorce, puis notions/lecon, puis definitions/proprietes/regles, puis exemples, puis exercices ou evaluation.",
-        "- Dans chaque grande section, essaie de garder une structure exploitable en classe: activite -> contenu/notions -> exemples -> exercices.",
-        "- N'utilise pas des conteneurs generiques comme 'Activites', 'Contenu de la lecon', 'Exercices' ou 'Evaluation' comme structure principale si une section ou sous-section pedagogique plus precise est visible; rattache plutot chaque activite, exemple ou exercice a la section exacte qu'il prepare, illustre ou evalue.",
-        "- Ne saute aucun titre visible, meme s'il y a plusieurs activites ou plusieurs exercices.",
-        "- Si une rubrique contient Activite 1, Activite 2, ... ou Exercice 1, Exercice 2, ..., garde-les tous comme enfants de cette rubrique.",
-        "- N'inclus pas dans la checklist les rubriques meta enseignant comme Objectifs d'apprentissage, Competences, Capacites, Prerequis, Outils didactiques, Ressources, Gestion du temps, Demarche pedagogique ou rubriques similaires.",
-        "- Ne garde pas les paragraphes de contenu, les calculs detailles, les reponses, ni les sous-exemples A / B / C / D.",
+        "- Garde l'ordre exact du document.",
+        "- Garde la hierarchie exacte du document avec indentation.",
+        "- Garde uniquement les headlines visibles: titres, sous-titres, rubriques, sections et sous-sections.",
+        "- Conserve exactement le texte et le systeme de numerotation visibles dans le document (I, II, 1, 1.1, A, etc.).",
+        "- Ne reorganise pas l'ordre pedagogique et n'invente pas de structure implicite.",
+        "- Ne transforme pas un paragraphe ou un exercice en nouveau titre s'il n'est pas deja affiche comme headline dans le document.",
+        "- Si une rubrique contient Activite 1, Activite 2, Exercice 1, Exercice 2 ou des rubriques similaires et qu'elles sont visibles comme titres distincts, garde-les comme enfants de cette rubrique.",
+        "- N'inclus pas les rubriques meta enseignant comme Objectifs d'apprentissage, Competences, Capacites, Prerequis, Outils didactiques, Ressources, Gestion du temps, Demarche pedagogique ou rubriques similaires.",
+        "- N'inclus pas les paragraphes de contenu, calculs detailles, reponses, questions internes, ni les sous-exemples A / B / C / D s'ils ne sont pas presentes comme titres visibles.",
         "- Si un titre est coupe sur deux lignes, reconstitue-le.",
         "- Ignore seulement les metadonnees de couverture (nom du professeur, etablissement, niveau, pagination isolee).",
-        "- N'invente pas de nouveaux titres; si le document est ambigu, complete seulement les liens de structure evidents.",
+        "- N'invente pas de nouveaux titres.",
         "Format attendu:",
         "- une ligne par titre",
         "- chaque ligne commence par -",
@@ -3949,16 +3949,17 @@ def _build_notebooklm_checklist_prompt(
 def _build_notebooklm_checklist_review_prompt() -> str:
     return "\n".join(
         [
-            "Relis le meme PDF et corrige la liste precedente pour qu'aucun titre pedagogique visible ne manque.",
-            "Je veux la version finale la plus complete et la mieux ordonnee possible pour suivre ce que l'enseignant fait avec les eleves.",
+            "Relis le meme PDF et corrige la liste precedente pour qu'aucun titre ou sous-titre visible ne manque.",
+            "Je veux uniquement la version finale la plus fidele aux headlines visibles du document.",
             "Regles:",
             "- Garde le titre du chapitre comme racine.",
-            "- Verifie surtout toutes les rubriques Activite 1, Activite 2, ..., Exercice 1, Exercice 2, ..., Definition, Propriete, Regle, Exemple, Evaluation.",
-            "- Si l'ordre est ambigu, prefere un deroulement de classe coherent: activites d'amorce, puis notions/lecon, puis definitions/proprietes/regles, puis exemples, puis exercices ou evaluation.",
+            "- Garde l'ordre exact et la hierarchie exacte du document.",
+            "- Verifie surtout les titres numerotes et les rubriques visibles comme Activite 1, Activite 2, Exercice 1, Exercice 2, Definition, Propriete, Regle, Exemple, Evaluation.",
             "- Exclue les rubriques meta enseignant comme Objectifs d'apprentissage, Competences, Capacites, Prerequis, Outils didactiques, Ressources, Gestion du temps, Demarche pedagogique ou rubriques equivalentes.",
             "- Ne saute aucun titre visible, meme s'il est repetitif ou similaire a un autre.",
-            "- Ne garde pas les paragraphes de contenu, les calculs detailles, les reponses, ni les sous-exemples A / B / C / D.",
-            "- Si une rubrique est coupee sur plusieurs pages, reconstruis la structure pedagogique complete.",
+            "- N'ajoute aucun titre implicite et ne reformule pas les titres.",
+            "- Ne garde pas les paragraphes de contenu, les calculs detailles, les reponses, ni les sous-exemples A / B / C / D s'ils ne sont pas des headlines visibles.",
+            "- Si une rubrique est coupee sur plusieurs pages, reconstruis seulement le titre visible complet.",
             "Format attendu:",
             "- une ligne par titre",
             "- chaque ligne commence par -",
@@ -5005,7 +5006,7 @@ def _content_block_to_checklist_kind(kind: str, *, title: str) -> WorkflowCheckl
         return WorkflowChecklistItemKind.EXERCISE
     if kind == "activity":
         return WorkflowChecklistItemKind.OTHER
-    if _is_explicit_topic_outline_title(title):
+    if _is_explicit_topic_outline_title(title, kind):
         return WorkflowChecklistItemKind.SECTION
     return WorkflowChecklistItemKind.OTHER
 

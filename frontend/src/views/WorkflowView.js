@@ -3155,7 +3155,6 @@ function _renderSessionTeachingChecklistGroups(groups, { hasPlannedRoute = false
                                 </div>
                               </div>
                             </button>
-                            <button type="button" class="btn btn-ghost btn-sm btn-leaf-lesson !text-blue-600 self-center" data-item-id="${Number(item.id || 0)}" title="Open section lesson">Lesson</button>
                           </div>
                         `;
                       }).join('')}
@@ -3735,7 +3734,6 @@ function _render(el, classId) {
                   ${unit.document_name ? `<button id="btn-download-unit-doc" class="btn btn-secondary btn-sm">Unit PDF</button>` : ''}
                   <button id="btn-toggle-extraction-review" class="btn ${extractionReviewPending ? 'btn-primary' : 'btn-secondary'} btn-sm">${extractionReviewPending ? 'Approve Extraction' : 'Mark Needs Review'}</button>
                   <button id="btn-rerun-ai-extraction" class="btn btn-secondary btn-sm">Re-run AI</button>
-                  <button id="btn-prepare-sections" class="btn btn-primary btn-sm">Prepare Sections</button>
                   <button id="btn-ask-unit-assistant" class="btn btn-secondary btn-sm">Ask This Unit</button>
                   <button id="btn-open-material-studio" class="btn btn-secondary btn-sm">Material Studio</button>
                   <button id="btn-view-ai-details" class="btn btn-secondary btn-sm">AI Details</button>
@@ -3879,7 +3877,6 @@ function _render(el, classId) {
                   <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-add-child" data-item-id="${item.id}" title="Add child">Child</button>
                   <button class="btn btn-ghost btn-sm !text-blue-600 btn-item-edit" data-item-id="${item.id}" data-item-kind="${item.item_kind || 'other'}" data-item-title="${_escapeHtmlAttr(item.title)}" title="Edit item">Edit</button>
                   <button class="btn btn-ghost btn-sm !text-red-600 btn-item-delete" data-item-id="${item.id}" title="Delete item">Delete</button>
-                  ${!hasChildren ? `<button class="btn btn-ghost btn-sm btn-leaf-lesson !text-blue-600" data-item-id="${item.id}" title="Open section lesson">Lesson</button>` : ''}
                 </div>
               </div>`;
   }).join('')}
@@ -4488,7 +4485,6 @@ function _render(el, classId) {
                 <span class="todo-title text-[13px] leading-snug flex-1">${item.title}</span>
                 ${isStructural ? '<span class="text-[10px] text-slate-400 whitespace-nowrap">Auto-completes when all child rows are done</span>' : ''}
                 ${hasChildren ? `<button class="btn btn-ghost btn-sm !text-sky-600 btn-checklist-group-complete" data-item-id="${item.id}" title="Mark all unfinished lesson steps under this heading">Check group</button>` : ''}
-                ${!isStructural && !hasChildren ? `<button class="btn btn-ghost btn-sm btn-leaf-lesson !text-blue-600" data-item-id="${item.id}" title="Open section lesson">Lesson</button>` : ''}
               </div>`;
     }).join('')}
               </div>

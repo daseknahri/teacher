@@ -2876,9 +2876,9 @@ def test_notebooklm_prompt_omits_noisy_source_hint_when_pdf_is_attached():
     )
 
     assert "Indice textuel de secours" not in prompt
-    assert "Retourne une liste hierarchique complete du parcours reel fait avec les eleves" in prompt
-    assert "Si une rubrique contient Activite 1, Activite 2, ... ou Exercice 1, Exercice 2" in prompt
-    assert "N'inclus pas dans la checklist les rubriques meta enseignant" in prompt
+    assert "Retourne uniquement la liste ordonnee de tous les titres et sous-titres pedagogiques visibles." in prompt
+    assert "Ne reorganise pas l'ordre pedagogique et n'invente pas de structure implicite." in prompt
+    assert "N'inclus pas les rubriques meta enseignant" in prompt
     assert "indentation de deux espaces par niveau" in prompt
     assert "aucun commentaire avant ou apres la liste" in prompt
 
