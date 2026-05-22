@@ -3827,9 +3827,12 @@ function _render(el, classId) {
 
             ${recentSessions.length ? `
             <!-- Recent sessions -->
-            <div class="flex flex-col gap-2">
-              <div class="flex items-center justify-between gap-2 flex-wrap">
-                <h4 class="text-[12px] font-semibold text-slate-400 uppercase tracking-wider">Recent Sessions</h4>
+            <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-3">
+              <div class="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Recent Sessions</p>
+                  <p class="mt-1 text-[12px] text-slate-500">A quick read of the most recent classroom activity for this class.</p>
+                </div>
                 <div class="flex gap-1 flex-wrap">
                   ${RECENT_SESSION_WINDOWS.map(filter => `
                   <button
@@ -3838,29 +3841,37 @@ function _render(el, classId) {
                   `).join('')}
                 </div>
               </div>
-              ${visibleRecentSessions.length ? visibleRecentSessions.slice(0, 8).map(s => `
-              <div class="px-4 py-3 bg-slate-50 rounded-xl border border-slate-200">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <span class="text-[13px] font-semibold text-slate-700">${fmtDate(s.session_date || s.date)}</span>
-                  <span class="text-[12px] text-slate-500">${fmtTime(s.start_time)}${s.end_time ? '  ' + fmtTime(s.end_time) : ' (active)'}</span>
+              ${visibleRecentSessions.length ? `
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                ${visibleRecentSessions.slice(0, 8).map(s => `
+              <div class="px-4 py-3 bg-slate-50/80 rounded-2xl border border-slate-200">
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                  <div class="min-w-0">
+                    <p class="text-[13px] font-semibold text-slate-700">${fmtDate(s.session_date || s.date)}</p>
+                    <p class="text-[12px] text-slate-500 mt-0.5">${fmtTime(s.start_time)}${s.end_time ? '  ' + fmtTime(s.end_time) : ' (active)'}</p>
+                  </div>
+                  ${s.unit_session_number ? `<span class="badge badge-blue">Session ${s.unit_session_number}</span>` : '<span class="badge badge-gray">Session</span>'}
                 </div>
-                <div class="mt-1 flex items-center gap-2 flex-wrap">
-                  ${s.unit_session_number ? `<span class="badge badge-blue">Session ${s.unit_session_number}</span>` : ''}
+                <div class="mt-2 flex items-center gap-2 flex-wrap">
                   <span class="badge badge-green">${s.checked_items_count ?? 0} done</span>
                   ${Number(s.absent_count || 0) > 0 ? `<span class="badge badge-red">${s.absent_count} absent</span>` : ''}
                 </div>
-              </div>`).join('') : '<p class="text-[12px] text-slate-500 px-1">No sessions in this date range.</p>'}
+              </div>`).join('')}
+              </div>` : '<div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3 text-[12px] text-slate-500">No sessions in this date range.</div>'}
             </div>` : ''}
 
             ${unit ? `
             <!-- Unit session timeline -->
-            <div class="flex flex-col gap-2">
-              <div class="flex items-center justify-between gap-2 flex-wrap">
-                <h4 class="text-[12px] font-semibold text-slate-400 uppercase tracking-wider">Unit Session Timeline</h4>
+            <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-3">
+              <div class="flex items-start justify-between gap-3 flex-wrap">
+                <div>
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Unit Session Timeline</p>
+                  <p class="mt-1 text-[12px] text-slate-500">The running record of sessions already captured for this unit.</p>
+                </div>
                 <button class="btn btn-ghost btn-sm !text-slate-500" data-unit-timeline-retry="${unit.id}">Refresh</button>
               </div>
               ${unitTimelineState.loading && !unitTimelineState.loaded ? `
-                <p class="text-[12px] text-slate-500 px-1">Loading unit sessions...</p>
+                <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3 text-[12px] text-slate-500">Loading unit sessions...</div>
               ` : ''}
               ${unitTimelineState.error ? `
                 <div class="px-3 py-2 bg-red-50 border border-red-200 rounded-xl">
@@ -3868,16 +3879,18 @@ function _render(el, classId) {
                 </div>
               ` : ''}
               ${!unitTimelineState.loading && !unitTimelineState.error && unitTimelineState.sessions.length ? `
-                <div class="max-h-[260px] overflow-auto rounded-xl border border-slate-200">
+                <div class="max-h-[260px] overflow-auto rounded-2xl border border-slate-200">
                   ${unitTimelineState.sessions.map(s => `
                   <div class="px-4 py-3 border-b border-slate-100 last:border-b-0 bg-white">
-                    <div class="flex items-center gap-2 flex-wrap">
+                    <div class="flex items-center justify-between gap-2 flex-wrap">
+                      <div class="flex items-center gap-2 flex-wrap">
                       ${s.unit_session_number ? `<span class="badge badge-blue">Session ${s.unit_session_number}</span>` : '<span class="badge badge-gray">Session</span>'}
                       <span class="text-[12px] font-semibold text-slate-700">${fmtDate(s.session_date || s.date)}</span>
                       <span class="text-[12px] text-slate-500">${fmtTime(s.start_time)}${s.end_time ? ` - ${fmtTime(s.end_time)}` : ''}</span>
+                      </div>
                       <span class="badge ${s.end_time ? 'badge-green' : 'badge-amber'}">${s.end_time ? 'Closed' : 'Open'}</span>
                     </div>
-                    <div class="mt-1 flex items-center gap-2 flex-wrap">
+                    <div class="mt-2 flex items-center gap-2 flex-wrap">
                       <span class="badge badge-green">${s.checked_items_count ?? 0} done</span>
                       ${Number(s.absent_count || 0) > 0 ? `<span class="badge badge-red">${s.absent_count} absent</span>` : ''}
                       ${s.note ? `<span class="text-[11px] text-slate-500 truncate max-w-[320px]" title="${_escapeHtmlAttr(s.note)}">${_escapeHtml(s.note)}</span>` : ''}
@@ -3886,16 +3899,19 @@ function _render(el, classId) {
                 </div>
               ` : ''}
               ${!unitTimelineState.loading && !unitTimelineState.error && !unitTimelineState.sessions.length ? `
-                <p class="text-[12px] text-slate-500 px-1">No sessions recorded for this unit yet.</p>
+                <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3 text-[12px] text-slate-500">No sessions recorded for this unit yet.</div>
               ` : ''}
             </div>` : ''}
 
             ${closed.length ? `
             <!-- Past units -->
-            <div class="flex flex-col gap-2">
-              <h4 class="text-[12px] font-semibold text-slate-400 uppercase tracking-wider">Past Units</h4>
+            <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-3">
+              <div>
+                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Past Units</p>
+                <p class="mt-1 text-[12px] text-slate-500">Closed units stay here so you can reopen the latest one or keep old work archived.</p>
+              </div>
               ${closed.map((u, index) => `
-              <div class="flex items-center gap-3 px-4 py-3 bg-slate-50 rounded-xl border border-slate-200">
+              <div class="flex items-center gap-3 px-4 py-3 bg-slate-50/80 rounded-2xl border border-slate-200">
                 <div class="flex-1 min-w-0">
                   <span class="text-[13px] text-slate-600 font-semibold truncate block">${u.title || u.name}</span>
                   <p class="text-[11px] text-slate-400 mt-0.5">Closed ${fmtDate(u.closed_at || u.closedAt || u.created_at || u.createdAt)}</p>
