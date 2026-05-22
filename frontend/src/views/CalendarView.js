@@ -4132,124 +4132,47 @@ function _renderCalendar(el, classId) {
         <div class="flex flex-col gap-4">
           <div class="rounded-2xl border border-blue-100 bg-[linear-gradient(180deg,rgba(239,246,255,0.95),rgba(255,255,255,0.98))] p-4 sm:p-5 shadow-sm">
             <div class="flex flex-col gap-4">
-              <div class="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-5">
-                <div class="min-w-0 xl:flex-1">
-                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">Session Summary</p>
+              <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+                <div class="min-w-0 lg:flex-1">
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">Session Record</p>
                   <p class="mt-1 text-[21px] font-semibold tracking-tight text-slate-900">${_escapeHtml(selectedEvent.unit_title || 'Session')}</p>
                   <div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500">
                     <span>${_escapeHtml(fmtDate(selectedEvent.session_date || selectedEvent.date))}</span>
                     <span class="text-slate-300">&middot;</span>
                     <span>${_escapeHtml(`${fmtTime(selectedEvent.start_time)}${selectedEvent.end_time ? ` -> ${fmtTime(selectedEvent.end_time)}` : ''}`)}</span>
                     ${selectedSessionNumber ? `<span class="text-slate-300">&middot;</span><span>Unit Session ${Number(selectedSessionNumber)}</span>` : ''}
-                    <span class="text-slate-300">&middot;</span>
-                    <span>${selectedHasWorkflowUnit ? 'Linked to workflow' : 'Standalone calendar session'}</span>
                   </div>
                   <div class="mt-3 flex gap-2 flex-wrap">
                     <span class="badge ${selectedSessionStateClass}">${_escapeHtml(selectedSessionStateLabel)}</span>
-                    ${selectedHasWorkflowUnit ? `<span class="badge ${plannedSessionStatus.className}">${_escapeHtml(plannedSessionStatus.label)}</span>` : '<span class="badge badge-gray">Outside workflow</span>'}
                     ${selectedMatchesActiveWorkflow ? '<span class="badge badge-amber">Live in Workflow</span>' : ''}
-                    <span class="badge ${selectedWriteupStateClass}">${selectedWriteup ? (selectedWriteup.approved === false ? 'Write-up Draft' : 'Write-up Approved') : _escapeHtml(selectedWriteupStateLabel)}</span>
-                  </div>
-                  <div class="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                    <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3 shadow-sm">
-                      <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Route Coverage</p>
-                      <p class="mt-1 text-[13px] font-semibold text-slate-900">${_escapeHtml(plannedSessionStatus.label)}</p>
-                      <p class="mt-1 text-[12px] leading-relaxed text-slate-600">${_escapeHtml(plannedSessionStatus.hint)}</p>
-                    </div>
-                    <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3 shadow-sm">
-                      <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Classroom Read</p>
-                      <p class="mt-1 text-[13px] font-semibold text-slate-900">${selectedAbsentCount === 0 ? 'Attendance is clear' : 'Attendance needs review'}</p>
-                      <p class="mt-1 text-[12px] leading-relaxed text-slate-600">${_escapeHtml(selectedAttendanceCaption)}</p>
-                    </div>
-                    <div class="rounded-2xl border border-white/80 bg-white/85 px-3 py-3 shadow-sm">
-                      <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Write-Up Readiness</p>
-                      <p class="mt-1 text-[13px] font-semibold ${selectedWriteupHeroToneClass}">${_escapeHtml(selectedWriteupStateLabel)}</p>
-                      <p class="mt-1 text-[12px] leading-relaxed text-slate-600">${_escapeHtml(selectedWriteupHeroCaption)}</p>
-                    </div>
+                    <span class="badge badge-gray">${selectedHeadlineCount} headlines</span>
                   </div>
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 xl:min-w-[360px] xl:max-w-[420px]">
-                  <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
-                    <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Progress</p>
-                    <div class="mt-1 flex items-end justify-between gap-2">
-                      <p class="text-[19px] font-semibold text-slate-900">${_escapeHtml(selectedProgressValueLabel)}</p>
-                      <span class="text-[11px] font-semibold ${selectedProgressValue >= 100 ? 'text-emerald-600' : selectedProgressValue > 0 ? 'text-amber-600' : 'text-slate-400'}">${selectedProgressValue}%</span>
-                    </div>
-                    <div class="mt-2 h-2 rounded-full bg-slate-200 overflow-hidden">
-                      <div class="h-full rounded-full ${selectedProgressValue >= 100 ? 'bg-emerald-500' : selectedProgressValue > 0 ? 'bg-amber-500' : 'bg-slate-300'}" style="width:${selectedProgressValue}%;"></div>
-                    </div>
-                    <p class="mt-2 text-[11px] text-slate-500">${_escapeHtml(selectedProgressCaption)}</p>
-                  </div>
-                  <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
-                    <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Attendance</p>
-                    <div class="mt-1 flex items-end justify-between gap-2">
-                      <p class="text-[19px] font-semibold text-slate-900">${selectedAbsentCount}</p>
-                      <span class="text-[11px] font-semibold ${selectedAbsentCount === 0 ? 'text-emerald-600' : 'text-amber-600'}">${selectedAbsentCount === 0 ? 'Clear' : 'Attention'}</span>
-                    </div>
-                    <p class="mt-2 text-[11px] text-slate-500">${_escapeHtml(selectedAttendanceCaption)}</p>
-                  </div>
-                  <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
-                    <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Headlines</p>
-                    <div class="mt-1 flex items-end justify-between gap-2">
-                      <p class="text-[19px] font-semibold text-slate-900">${selectedHeadlineCount}</p>
-                      <span class="text-[11px] font-semibold ${selectedHeadlineCount > 0 ? 'text-blue-600' : 'text-slate-400'}">${selectedHeadlineCount > 0 ? 'Captured' : 'Empty'}</span>
-                    </div>
-                    <p class="mt-2 text-[11px] text-slate-500">${_escapeHtml(selectedHeadlinesCaption)}</p>
-                  </div>
-                  <div class="rounded-2xl border border-white/80 bg-white/90 px-3 py-3 shadow-sm">
-                    <p class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Write-Up</p>
-                    <p class="mt-1 text-[15px] font-semibold ${selectedWriteupHeroToneClass}">${_escapeHtml(selectedWriteupStateLabel)}</p>
-                    <p class="mt-2 text-[11px] text-slate-500">${_escapeHtml(selectedWriteupHeroCaption)}</p>
-                  </div>
+                <div class="rounded-2xl border border-white/80 bg-white/90 px-4 py-4 shadow-sm lg:min-w-[280px]">
+                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focus For Now</p>
+                  <p class="mt-2 text-[13px] leading-relaxed text-slate-700">This session detail keeps the classroom record simple: attendance, recorded checklist structure, and teacher note. Extra AI tools can come back later one by one.</p>
                 </div>
               </div>
-              <div class="grid grid-cols-1 xl:grid-cols-[1.2fr_0.8fr] gap-3">
-                <div class="rounded-2xl border border-blue-100 bg-white/92 px-4 py-4 shadow-sm">
-                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">Next Move</p>
-                  <p class="mt-2 text-[15px] font-semibold text-slate-800">What the teacher should do next</p>
-                  ${selectedNextStepText ? `<p class="mt-2 text-[13px] leading-relaxed text-slate-600">${_escapeHtml(selectedNextStepText)}</p>` : '<p class="mt-2 text-[13px] text-slate-500">No next-step guidance saved for this session.</p>'}
-                  ${hasOtherActiveWorkflowSession ? `
-                    <div class="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3">
-                      <p class="text-[12px] font-semibold text-amber-800">Another workflow session is currently active</p>
-                      <p class="text-[12px] text-amber-700 mt-1">
-                        ${_escapeHtml(String(activeWorkflowSession?.unit_title || 'Active unit session'))}
-                        ${activeWorkflowSession?.unit_session_number ? ` - Unit Session ${Number(activeWorkflowSession.unit_session_number)}` : ''}
-                      </p>
-                      <div class="mt-3 flex gap-2 flex-wrap">
-                        <button id="btn-open-active-workflow-session" class="btn btn-secondary btn-sm">Resume Active Session</button>
-                      </div>
-                    </div>` : ''}
-                </div>
-                <div class="rounded-2xl border border-white/80 bg-white/92 px-4 py-4 shadow-sm">
-                  <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">At a Glance</p>
-                  <div class="mt-3 flex flex-col gap-3 text-[12px] text-slate-600">
-                    <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3">
-                      <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Route coverage</p>
-                      <p class="mt-1 text-[13px] font-medium text-slate-800">${_escapeHtml(plannedSessionStatus.hint)}</p>
-                    </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Attendance editing</p>
-                        <p class="mt-1 text-[13px] font-medium text-slate-800">${selectedCanAttendanceEdit ? 'Open now' : 'Locked until session day'}</p>
-                      </div>
-                      <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Workflow link</p>
-                        <p class="mt-1 text-[13px] font-medium text-slate-800">${selectedHasWorkflowUnit ? 'Connected to a unit workflow' : 'Standalone calendar session'}</p>
-                      </div>
-                    </div>
+              ${hasOtherActiveWorkflowSession ? `
+                <div class="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3">
+                  <p class="text-[12px] font-semibold text-amber-800">Another workflow session is currently active</p>
+                  <p class="text-[12px] text-amber-700 mt-1">
+                    ${_escapeHtml(String(activeWorkflowSession?.unit_title || 'Active unit session'))}
+                    ${activeWorkflowSession?.unit_session_number ? ` - Unit Session ${Number(activeWorkflowSession.unit_session_number)}` : ''}
+                  </p>
+                  <div class="mt-3 flex gap-2 flex-wrap">
+                    <button id="btn-open-active-workflow-session" class="btn btn-secondary btn-sm">Resume Active Session</button>
                   </div>
-                </div>
-              </div>
-              </div>
+                </div>` : ''}
             </div>
           </div>
 
           <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
             <div class="flex items-center justify-between gap-3 flex-wrap">
               <div>
-                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Classroom Snapshot</p>
-                <p class="mt-1 text-[15px] font-semibold text-slate-800">Attendance, delivered structure, and session note</p>
-                <p class="mt-1 text-[12px] text-slate-500">A compact classroom record for this lesson.</p>
+                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Classroom Record</p>
+                <p class="mt-1 text-[15px] font-semibold text-slate-800">Attendance, recorded checklist structure, and session note</p>
+                <p class="mt-1 text-[12px] text-slate-500">This is the saved structure we keep for later work with NotebookLM.</p>
               </div>
               <div class="flex gap-2 flex-wrap text-[11px]">
                 <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600">${selectedPresentCount} present</span>
@@ -4325,286 +4248,6 @@ function _renderCalendar(el, classId) {
       : '<p class="text-[12px] text-slate-500 mt-2">No note for this session.</p>'}
             </div>
           </div>
-          <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div class="flex items-start justify-between gap-3 flex-wrap">
-              <div>
-                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Teaching Plan</p>
-                <h4 class="mt-1 text-[15px] font-semibold text-slate-800">Planned Teaching Flow</h4>
-                <p class="mt-1 text-[12px] text-slate-500">What this unit session was supposed to cover, in teaching order.</p>
-              </div>
-              <div class="flex items-center gap-2 flex-wrap">
-                ${plannedSessionDoneCount > 0
-                  ? `<button id="btn-calendar-planned-hide-done-toggle" class="btn btn-ghost btn-sm !text-amber-700">${_calendarPlannedHideDone ? 'Show Completed Rows' : 'Hide Completed Rows'}</button>`
-                  : ''}
-                <button id="btn-calendar-toggle-planned-flow" class="btn btn-ghost btn-sm">${_calendarCollapsePlannedFlow ? 'Expand' : 'Collapse'}</button>
-              </div>
-            </div>
-            ${_calendarCollapsePlannedFlow
-              ? '<p class="text-[12px] text-slate-500 mt-3">Planned teaching flow is collapsed. Expand it when you want to review the saved route for this session.</p>'
-              : _selectedSessionLoading
-              ? '<p class="text-[12px] text-slate-500 mt-2">Loading planned unit flow...</p>'
-              : selectedEvent.unit_id == null
-                ? '<p class="text-[12px] text-slate-500 mt-2">This session is not linked to a workflow unit.</p>'
-                : selectedBlueprintError
-                  ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedBlueprintError)}</p>`
-                : !selectedSessionNumber && !selectedCheckedItems.length
-                  ? '<p class="text-[12px] text-slate-500 mt-2">This workflow session has no saved unit-session number yet.</p>'
-                    : `
-                      <div class="mt-3 flex flex-col gap-3">
-                        <div class="grid grid-cols-1 lg:grid-cols-[0.85fr_1.15fr] gap-3">
-                          <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                            <p class="text-[12px] font-semibold text-slate-700">${selectedSessionNumber ? `Unit Session ${Number(selectedSessionNumber)}` : 'Recorded Session Route'}</p>
-                            <div class="mt-2 flex items-center gap-2 flex-wrap">
-                              <span class="badge ${plannedSessionStatus.className}">${_escapeHtml(plannedSessionStatus.label)}</span>
-                            </div>
-                            <p class="mt-2 text-[12px] text-slate-600 leading-relaxed">${_escapeHtml(plannedSessionStatus.hint)}</p>
-                            <p class="mt-2 text-[11px] text-slate-400">${plannedSessionTitles.length ? 'Planned checklist path for this saved unit session.' : 'Using the checklist rows already recorded for this session as the route context.'}</p>
-                          </div>
-                          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                            <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">Session Route Brief</p>
-                            ${plannedSessionSummary.length
-                              ? `<div class="flex flex-wrap gap-2">
-                                  ${plannedSessionSummary.map(label => `<span class="badge badge-gray">${_escapeHtml(label)}</span>`).join('')}
-                                </div>`
-                              : '<p class="text-[12px] text-slate-500">No saved route summary for this session yet.</p>'}
-                          </div>
-                        </div>
-                        ${plannedResumeNodeId != null ? '<p class="text-[11px] text-amber-700">The first unfinished planned row is marked below as <span class="font-semibold">Resume here</span>.</p>' : ''}
-                        ${_calendarPlannedHideDone && plannedSessionDoneCount > 0 ? '<p class="text-[11px] text-amber-700">Showing only remaining planned rows.</p>' : ''}
-                        ${_calendarPlannedHideDone && plannedSessionDoneCount > 0 && !visiblePlannedSessionTree.length
-                          ? '<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] text-amber-800">All planned rows for this session are already completed. Use <span class="font-semibold">Show Completed Rows</span> if you want to review them.</div>'
-                          : ''}
-                        <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                          <div class="flex items-center justify-between gap-2 flex-wrap mb-3">
-                            <div>
-                              <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Teaching Flow View</p>
-                              <p class="mt-1 text-[12px] text-slate-500">${plannedSessionTitles.length ? 'This session route is grouped the way the lesson was meant to unfold in class.' : 'The checked work from this session is grouped into a classroom teaching flow.'}</p>
-                            </div>
-                            <div class="flex items-center gap-2 flex-wrap">
-                              ${selectedTeachingFlowGroups.length ? `<span class="badge badge-blue">${selectedTeachingFlowGroups.length} section${selectedTeachingFlowGroups.length === 1 ? '' : 's'}</span>` : ''}
-                              ${(plannedSessionPaths.length || selectedFallbackRouteItems.length) ? `<span class="badge badge-gray">${plannedSessionPaths.length || selectedFallbackRouteItems.length} route row${(plannedSessionPaths.length || selectedFallbackRouteItems.length) === 1 ? '' : 's'}</span>` : ''}
-                            </div>
-                          </div>
-                          ${_renderCalendarTeachingFlowGroups(selectedTeachingFlowGroups, { hasPlannedRoute: plannedSessionTitles.length > 0, resumeNodeId: plannedResumeNodeId, classId, unitId: selectedEvent?.unit_id ?? null })}
-                        </div>
-                        <div class="flex flex-col gap-3">
-                          ${plannedResumeNode ? _renderCalendarNextFocusActions(plannedResumeSectionPlan, plannedResumePlaybookEntry, plannedResumeNode.title, { classId, unitId: selectedEvent?.unit_id }) : ''}
-                          ${_renderCalendarDetailDisclosure(
-                            plannedSessionTitles.length ? 'Route Details' : 'Recorded Route Details',
-                            plannedSessionTitles.length
-                              ? 'Open the raw planned checklist route and the matched unit sections when you need to inspect the exact saved mapping.'
-                              : 'Open the recorded checklist route and matched unit sections when you need the exact saved rows behind this session.',
-                            `
-                              <div class="grid grid-cols-1 xl:grid-cols-[1.15fr_0.85fr] gap-3">
-                                <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                                  <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400 mb-2">${plannedSessionTitles.length ? 'Full Planned Route' : 'Recorded Checklist Route'}</p>
-                                  ${plannedSessionTitles.length ? _renderCalendarBlueprintTree(visiblePlannedSessionTree, 0, { resumeNodeId: plannedResumeNodeId, classId, unitId: selectedEvent?.unit_id ?? null, lineage: [] }) : _renderCalendarFallbackRouteRows(selectedFallbackRouteItems, { classId, unitId: selectedEvent?.unit_id ?? null })}
-                                </div>
-                                <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                                  <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Matched Section Plans</p>
-                                  ${_renderCalendarSectionPlans(
-                                    selectedSectionPlans,
-                                    selectedEffectiveRouteTitles,
-                                    selectedRouteSectionPaths.length ? selectedRouteSectionPaths : selectedCheckedSectionPaths,
-                                  )}
-                                </div>
-                              </div>
-                            `,
-                            {
-                              badges: [
-                                `${selectedTeachingFlowGroups.length} teaching section${selectedTeachingFlowGroups.length === 1 ? '' : 's'}`,
-                                `${plannedSessionPaths.length || selectedFallbackRouteItems.length} route row${(plannedSessionPaths.length || selectedFallbackRouteItems.length) === 1 ? '' : 's'}`,
-                              ],
-                            },
-                          )}
-                        </div>
-                      </div>`}
-          </div>
-
-          <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div class="flex items-start justify-between gap-3 flex-wrap">
-              <div>
-                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Teacher Support</p>
-                <h4 class="mt-1 text-[15px] font-semibold text-slate-800">Teacher Prep Suggestions</h4>
-                <p class="mt-1 text-[12px] text-slate-500">NotebookLM-backed support for preparing this exact session route.</p>
-              </div>
-              <div class="flex items-center gap-2 flex-wrap w-full lg:w-auto">
-                ${canShortcutToWorkflowTools
-                  ? `<div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3 w-full lg:w-auto">
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Tools</p>
-                    <div class="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2 w-full lg:w-auto">
-                      <button id="btn-open-selected-unit-assistant" class="btn btn-ghost btn-sm w-full sm:w-auto">Ask This Unit</button>
-                      <button id="btn-open-selected-material-studio" class="btn btn-ghost btn-sm w-full sm:w-auto">Material Studio</button>
-                      <button id="btn-open-selected-ai-details" class="btn btn-ghost btn-sm w-full sm:w-auto">AI Details</button>
-                    </div>
-                  </div>`
-                  : ''}
-                <button id="btn-calendar-toggle-teacher-prep" class="btn btn-ghost btn-sm w-full sm:w-auto">${_calendarCollapseTeacherPrep ? 'Expand' : 'Collapse'}</button>
-              </div>
-            </div>
-            ${_calendarCollapseTeacherPrep
-              ? '<p class="text-[12px] text-slate-500 mt-3">Teacher prep suggestions are collapsed. Expand this section when you want notebook-backed preparation ideas for the session.</p>'
-              : _selectedSessionLoading
-              ? '<p class="text-[12px] text-slate-500 mt-2">Loading prep suggestions...</p>'
-              : selectedEvent.unit_id == null
-                ? '<p class="text-[12px] text-slate-500 mt-2">This session is not linked to a workflow unit.</p>'
-                : selectedBlueprintError
-                  ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedBlueprintError)}</p>`
-                  : `<div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                      ${_renderCalendarTeacherPrep(
-                        selectedUnitMap,
-                        selectedEffectiveRouteTitles,
-                        selectedRouteSectionPaths.length ? selectedRouteSectionPaths : selectedCheckedSectionPaths,
-                      )}
-                    </div>`}
-          </div>
-
-          <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div class="flex items-start justify-between gap-3 flex-wrap">
-              <div>
-                <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Session Record</p>
-                <h4 class="mt-1 text-[15px] font-semibold text-slate-800">Textbook Write-Up</h4>
-                <p class="mt-1 text-[12px] text-slate-500">The saved lesson brief for what really happened in class.</p>
-              </div>
-              <div class="flex flex-col items-stretch sm:items-end gap-2 w-full lg:w-auto">
-                ${selectedWriteup
-                  ? `<span class="badge ${selectedWriteup.approved === false ? 'badge-amber' : 'badge-green'}">${selectedWriteup.approved === false ? 'Draft' : 'Approved'}</span>`
-                  : ''}
-                <button id="btn-calendar-toggle-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto">${_calendarCollapseWriteup ? 'Expand' : 'Collapse'}</button>
-                <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3 flex flex-col gap-2 w-full sm:min-w-[260px]">
-                  <div>
-                    <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Main actions</p>
-                    <div class="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      ${selectedEvent.unit_id != null && !selectedIsFuture
-                        ? `<button id="btn-generate-selected-writeup" class="btn ${selectedWriteup ? 'btn-secondary' : 'btn-primary'} btn-sm w-full sm:w-auto">${selectedWriteup ? 'Re-generate' : 'Generate'}</button>`
-                        : ''}
-                      ${selectedEvent.unit_id != null && !selectedIsFuture
-                        ? `<button id="btn-import-selected-guidance" class="btn btn-secondary btn-sm w-full sm:w-auto">Use Saved Guidance</button>`
-                        : ''}
-                      ${selectedWriteup
-                        ? `<button id="btn-toggle-selected-writeup-approval" class="btn btn-ghost btn-sm w-full sm:w-auto sm:col-span-2">${selectedWriteup.approved === false ? 'Approve' : 'Mark Draft'}</button>`
-                        : ''}
-                    </div>
-                  </div>
-                  ${selectedWriteup
-                    ? `<div class="pt-2 border-t border-slate-200">
-                        <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Tools</p>
-                        <div class="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                          <button id="btn-edit-selected-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto">Edit</button>
-                          <button id="btn-copy-selected-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto">Copy</button>
-                          <button id="btn-download-selected-writeup" class="btn btn-ghost btn-sm w-full sm:w-auto">Download</button>
-                        </div>
-                      </div>`
-                    : ''}
-                </div>
-              </div>
-            </div>
-            ${_calendarCollapseWriteup
-              ? '<p class="text-[12px] text-slate-500 mt-3">The textbook write-up is collapsed. Expand it when you want to review, edit, or reuse the lesson summary.</p>'
-              : `
-            ${selectedMatchedGuidance.length || selectedImportedGuidanceIds.size
-              ? `
-              <div class="rounded-2xl border border-slate-200 bg-slate-50/80 p-3 mt-3">
-                <div class="flex items-start justify-between gap-3 flex-wrap">
-                  <div>
-                    <p class="text-[12px] font-semibold text-slate-700">Saved Guidance For This Session</p>
-                    <p class="text-[12px] text-slate-500 mt-1">${plannedSessionTitles.length ? 'Reusable unit help that matches this planned session route.' : 'Reusable unit help that matches the checklist work already recorded in this session.'}</p>
-                    ${_renderCalendarSessionGuidanceSummary(selectedMatchedGuidance.length, selectedImportedGuidanceIds.size, _calendarSessionGuidanceHideImported)}
-                    ${_calendarSessionGuidanceKindFilter !== 'all' ? `<div class="mt-2"><span class="badge badge-blue">Filtered: ${_escapeHtml(_assistantArtifactKindLabel(_calendarSessionGuidanceKindFilter))}</span></div>` : ''}
-                    ${_renderCalendarSessionGuidanceKindFilters(selectedMatchedGuidance, _calendarSessionGuidanceKindFilter)}
-                  </div>
-                  <div class="flex items-center gap-2 flex-wrap">
-                    ${selectedEvent.unit_id != null && !selectedIsFuture && selectedVisibleRemainingGuidanceCount > 0
-                      ? `<button id="btn-calendar-session-guidance-import-remaining" class="btn btn-secondary btn-sm">${_calendarSessionGuidanceKindFilter === 'all' ? 'Import Remaining' : 'Import Visible'} (${selectedVisibleRemainingGuidanceCount})</button>`
-                      : ''}
-                    ${selectedImportedGuidanceIds.size > 0
-                      ? `<button id="btn-calendar-session-guidance-hide-imported-toggle" class="btn btn-ghost btn-sm">${_calendarSessionGuidanceHideImported ? 'Show Imported' : 'Hide Imported'}</button>`
-                      : ''}
-                    ${_hasCalendarSessionGuidanceFilters(_calendarSessionGuidanceHideImported, _calendarSessionGuidanceKindFilter)
-                      ? '<button id="btn-calendar-session-guidance-reset-filters" class="btn btn-ghost btn-sm">Reset Filters</button>'
-                      : ''}
-                  </div>
-                </div>
-                <div class="mt-3">
-                  ${_renderCalendarSessionMatchedGuidance(selectedMatchedGuidance, {
-                    canImport: selectedEvent.unit_id != null && !selectedIsFuture,
-                    importedIds: selectedImportedGuidanceIds,
-                    hideImported: _calendarSessionGuidanceHideImported,
-                    kindFilter: _calendarSessionGuidanceKindFilter,
-                  })}
-                </div>
-              </div>`
-              : '<div class="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-[12px] text-slate-500">No saved guidance matches this session yet. Use <span class="font-semibold">Ask This Unit</span> when you want reusable support here later.</div>'}
-            ${_renderCalendarWriteupNextStep(selectedWriteup, {
-              isFuture: selectedIsFuture,
-              hasUnit: selectedEvent.unit_id != null,
-              remainingGuidanceCount: selectedRemainingGuidanceCount,
-              bestRemainingGuidanceTitle: String(selectedBestRemainingGuidance?.title || '').trim(),
-              quickGuidanceItems: selectedRemainingGuidance,
-            })}
-            ${_selectedSessionLoading
-              ? '<p class="text-[12px] text-slate-500 mt-2">Loading workflow write-up...</p>'
-              : selectedWriteup
-                ? `
-                  <div class="mt-3 flex flex-col gap-3">
-                    <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-4">
-                      <div class="grid grid-cols-1 lg:grid-cols-[1.15fr_0.85fr] gap-3 items-start">
-                        <div>
-                          <p class="text-[15px] font-semibold text-slate-800">${_escapeHtml(selectedWriteup.title || 'Session write-up')}</p>
-                          <p class="mt-1 text-[12px] text-slate-500">A classroom-facing lesson brief covering what was taught, reinforced, and practiced.</p>
-                        </div>
-                        <div class="grid grid-cols-3 gap-2">
-                          <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center">
-                            <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Focus</p>
-                            <p class="mt-1 text-[15px] font-semibold text-slate-900">${selectedWriteupFocusCount}</p>
-                          </div>
-                          <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center">
-                            <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Content</p>
-                            <p class="mt-1 text-[15px] font-semibold text-slate-900">${selectedWriteupContentCount}</p>
-                          </div>
-                          <div class="rounded-xl border border-slate-200 bg-white px-3 py-3 text-center">
-                            <p class="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">Practice</p>
-                            <p class="mt-1 text-[15px] font-semibold text-slate-900">${selectedWriteupPracticeCount}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                    ${_renderCalendarImportedGuidanceSummary(selectedWriteup.source_payload)}
-                    <div class="grid grid-cols-1 xl:grid-cols-[0.9fr_1.1fr] gap-3">
-                      <div class="flex flex-col gap-3">
-                        ${Array.isArray(selectedWriteup.learning_focus) && selectedWriteup.learning_focus.length ? `
-                          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Learning Focus</p>
-                            <p class="mt-1 text-[12px] text-slate-500">The main ideas that shaped the lesson.</p>
-                            <ul class="mt-2 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
-                              ${selectedWriteup.learning_focus.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
-                            </ul>
-                          </div>` : ''}
-                        ${Array.isArray(selectedWriteup.practice_items) && selectedWriteup.practice_items.length ? `
-                          <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4">
-                            <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Practice</p>
-                            <p class="mt-1 text-[12px] text-slate-500">Exercises or checks for understanding used in class.</p>
-                            <ul class="mt-2 pl-4 list-disc text-[12px] text-slate-600 leading-relaxed">
-                              ${selectedWriteup.practice_items.map(row => `<li>${_escapeHtml(row)}</li>`).join('')}
-                            </ul>
-                          </div>` : ''}
-                      </div>
-                      ${Array.isArray(selectedWriteup.teaching_content) && selectedWriteup.teaching_content.length ? `
-                        <div class="rounded-2xl border border-slate-200 bg-white px-4 py-4 flex flex-col gap-2">
-                          <p class="text-[11px] font-semibold text-slate-500 uppercase tracking-[0.18em]">Teaching Content</p>
-                          <p class="text-[12px] text-slate-500">What was explained, modeled, or discussed with students.</p>
-                          <div class="flex flex-col gap-2">
-                            ${selectedWriteup.teaching_content.map(row => `<div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3"><p class="text-[13px] text-slate-700 leading-relaxed">${_escapeHtml(row)}</p></div>`).join('')}
-                          </div>
-                        </div>` : ''}
-                    </div>
-                    ${_renderCalendarWriteupSourcePayload(selectedWriteup.source_payload)}
-                  </div>`
-                : selectedWriteupError
-                  ? `<p class="text-[12px] text-slate-500 mt-2">${_escapeHtml(selectedWriteupError)}</p>`
-                  : selectedEvent.unit_id == null
-                    ? '<p class="text-[12px] text-slate-500 mt-2">This session is not linked to a workflow unit.</p>'
-                    : '<p class="text-[12px] text-slate-500 mt-2">No saved textbook write-up for this session yet.</p>'}`}
           </div>
         </div>
       </div>` : `
