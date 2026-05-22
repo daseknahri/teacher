@@ -11,7 +11,6 @@ import { fmtDate, fmtTime } from '../utils/format.js';
 import { askConfirm } from '../utils/modal.js';
 import { navigate } from '../router.js';
 import { copyText } from '../utils/password.js';
-import { openLeafContentModal } from '../utils/leafContent.js';
 
 let _weekStart = _startOfWeek(new Date());
 let _selectedSessionId = null;
@@ -5058,30 +5057,6 @@ function _renderCalendar(el, classId) {
       }).catch(() => {});
     }
   }
-
-  el.querySelectorAll('.btn-calendar-leaf-lesson').forEach(button => {
-    button.addEventListener('click', event => {
-      event.preventDefault();
-      event.stopPropagation();
-      const itemId = Number(button.dataset.itemId || 0);
-      const btnClassId = Number(button.dataset.classId || classId || 0);
-      const btnUnitId = Number(button.dataset.unitId || 0);
-      if (!itemId || !btnClassId || !btnUnitId) return;
-      let itemPath = [];
-      let sectionPath = [];
-      try { itemPath = JSON.parse(button.dataset.itemPath || '[]'); } catch {}
-      try { sectionPath = JSON.parse(button.dataset.sectionPath || '[]'); } catch {}
-      openLeafContentModal(btnClassId, btnUnitId, {
-        id: itemId,
-        title: Array.isArray(itemPath) && itemPath.length ? itemPath[itemPath.length - 1] : 'Leaf Item',
-        item_path_json: Array.isArray(itemPath) ? itemPath : [],
-        section_path_json: Array.isArray(sectionPath) ? sectionPath : [],
-      }, {
-        onChange: () => _renderCalendar(el, classId),
-      });
-    });
-  });
-
   el.querySelector('#btn-open-selected-material-studio')?.addEventListener('click', () => {
     const intent = _buildCalendarWorkflowIntent(selectedEvent, 'material_studio', {
       preview_hide_done: _calendarPlannedHideDone,
