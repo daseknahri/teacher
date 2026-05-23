@@ -3579,7 +3579,7 @@ export async function renderCalendarView() {
 
   if (!classId) {
     el.innerHTML = `<div class="view-container">
-          <div class="empty-state bg-white rounded-3xl border border-slate-200 py-16">
+          <div class="empty-state bg-white rounded-3xl border border-slate-200 py-12">
             <div class="text-5xl opacity-30">CAL</div>
             <h2 class="font-semibold text-slate-500">No class selected</h2>
             <p class="text-[13px] text-slate-400 mt-1">Go to Dashboard to setup class, students, and timetable first.</p>

@@ -3982,7 +3982,7 @@ function _render(el, classId) {
               </div>
             </div>
             ${students.length === 0 ? `
-            <div class="empty-state py-12">
+            <div class="empty-state py-10">
               <div class="text-xl font-black opacity-30">ROSTER</div>
               <p class="text-[13px] text-slate-400">No students - import a roster first.</p>
             </div>` : `
@@ -4112,7 +4112,7 @@ function _render(el, classId) {
             <button id="btn-end-session"
               class="btn btn-danger self-start mt-2">End Session</button>
             ` : `
-            <div class="empty-state py-12">
+            <div class="empty-state py-10">
               <div class="text-xl font-black opacity-30 mb-4">IDLE</div>
               <p class="text-[13px] text-slate-400">No active session. Start one from Unit Setup or Attendance tab.</p>
             </div>`}

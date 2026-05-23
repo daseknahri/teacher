@@ -823,25 +823,25 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: var(--s-3);
-    padding: var(--s-12) var(--s-6);
+    gap: var(--s-2-5);
+    padding: var(--s-10) var(--s-5);
     text-align: center;
     color: var(--text-muted);
 }
 
 .empty-icon {
-    font-size: 48px;
-    opacity: 0.4;
+    font-size: 42px;
+    opacity: 0.34;
 }
 
 .empty-title {
-    font-size: 15px;
+    font-size: 14px;
     font-weight: 600;
     color: var(--text-secondary);
 }
 
 .empty-desc {
-    font-size: 13px;
+    font-size: 12px;
     max-width: 280px;
 }
 
