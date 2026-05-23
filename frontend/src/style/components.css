@@ -334,7 +334,7 @@
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 6px;
-    padding: 8px 10px 0;
+    padding: 6px 10px 0;
     background: linear-gradient(180deg, rgba(248, 250, 252, 0.75), rgba(255, 255, 255, 0.98));
 }
 
@@ -344,7 +344,7 @@
     gap: var(--s-2);
     font-size: 13px;
     font-weight: 500;
-    padding: 11px 14px 12px;
+    padding: 10px 14px 11px;
     color: var(--text-secondary);
     background: transparent;
     border: none;
@@ -1164,12 +1164,12 @@
     display: flex;
     align-items: center;
     gap: var(--s-3);
-    padding: 12px 14px;
+    padding: 10px 12px;
     background: linear-gradient(90deg, rgba(255, 247, 237, 0.98), rgba(255, 255, 255, 0.98));
     border: 1px solid #f6c56e;
-    border-radius: 18px;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
-    font-size: 13px;
+    border-radius: 16px;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04);
+    font-size: 12px;
     font-weight: 500;
 }
 
@@ -1187,7 +1187,7 @@
     flex: 1;
     flex-wrap: wrap;
     align-items: center;
-    gap: 6px 12px;
+    gap: 4px 10px;
     min-width: 0;
 }
 
@@ -1198,7 +1198,7 @@
 
 .live-banner-meta {
     color: var(--amber-600);
-    font-size: 12px;
+    font-size: 11px;
 }
 
 /* ---- OWNER TABLE ---- */

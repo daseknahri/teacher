@@ -3538,7 +3538,7 @@ function _render(el, classId) {
 
         <!-- TAB 0: Unit Setup -->
         <div class="${_activeTab === 0 ? 'block' : 'hidden'}">
-          <div class="p-5 flex flex-col gap-5">
+          <div class="p-4.5 flex flex-col gap-4.5">
             ${unit ? `
             <!-- Current unit: progress ring + info -->
             <div class="grid grid-cols-1 xl:grid-cols-[300px_minmax(0,1fr)] gap-4 items-start">
