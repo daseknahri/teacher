@@ -4106,16 +4106,15 @@ function _renderCalendar(el, classId) {
       </div>
 
       ${selectedEvent ? `
-      <div class="cal-detail-panel mt-4 mb-6 mx-5">
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 mb-4">
+      <div class="cal-detail-panel mt-3.5 mb-6 mx-5">
+        <div class="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-2.5 mb-3.5">
           <div>
             <h3 class="detail-title mb-0">
               Session ${fmtDate(selectedEvent.session_date || selectedEvent.date)}${selectedSessionNumber ? ` - Unit Session ${selectedSessionNumber}` : ''}
             </h3>
             <p class="detail-meta mb-0 mt-0.5">${fmtTime(selectedEvent.start_time)}${selectedEvent.end_time ? ` -> ${fmtTime(selectedEvent.end_time)}` : ''}</p>
           </div>
-          <div class="flex flex-col gap-2 w-full sm:w-auto">
-            <div class="flex flex-wrap gap-2 w-full sm:w-auto">
+          <div class="flex flex-wrap gap-2 w-full sm:w-auto sm:justify-end">
               <button id="btn-confirm-selected-session" class="btn btn-success btn-sm w-full sm:w-auto" ${selectedCanConfirm ? '' : 'disabled'} title="${_escapeHtml(selectedConfirmTitle)}">${_escapeHtml(selectedConfirmLabel)}</button>
               <button id="btn-edit-selected-session" class="btn btn-ghost btn-sm w-full sm:w-auto" ${selectedCanEdit ? '' : 'disabled'} title="${_escapeHtml(selectedEditTitle)}">Edit</button>
               ${selectedMatchesActiveWorkflow
@@ -4123,10 +4122,7 @@ function _renderCalendar(el, classId) {
                 : selectedEvent.unit_id != null
                   ? '<button id="btn-open-selected-workflow" class="btn btn-ghost btn-sm w-full sm:w-auto">Open Workflow</button>'
                   : ''}
-            </div>
-            <div class="flex justify-start sm:justify-end">
               <button id="btn-close-selected-session" class="btn btn-ghost btn-sm text-slate-400 w-full sm:w-auto">Close</button>
-            </div>
           </div>
         </div>
         <div class="flex flex-col gap-4">
