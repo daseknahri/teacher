@@ -937,7 +937,7 @@ code {
     }
 
     .unit-type-btn {
-        @apply flex flex-col items-center gap-1.5 py-3 px-2 rounded-xl border-2 border-slate-200/80 bg-white cursor-pointer text-center transition-all duration-150 hover:border-blue-300 hover:bg-blue-50/40 hover:shadow-sm select-none;
+        @apply flex flex-col items-center gap-1 py-2.5 px-2 rounded-xl border-2 border-slate-200/80 bg-white cursor-pointer text-center transition-all duration-150 hover:border-blue-300 hover:bg-blue-50/40 hover:shadow-sm select-none;
     }
 
     .unit-type-btn.selected {

@@ -1568,8 +1568,8 @@ code {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: var(--s-1);
-    padding: var(--s-2) var(--s-2);
+    gap: 3px;
+    padding: 10px var(--s-2);
     border-radius: var(--r-sm);
     border: 1.5px solid var(--border);
     background: var(--white);
@@ -1603,7 +1603,7 @@ code {
 }
 
 .unit-type-icon {
-    font-size: 18px;
+    font-size: 16px;
     line-height: 1;
 }
 
