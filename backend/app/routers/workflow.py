@@ -2075,6 +2075,60 @@ def _ensure_next_unit_session_from_timetable(
     return created, "created"
 
 
+def _suggest_session_schedule_for_unit_start(
+    db: Session,
+    *,
+    class_id: int,
+    unit_id: int,
+    now_dt: datetime,
+) -> dict | None:
+    rules = db.scalars(
+        select(ClassTimetableRule)
+        .where(ClassTimetableRule.class_id == int(class_id))
+        .order_by(
+            ClassTimetableRule.weekday.asc(),
+            ClassTimetableRule.start_time.asc(),
+            ClassTimetableRule.effective_from.asc(),
+            ClassTimetableRule.id.asc(),
+        )
+    ).all()
+    if not rules:
+        return None
+
+    latest_session = db.scalar(
+        select(ClassSession)
+        .where(ClassSession.unit_id == int(unit_id))
+        .order_by(
+            ClassSession.session_date.desc(),
+            ClassSession.start_time.desc().nulls_last(),
+            ClassSession.id.desc(),
+        )
+        .limit(1)
+    )
+
+    if latest_session is not None:
+        start_date = latest_session.session_date
+        start_time_floor = latest_session.end_time or latest_session.start_time
+    else:
+        start_date = now_dt.date()
+        start_time_floor = now_dt.replace(second=0, microsecond=0).time()
+
+    selected, _stats, _search_end_date = _build_timetable_candidates_for_count(
+        db,
+        class_id=int(class_id),
+        start_date=start_date,
+        start_time_floor=start_time_floor,
+        requested_count=1,
+        rules=rules,
+        skip_blocked_holidays=True,
+        max_search_days=180,
+        country_code="MA",
+    )
+    if not selected:
+        return None
+    return selected[0]
+
+
 def _session_note_from_rule(
     *,
     prefix: str,
@@ -5740,8 +5794,6 @@ def start_workflow_session(
 ) -> WorkflowSessionOut:
     _ = ensure_class_writable(db, class_id, current_user)
     now = datetime.now()
-    if _is_non_working_day(now.date()):
-        raise HTTPException(status_code=409, detail="Sunday is a non-working day.")
     unit = _ensure_active_unit(db, class_id)
     open_existing = db.scalar(
         select(ClassSession).where(
@@ -5762,14 +5814,36 @@ def start_workflow_session(
     if unknown_ids:
         raise HTTPException(status_code=400, detail=f"Unknown student ids: {unknown_ids}")
 
+    suggested_slot = _suggest_session_schedule_for_unit_start(
+        db,
+        class_id=class_id,
+        unit_id=int(unit.id),
+        now_dt=now,
+    )
+    if suggested_slot is not None:
+        session_date = suggested_slot["session_date"]
+        start_time = suggested_slot.get("start_time")
+        note = _session_note_from_rule(
+            prefix=f"Workflow session for {unit.title}",
+            rule=suggested_slot["rule"],
+            moved_from_date=suggested_slot.get("moved_from_date"),
+            exception_note=suggested_slot.get("exception_note"),
+        )
+    else:
+        if _is_non_working_day(now.date()):
+            raise HTTPException(status_code=409, detail="Sunday is a non-working day.")
+        session_date = now.date()
+        start_time = now.replace(second=0, microsecond=0).time()
+        note = f"Workflow session for {unit.title}"
+
     session = ClassSession(
         class_id=class_id,
         unit_id=unit.id,
         unit_session_number=_compute_next_unit_session_number(db, unit.id),
-        session_date=now.date(),
-        start_time=now.replace(second=0, microsecond=0).time(),
+        session_date=session_date,
+        start_time=start_time,
         end_time=None,
-        note=f"Workflow session for {unit.title}",
+        note=note,
     )
     db.add(session)
     db.flush()
