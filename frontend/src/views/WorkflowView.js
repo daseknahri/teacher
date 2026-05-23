@@ -3856,7 +3856,7 @@ function _render(el, classId) {
               <div class="flex items-start justify-between gap-3 flex-wrap">
                 <div>
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Recent Sessions</p>
-                  <p class="mt-0.5 text-[11px] text-slate-500">A quick read of recent classroom activity for this class.</p>
+                  <p class="mt-0.5 text-[11px] text-slate-500">Recent classroom activity for this class.</p>
                 </div>
                 <div class="flex gap-1 flex-wrap">
                   ${RECENT_SESSION_WINDOWS.map(filter => `
@@ -3891,7 +3891,7 @@ function _render(el, classId) {
               <div class="flex items-start justify-between gap-3 flex-wrap">
                 <div>
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Unit Session Timeline</p>
-                  <p class="mt-0.5 text-[11px] text-slate-500">The running record of sessions already captured for this unit.</p>
+                  <p class="mt-0.5 text-[11px] text-slate-500">Sessions already captured for this unit.</p>
                 </div>
                 <button class="btn btn-ghost btn-sm !text-slate-500 !px-2.5" data-unit-timeline-retry="${unit.id}">Refresh</button>
               </div>
@@ -3933,7 +3933,7 @@ function _render(el, classId) {
             <div class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm flex flex-col gap-2">
               <div>
                 <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Past Units</p>
-                <p class="mt-0.5 text-[11px] text-slate-500">Closed units stay here so you can reopen the latest one or keep old work archived.</p>
+                <p class="mt-0.5 text-[11px] text-slate-500">Closed units stay here for archive or reopening.</p>
               </div>
               ${closed.map((u, index) => `
               <div class="flex items-start sm:items-center gap-3 px-3 py-2.25 bg-slate-50/80 rounded-2xl border border-slate-200">
@@ -4046,17 +4046,17 @@ function _render(el, classId) {
                   </div>
                   <div class="rounded-2xl border border-white/80 bg-white/90 px-3.5 py-3 shadow-sm">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focus For Now</p>
-                    <p class="mt-1 text-[12px] leading-relaxed text-slate-700">The checklist is the main session record. Check only what was really covered.</p>
-                    <p class="mt-1 text-[11px] text-slate-500">We will preserve this structure and use it later when we talk to NotebookLM.</p>
+                    <p class="mt-1 text-[12px] leading-relaxed text-slate-700">The checklist is the session record. Check only what was really covered.</p>
+                    <p class="mt-1 text-[11px] text-slate-500">We will reuse this structure with NotebookLM later.</p>
                   </div>
                 </div>
                 <div class="rounded-2xl border border-amber-100 bg-white/92 px-3.5 py-2 shadow-sm">
                   <div class="flex flex-col gap-1.5 lg:flex-row lg:items-center lg:justify-between">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Simple Workflow</p>
                     <div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-700">
-                      <span>1. Follow the checklist in teaching order.</span>
-                      <span>2. Check only what was really taught.</span>
-                      <span>3. Add extra AI tools later, one by one.</span>
+                      <span>1. Follow the teaching order.</span>
+                      <span>2. Check only what was taught.</span>
+                      <span>3. Add AI tools later.</span>
                     </div>
                   </div>
                 </div>
@@ -4078,7 +4078,7 @@ function _render(el, classId) {
                 <div class="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
                   <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Teaching Structure</p>
-                    <p class="mt-0.5 text-[10px] text-slate-500">Keep this tree clean. We will reuse it with NotebookLM later.</p>
+                    <p class="mt-0.5 text-[10px] text-slate-500">Keep this tree clean. We will reuse it later.</p>
                   </div>
                 </div>
               ${visibleChecklist.map(item => {

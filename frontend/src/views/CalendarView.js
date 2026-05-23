@@ -4146,8 +4146,8 @@ function _renderCalendar(el, classId) {
                 </div>
                 <div class="rounded-2xl border border-white/80 bg-white/90 px-3.5 py-3 shadow-sm">
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focus For Now</p>
-                  <p class="mt-1 text-[12px] leading-relaxed text-slate-700">Keep only the classroom record here: attendance, recorded checklist structure, and teacher note.</p>
-                  <p class="mt-1 text-[11px] text-slate-500">We can add extra tools back later, one by one.</p>
+                  <p class="mt-1 text-[12px] leading-relaxed text-slate-700">Keep only the classroom record here: attendance, checklist structure, and teacher note.</p>
+                  <p class="mt-1 text-[11px] text-slate-500">We can add extra tools back later.</p>
                 </div>
               </div>
               ${hasOtherActiveWorkflowSession ? `
@@ -4169,7 +4169,7 @@ function _renderCalendar(el, classId) {
               <div>
                 <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Classroom Record</p>
                 <p class="mt-0.5 text-[14px] font-semibold text-slate-800">Attendance, recorded checklist structure, and session note</p>
-                <p class="mt-0.5 text-[11px] text-slate-500">The saved session structure we keep for later work with NotebookLM.</p>
+                <p class="mt-0.5 text-[11px] text-slate-500">The saved session structure we keep for later NotebookLM work.</p>
               </div>
               <div class="flex gap-2 flex-wrap text-[11px]">
                 <span class="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-slate-600">${selectedPresentCount} present</span>
