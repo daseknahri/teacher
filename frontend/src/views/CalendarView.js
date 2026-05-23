@@ -3989,7 +3989,7 @@ function _renderCalendar(el, classId) {
     const visiblePlannedRows = plannedRows.slice(0, remainingCapacity);
     const overflowCount = (rows.length + plannedRows.length) - (visibleRows.length + visiblePlannedRows.length);
     return `
-                <div class="cal-slot week-slot-cell p-1 flex flex-col gap-1 ${isBlockedHoliday ? 'is-holiday-blocked' : ''}"
+                <div class="cal-slot week-slot-cell p-1 flex flex-col gap-[3px] ${isBlockedHoliday ? 'is-holiday-blocked' : ''}"
                      data-slot-day="${day.key}"
                      data-slot-index="${slotIndex}">
                   <button class="btn-slot-plus ${isBlockedHoliday ? 'is-disabled' : ''}"
@@ -4062,7 +4062,7 @@ function _renderCalendar(el, classId) {
                         ${metaText ? `<span class="cal-planned-chip-meta">${_escapeHtml(metaText)}</span>` : ''}
                         ${isMoved && rule?.moved_from_date ? `<span class="cal-planned-chip-meta">Moved from ${_escapeHtml(fmtDate(rule.moved_from_date))}</span>` : ''}
                       </button>
-                      <span class="text-[10px] text-slate-500 mt-1">${isSkipped ? 'Skipped by calendar rules' : 'Planned from timetable'}</span>
+                      <span class="text-[9px] text-slate-500 mt-0.5">${isSkipped ? 'Skipped by calendar rules' : 'Planned from timetable'}</span>
                     </div>
                   `;
     }).join('')}
@@ -4097,9 +4097,9 @@ function _renderCalendar(el, classId) {
         </div>` : ''}
       </div>
 
-      <div class="card p-4 mt-4">
+      <div class="card p-3.5 mt-3.5">
         <h3 class="text-[13px] font-semibold text-slate-700">Planning Summary</h3>
-        <p class="text-[12px] text-slate-500 mt-2">
+        <p class="text-[11px] text-slate-500 mt-1.5">
           ${plannedSlotCount} planned slot${plannedSlotCount !== 1 ? 's' : ''} in this week.
           ${weekExceptionRows.length > 0 ? `${weekExceptionRows.length} timetable change${weekExceptionRows.length !== 1 ? 's' : ''} applied in background.` : 'No timetable changes this week.'}
         </p>
