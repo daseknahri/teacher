@@ -3934,10 +3934,10 @@ function _renderCalendar(el, classId) {
 
   el.innerHTML = `
     <div class="view-container">
-      <div class="flex items-center justify-between flex-wrap gap-4">
+      <div class="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 class="text-2xl font-bold text-slate-800 tracking-tight">Weekly Calendar</h1>
-          <p class="text-[13px] text-slate-400 mt-0.5">Plan sessions from a document, submit past sessions quickly, and confirm delivered sessions.</p>
+          <p class="text-[12px] text-slate-400 mt-0.5">Plan sessions from a document, submit past sessions quickly, and confirm delivered sessions.</p>
         </div>
         <div class="flex items-center gap-2 flex-wrap">
           ${plannedSlotCount > 0 ? `<span class="badge badge-gray">${plannedSlotCount} planned slot${plannedSlotCount !== 1 ? 's' : ''}</span>` : ''}
@@ -3949,7 +3949,7 @@ function _renderCalendar(el, classId) {
       </div>
 
       <div class="card overflow-hidden">
-        <div class="flex items-center justify-between px-5 py-4 border-b border-slate-100 flex-wrap gap-2">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 flex-wrap gap-2">
           <div class="cal-week-nav w-full sm:w-auto justify-between sm:justify-start">
             <button id="btn-prev-week" class="btn btn-ghost btn-sm" title="Previous Week">Prev</button>
             <div class="week-label ${weekStartKey === _dateKey(_startOfWeek(new Date())) ? 'is-current-week' : ''}">
