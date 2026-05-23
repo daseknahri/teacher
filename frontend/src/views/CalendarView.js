@@ -287,6 +287,7 @@ function _consumeCalendarViewIntent() {
       session_id: Number(parsed.session_id || 0) || null,
       session_date: String(parsed.session_date || '').trim(),
       preview_hide_done: Boolean(parsed.preview_hide_done),
+      edit_schedule: Boolean(parsed.edit_schedule),
     };
   } catch {
     try { sessionStorage.removeItem(CALENDAR_VIEW_INTENT_KEY); } catch {}
@@ -3624,6 +3625,13 @@ export async function renderCalendarView() {
   _renderCalendar(el, classId);
   if (pendingCalendarIntent?.session_id) {
     await _selectSession(Number(pendingCalendarIntent.session_id), el, classId);
+    if (pendingCalendarIntent.edit_schedule) {
+      const selectedSession = (Array.isArray(getCalendar()) ? getCalendar() : [])
+        .find(row => Number(row?.session_id || 0) === Number(pendingCalendarIntent.session_id || 0));
+      if (selectedSession) {
+        await _editSessionBlock({ classId, session: selectedSession, el });
+      }
+    }
   }
 }
 

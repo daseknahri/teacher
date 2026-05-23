@@ -4042,6 +4042,7 @@ function _render(el, classId) {
                     <div class="mt-2 flex gap-2 flex-wrap">
                       <span class="badge badge-amber">Live now</span>
                       <span class="badge badge-gray">${activeSessionCheckedChecklist.length} checked</span>
+                      ${session?.id || session?.session_id ? '<button id="btn-edit-active-session-schedule" class="btn btn-ghost btn-sm">Edit schedule</button>' : ''}
                     </div>
                   </div>
                   <div class="rounded-2xl border border-white/80 bg-white/90 px-3.5 py-3 shadow-sm">
@@ -5756,6 +5757,21 @@ function _bindWorkflowEvents(el, classId) {
   }
   el.querySelector('#btn-end-session')?.addEventListener('click', function () { endSession(this); });
   el.querySelector('#btn-end-session-banner')?.addEventListener('click', function () { endSession(this); });
+  el.querySelector('#btn-edit-active-session-schedule')?.addEventListener('click', () => {
+    const session = getActiveSession();
+    const sessionId = Number(session?.id || session?.session_id || 0) || null;
+    if (!sessionId) {
+      showToast('No active session to edit.', 'warning');
+      return;
+    }
+    _setCalendarViewIntent({
+      session_id: sessionId,
+      session_date: String(session?.session_date || session?.date || '').trim(),
+      preview_hide_done: _workflowPreviewHideDone,
+      edit_schedule: true,
+    });
+    navigate('calendar');
+  });
 
   async function loadActiveSessionProgress({ force = false, notify = false } = {}) {
     const session = getActiveSession();
