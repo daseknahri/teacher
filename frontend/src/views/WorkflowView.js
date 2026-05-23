@@ -3578,9 +3578,9 @@ function _render(el, classId) {
                 ${extractionError ? `<div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">Provider note: ${_escapeHtml(extractionError)}</div>` : ''}
                 ${extractionReviewPending ? `<div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">Review the extracted checklist before you rely on it for teaching.</div>` : ''}
                 <div class="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-start">
-                  <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+                  <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-2.5">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Main Actions</p>
-                    <div class="mt-3 flex gap-2 flex-wrap">
+                    <div class="mt-2.5 flex gap-2 flex-wrap">
                       ${!session ? `<button id="btn-start-session" class="btn btn-success">Start Session</button>` : ''}
                       ${unit.document_name ? `<button id="btn-download-unit-doc" class="btn btn-secondary btn-sm">Unit PDF</button>` : ''}
                       <button id="btn-toggle-extraction-review" class="btn ${extractionReviewPending ? 'btn-primary' : 'btn-secondary'} btn-sm">${extractionReviewPending ? 'Approve Extraction' : 'Mark Needs Review'}</button>
@@ -3589,7 +3589,7 @@ function _render(el, classId) {
                       <button id="btn-add-item-root" class="btn btn-secondary btn-sm">Add Item</button>
                     </div>
                   </div>
-                  <div class="flex gap-2 flex-wrap lg:justify-end">
+                  <div class="flex gap-2 flex-wrap lg:justify-end lg:items-start">
                     <button id="btn-close-unit" class="btn btn-ghost btn-sm !text-slate-400">Close Unit</button>
                     <button id="btn-delete-unit" class="btn btn-danger btn-sm btn-delete-unit" data-unit-id="${unit.id}">Delete Unit</button>
                   </div>
