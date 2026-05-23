@@ -1749,7 +1749,7 @@ code {
 
 /* --- Time axis --- */
 .cal-time-axis {
-    font-size: 10px;
+    font-size: 9.5px;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -1757,19 +1757,19 @@ code {
     opacity: 0.75;
     line-height: 1;
     text-align: right;
-    padding-right: 6px;
+    padding-right: 4px;
     white-space: nowrap;
 }
 
 /* --- Day header --- */
 .cal-day-header {
-    font-size: 11px;
+    font-size: 10.5px;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.045em;
     color: var(--text-secondary);
     text-align: center;
-    padding-bottom: var(--s-1);
+    padding-bottom: 6px;
     border-bottom: 1.5px solid var(--border);
 }
 
@@ -1782,17 +1782,17 @@ code {
 .cal-week-nav {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     user-select: none;
 }
 
 .cal-week-nav .week-label {
-    font-size: 12px;
+    font-size: 11.5px;
     font-weight: 700;
     color: var(--text-primary);
-    min-width: 170px;
+    min-width: 156px;
     text-align: center;
-    line-height: 1.35;
+    line-height: 1.25;
 }
 
 .cal-week-nav .week-label.is-current-week {
@@ -1802,7 +1802,7 @@ code {
 .cal-week-nav .btn-today {
     font-size: 10px;
     font-weight: 600;
-    padding: 3px 9px;
+    padding: 2px 8px;
     border-radius: var(--r-full);
     background: var(--blue-50);
     border: 1.5px solid var(--blue-300);
@@ -1820,7 +1820,7 @@ code {
 /* --- Timetable slot cell --- */
 .cal-slot {
     border-radius: var(--r-xs);
-    min-height: 38px;
+    min-height: 36px;
     position: relative;
     overflow: hidden;
     transition: background var(--duration-sm) var(--ease);
@@ -1839,7 +1839,7 @@ code {
 /* --- Session chip --- */
 .cal-chip {
     border-radius: var(--r-sm);
-    padding: 3px 5px;
+    padding: 2px 5px;
     font-size: 10px;
     line-height: 1.25;
     font-weight: 600;
