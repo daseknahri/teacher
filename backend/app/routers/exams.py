@@ -13,7 +13,7 @@ from openpyxl import Workbook
 from .. import config as app_config
 from ..config import MAX_EXCEL_UPLOAD_BYTES
 from ..database import get_db
-from ..models import Exam, ExamArchiveState, ExamResult, Student, User
+from ..models import Exam, ExamArchiveState, ExamResult, Student, User, WorkflowUnit, WorkflowUnitStatus, WorkflowUnitType
 from ..security import ensure_class_access, ensure_class_writable, get_current_user, is_class_archived, require_teacher
 from ..schemas import ExamCreate, ExamOut, ExamResultOut, ExamUpdate
 from ..services.audit import log_audit
@@ -50,6 +50,39 @@ def _attach_archive_flags(db: Session, exams: list[Exam]) -> list[Exam]:
 def _attach_archive_flag(db: Session, exam: Exam) -> Exam:
     setattr(exam, "is_archived", _archive_flags_for_exams(db, [exam.id]).get(exam.id, False))
     return exam
+
+
+def _attach_linked_workflow_flags(db: Session, exams: list[Exam]) -> list[Exam]:
+    exam_ids = [int(exam.id) for exam in exams if int(getattr(exam, "id", 0) or 0) > 0]
+    if not exam_ids:
+        return exams
+    rows = db.scalars(
+        select(WorkflowUnit)
+        .where(WorkflowUnit.exam_id.in_(exam_ids))
+        .order_by(WorkflowUnit.created_at.desc(), WorkflowUnit.id.desc())
+    ).all()
+    by_exam: dict[int, dict[str, WorkflowUnit]] = {}
+    for row in rows:
+        exam_id = int(row.exam_id or 0)
+        if not exam_id:
+            continue
+        bucket = by_exam.setdefault(exam_id, {})
+        key = "exam" if row.unit_type == WorkflowUnitType.EXAM else "correction" if row.unit_type == WorkflowUnitType.EXAM_CORRECTION else None
+        if key is None or key in bucket:
+            continue
+        bucket[key] = row
+
+    for exam in exams:
+        linked = by_exam.get(int(exam.id), {})
+        exam_unit = linked.get("exam")
+        correction_unit = linked.get("correction")
+        setattr(exam, "linked_exam_workflow_unit_id", getattr(exam_unit, "id", None))
+        setattr(exam, "linked_exam_workflow_status", getattr(getattr(exam_unit, "status", None), "value", None))
+        setattr(exam, "linked_exam_workflow_title", getattr(exam_unit, "title", None))
+        setattr(exam, "linked_correction_workflow_unit_id", getattr(correction_unit, "id", None))
+        setattr(exam, "linked_correction_workflow_status", getattr(getattr(correction_unit, "status", None), "value", None))
+        setattr(exam, "linked_correction_workflow_title", getattr(correction_unit, "title", None))
+    return exams
 
 
 def _is_exam_archived(db: Session, exam_id: int) -> bool:
@@ -101,7 +134,7 @@ def create_exam(
     )
     db.commit()
     db.refresh(exam)
-    return _attach_archive_flag(db, exam)
+    return _attach_linked_workflow_flags(db, [_attach_archive_flag(db, exam)])[0]
 
 
 @router.get("/classes/{class_id}/exams", response_model=list[ExamOut])
@@ -113,7 +146,7 @@ def list_exams(
 ) -> list[Exam]:
     _ = ensure_class_access(db, class_id, current_user)
     exams = db.scalars(select(Exam).where(Exam.class_id == class_id).order_by(Exam.exam_date.desc(), Exam.id.desc())).all()
-    exams = _attach_archive_flags(db, exams)
+    exams = _attach_linked_workflow_flags(db, _attach_archive_flags(db, exams))
     if include_archived:
         return exams
     return [exam for exam in exams if not getattr(exam, "is_archived", False)]
@@ -156,7 +189,7 @@ def update_exam(
     )
     db.commit()
     db.refresh(exam)
-    return _attach_archive_flag(db, exam)
+    return _attach_linked_workflow_flags(db, [_attach_archive_flag(db, exam)])[0]
 
 
 @router.post("/exams/{exam_id}/archive")

@@ -174,6 +174,12 @@ class ExamOut(BaseModel):
     max_score: float
     weight: float
     is_archived: bool = False
+    linked_exam_workflow_unit_id: int | None = None
+    linked_exam_workflow_status: str | None = None
+    linked_exam_workflow_title: str | None = None
+    linked_correction_workflow_unit_id: int | None = None
+    linked_correction_workflow_status: str | None = None
+    linked_correction_workflow_title: str | None = None
 
     model_config = {"from_attributes": True}
 

@@ -68,6 +68,8 @@ function _renderExam(el, classId) {
   const examId = getSelectedExamId();
   const exam = getSelectedExam();
   const results = getResults();
+  const examWorkflowActive = exam?.linked_exam_workflow_status === 'active';
+  const correctionWorkflowActive = exam?.linked_correction_workflow_status === 'active';
 
   // Stats
   const scores = results.map(r => r.score).filter(s => s != null);
@@ -102,6 +104,11 @@ function _renderExam(el, classId) {
           <div class="flex items-center gap-2 text-[12px] text-slate-400 mb-1"> Exams</div>
           <h1 class="text-2xl font-bold text-slate-800 tracking-tight">${exam?.title || 'Select an exam'}</h1>
           ${exam ? `<p class="text-[13px] text-slate-400 mt-0.5">${fmtDate(exam.exam_date)} | Max ${exam.max_score ?? 20} pts</p>` : ''}
+          ${exam ? `
+            <div class="mt-2 flex flex-wrap gap-2">
+              ${exam.linked_exam_workflow_unit_id ? `<span class="badge ${examWorkflowActive ? 'badge-green' : 'badge-gray'}">${_escapeHtml(examWorkflowActive ? 'Exam workflow active' : 'Exam workflow linked')}</span>` : ''}
+              ${exam.linked_correction_workflow_unit_id ? `<span class="badge ${correctionWorkflowActive ? 'badge-green' : 'badge-gray'}">${_escapeHtml(correctionWorkflowActive ? 'Correction workflow active' : 'Correction workflow linked')}</span>` : ''}
+            </div>` : ''}
         </div>
         <div class="flex gap-2 flex-wrap">
           ${examId ? `
@@ -109,8 +116,8 @@ function _renderExam(el, classId) {
             <button id="btn-import-results" class="btn btn-secondary"> Import</button>
             <button id="btn-export-results" class="btn btn-secondary"> Export</button>
             ${exam && !exam.is_archived ? `
-              <button id="btn-create-exam-workflow" class="btn btn-ghost btn-sm" title="Create or reopen the workflow unit for this exam"> Exam Workflow</button>
-              <button id="btn-create-correction-workflow" class="btn btn-ghost btn-sm" title="Create or reopen the workflow unit for this exam correction"> Correction Workflow</button>
+              <button id="btn-create-exam-workflow" class="btn btn-ghost btn-sm" title="Create or reopen the workflow unit for this exam">${examWorkflowActive ? 'Open Exam Workflow' : 'Exam Workflow'}</button>
+              <button id="btn-create-correction-workflow" class="btn btn-ghost btn-sm" title="Create or reopen the workflow unit for this exam correction">${correctionWorkflowActive ? 'Open Correction Workflow' : 'Correction Workflow'}</button>
             ` : ''}
           ` : ''}
           ${exam && !exam.is_archived ? `
@@ -269,6 +276,13 @@ function _bindExamEvents(el, classId) {
     const exam = getSelectedExam();
     if (!exam) {
       showToast('Select an exam first.', 'warning');
+      return;
+    }
+    const isOpenOnly = unitType === 'exam'
+      ? exam.linked_exam_workflow_status === 'active'
+      : exam.linked_correction_workflow_status === 'active';
+    if (isOpenOnly) {
+      navigate('workflow');
       return;
     }
     try {
