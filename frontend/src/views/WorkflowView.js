@@ -5260,7 +5260,9 @@ function _bindWorkflowEvents(el, classId) {
         await _refreshWorkflowCalendarSnapshot(classId);
         _activeTab = 2;
         _render(el, classId);
-        showToast('Session started!', 'ok');
+        const startedDate = fmtDate(session.session_date || session.date);
+        const startedTime = fmtTime(session.start_time || '--:--');
+        showToast(`Session started for ${startedDate} at ${startedTime}.`, 'ok');
       } catch (err) {
         if (_isSessionAlreadyOpenConflict(err)) {
           const ws = await api(`/workflow/classes/${classId}`).catch(() => null);
