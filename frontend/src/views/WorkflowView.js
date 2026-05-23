@@ -3736,12 +3736,12 @@ function _render(el, classId) {
             </div>` : '<p class="text-[13px] text-slate-400">No checklist items for this unit.</p>'}
             ` : `
             <!-- No active unit -->
-            <div class="rounded-3xl border border-dashed border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.85),rgba(255,255,255,0.98))] px-5 py-5 flex flex-col gap-3.5">
-              <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div class="rounded-3xl border border-dashed border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.85),rgba(255,255,255,0.98))] px-4.5 py-4.5 flex flex-col gap-3">
+              <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
                 <div class="min-w-0">
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Start Here</p>
-                  <h3 class="mt-1 text-[22px] font-semibold tracking-tight text-slate-800">No active unit</h3>
-                  <p class="mt-1.5 text-[12px] leading-relaxed text-slate-500 max-w-[640px]">Create the next unit below or extract its checklist from a PDF. Once the checklist is right, we build the rest of the workflow on top of it.</p>
+                  <h3 class="mt-1 text-[21px] font-semibold tracking-tight text-slate-800">No active unit</h3>
+                  <p class="mt-1 text-[12px] leading-relaxed text-slate-500 max-w-[640px]">Create the next unit below or extract its checklist from a PDF. Once the checklist is right, we build the rest of the workflow on top of it.</p>
                 </div>
                 <div class="flex flex-wrap gap-2 text-[11px]">
                   <span class="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-600">1. Create or extract</span>
@@ -3749,7 +3749,7 @@ function _render(el, classId) {
                   <span class="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-slate-600">3. Start teaching</span>
                 </div>
               </div>
-              <div class="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div class="rounded-2xl border border-slate-200 bg-white px-3.5 py-2.25 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p class="text-[12px] font-semibold text-slate-700">Next step</p>
                   <p class="mt-0.5 text-[11px] text-slate-500">Use the creation panel below to add a unit manually or extract one from PDF.</p>
@@ -3777,7 +3777,7 @@ function _render(el, classId) {
               </div>
 
               ${unit
-                ? '<div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-[12px] text-amber-800">A unit is already active. Close or finish it before creating or extracting the next one.</div>'
+                ? '<div class="rounded-2xl border border-amber-200 bg-amber-50 px-3.5 py-2.25 text-[12px] text-amber-800">A unit is already active. Close or finish it before creating or extracting the next one.</div>'
                 : ''}
 
               <div class="grid grid-cols-1 xl:grid-cols-[1.05fr_0.95fr] gap-3">
@@ -3882,7 +3882,7 @@ function _render(el, classId) {
                   ${Number(s.absent_count || 0) > 0 ? `<span class="badge badge-red">${s.absent_count} absent</span>` : ''}
                 </div>
               </div>`).join('')}
-              </div>` : '<div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3 text-[12px] text-slate-500">No sessions in this date range.</div>'}
+              </div>` : '<div class="rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-2.25 text-[12px] text-slate-500">No sessions in this date range.</div>'}
             </div>` : ''}
 
             ${unit ? `
@@ -3896,7 +3896,7 @@ function _render(el, classId) {
                 <button class="btn btn-ghost btn-sm !text-slate-500 !px-2.5" data-unit-timeline-retry="${unit.id}">Refresh</button>
               </div>
               ${unitTimelineState.loading && !unitTimelineState.loaded ? `
-                <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3 text-[12px] text-slate-500">Loading unit sessions...</div>
+                <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-2.25 text-[12px] text-slate-500">Loading unit sessions...</div>
               ` : ''}
               ${unitTimelineState.error ? `
                 <div class="px-3 py-2 bg-red-50 border border-red-200 rounded-xl">
@@ -3924,7 +3924,7 @@ function _render(el, classId) {
                 </div>
               ` : ''}
               ${!unitTimelineState.loading && !unitTimelineState.error && !unitTimelineState.sessions.length ? `
-                <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3 text-[12px] text-slate-500">No sessions recorded for this unit yet.</div>
+                <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-2.25 text-[12px] text-slate-500">No sessions recorded for this unit yet.</div>
               ` : ''}
             </div>` : ''}
 
