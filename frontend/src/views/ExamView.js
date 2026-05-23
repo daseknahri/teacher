@@ -12,6 +12,7 @@ import { showToast } from '../utils/toast.js';
 import { askConfirm } from '../utils/modal.js';
 import { mountRetryCard } from '../utils/retryView.js';
 import { fmtDate, fmtScore, fmtPct } from '../utils/format.js';
+import { navigate } from '../router.js';
 
 let _sortKey = 'full_name';
 let _sortAsc = true;
@@ -107,6 +108,10 @@ function _renderExam(el, classId) {
             <button id="btn-download-template" class="btn btn-ghost btn-sm" title="Download student mark template"> Template</button>
             <button id="btn-import-results" class="btn btn-secondary"> Import</button>
             <button id="btn-export-results" class="btn btn-secondary"> Export</button>
+            ${exam && !exam.is_archived ? `
+              <button id="btn-create-exam-workflow" class="btn btn-ghost btn-sm" title="Create or reopen the workflow unit for this exam"> Exam Workflow</button>
+              <button id="btn-create-correction-workflow" class="btn btn-ghost btn-sm" title="Create or reopen the workflow unit for this exam correction"> Correction Workflow</button>
+            ` : ''}
           ` : ''}
           ${exam && !exam.is_archived ? `
             <button id="btn-edit-exam" class="btn btn-ghost btn-sm" title="Edit exam"> Edit</button>
@@ -260,6 +265,25 @@ function _th(label, key) {
 }
 
 function _bindExamEvents(el, classId) {
+  async function createLinkedWorkflow(unitType, label) {
+    const exam = getSelectedExam();
+    if (!exam) {
+      showToast('Select an exam first.', 'warning');
+      return;
+    }
+    try {
+      const result = await api(`/workflow/classes/${classId}/exams/${exam.id}/linked-unit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unit_type: unitType }),
+      });
+      showToast(result?.created ? `${label} ready in Workflow.` : `${label} already active in Workflow.`, 'ok');
+      navigate('workflow');
+    } catch (err) {
+      showToast(err.message || `Failed to open ${label.toLowerCase()}.`, 'error');
+    }
+  }
+
   // Pill tab switch
   el.querySelectorAll('[data-exam-id]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -376,6 +400,14 @@ function _bindExamEvents(el, classId) {
       if (!examId) return;
       await downloadWithAuth(`/exams/${examId}/template`, `exam-${examId}-template.xlsx`);
     } catch (err) { showToast(err.message || 'Template download failed.', 'error'); }
+  });
+
+  el.querySelector('#btn-create-exam-workflow')?.addEventListener('click', async () => {
+    await createLinkedWorkflow('exam', 'Exam workflow');
+  });
+
+  el.querySelector('#btn-create-correction-workflow')?.addEventListener('click', async () => {
+    await createLinkedWorkflow('exam_correction', 'Correction workflow');
   });
 
   // Edit exam

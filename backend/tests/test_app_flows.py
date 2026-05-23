@@ -6188,6 +6188,88 @@ def test_exam_excel_flow_and_exports(client):
     assert export_pdf_resp.content.startswith(b"%PDF")
 
 
+def test_create_linked_exam_workflow_unit_from_exam(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": f"Exam WF {uuid.uuid4().hex[:6]}"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    exam_resp = client.post(
+        f"/classes/{class_id}/exams",
+        headers=headers,
+        json={"title": "CC2", "exam_date": "2026-06-10", "max_score": 20, "weight": 1},
+    )
+    assert exam_resp.status_code == 201
+    exam_id = int(exam_resp.json()["id"])
+
+    linked_resp = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam"},
+    )
+    assert linked_resp.status_code == 200
+    body = linked_resp.json()
+    assert body["created"] is True
+    assert body["unit"]["unit_type"] == "exam"
+    assert int(body["unit"]["exam_id"]) == exam_id
+    assert body["unit"]["checklist"]
+    assert body["unit"]["checklist"][0]["title"] == "CC2"
+
+    linked_again = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam"},
+    )
+    assert linked_again.status_code == 200
+    again_body = linked_again.json()
+    assert again_body["created"] is False
+    assert int(again_body["unit"]["id"]) == int(body["unit"]["id"])
+
+
+def test_create_linked_exam_correction_workflow_reuses_exam_structure(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": f"Exam Correction {uuid.uuid4().hex[:6]}"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    exam_resp = client.post(
+        f"/classes/{class_id}/exams",
+        headers=headers,
+        json={"title": "CC3", "exam_date": "2026-06-17", "max_score": 20, "weight": 1},
+    )
+    assert exam_resp.status_code == 201
+    exam_id = int(exam_resp.json()["id"])
+
+    exam_unit_resp = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam"},
+    )
+    assert exam_unit_resp.status_code == 200
+    exam_unit = exam_unit_resp.json()["unit"]
+    exam_unit_id = int(exam_unit["id"])
+
+    close_resp = client.post(f"/workflow/classes/{class_id}/units/{exam_unit_id}/close", headers=headers)
+    assert close_resp.status_code == 200
+
+    correction_resp = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam_correction"},
+    )
+    assert correction_resp.status_code == 200
+    correction_body = correction_resp.json()
+    assert correction_body["created"] is True
+    assert correction_body["unit"]["unit_type"] == "exam_correction"
+    assert int(correction_body["unit"]["exam_id"]) == exam_id
+    correction_checklist = correction_body["unit"]["checklist"]
+    assert correction_checklist
+    assert correction_checklist[0]["title"] == "Correction - CC3"
+    correction_child_titles = [row["title"] for row in correction_checklist[0]["children"]]
+    assert "Sujet complet" in correction_child_titles
+    assert "Bareme et consignes" in correction_child_titles
+
+
 def test_import_students_from_notescc_list_format(client):
     headers = _auth_headers(client)
     class_resp = client.post("/classes", json={"name": "NotesCC List Class"}, headers=headers)

@@ -624,6 +624,7 @@ class WorkflowChecklistItemOut(BaseModel):
 class WorkflowUnitOut(BaseModel):
     id: int
     class_id: int
+    exam_id: int | None = None
     unit_type: WorkflowUnitType
     status: WorkflowUnitStatus
     title: str
@@ -640,6 +641,16 @@ class WorkflowUnitOut(BaseModel):
     extraction_reviewed: bool = True
     extraction_reviewed_at: datetime | None = None
     checklist: list[WorkflowChecklistItemOut] = Field(default_factory=list)
+
+
+class WorkflowExamLinkedUnitCreateIn(BaseModel):
+    unit_type: WorkflowUnitType
+    title: str | None = Field(default=None, max_length=255)
+
+
+class WorkflowExamLinkedUnitCreateOut(BaseModel):
+    created: bool = True
+    unit: WorkflowUnitOut
 
 
 class WorkflowUnitDeleteOut(BaseModel):

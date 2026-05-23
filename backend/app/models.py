@@ -286,6 +286,7 @@ class WorkflowUnit(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     class_id: Mapped[int] = mapped_column(ForeignKey("classes.id", ondelete="CASCADE"), index=True)
+    exam_id: Mapped[int | None] = mapped_column(ForeignKey("exams.id", ondelete="SET NULL"), index=True, nullable=True)
     unit_type: Mapped[WorkflowUnitType] = mapped_column(SQLEnum(WorkflowUnitType), index=True)
     status: Mapped[WorkflowUnitStatus] = mapped_column(SQLEnum(WorkflowUnitStatus), default=WorkflowUnitStatus.ACTIVE, index=True)
     title: Mapped[str] = mapped_column(String(255))
@@ -298,6 +299,7 @@ class WorkflowUnit(Base):
     closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     classroom: Mapped["Classroom"] = relationship(back_populates="workflow_units")
+    exam: Mapped["Exam | None"] = relationship(back_populates="workflow_units")
     checklist_items: Mapped[list["WorkflowChecklistItem"]] = relationship(
         back_populates="unit",
         cascade="all, delete-orphan",
@@ -478,6 +480,7 @@ class Exam(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     classroom: Mapped["Classroom"] = relationship(back_populates="exams")
+    workflow_units: Mapped[list["WorkflowUnit"]] = relationship(back_populates="exam")
     results: Mapped[list["ExamResult"]] = relationship(back_populates="exam", cascade="all, delete-orphan")
     archive_state: Mapped["ExamArchiveState | None"] = relationship(
         back_populates="exam",

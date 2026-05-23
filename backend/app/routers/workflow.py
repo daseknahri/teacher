@@ -11,7 +11,7 @@ import uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse, StreamingResponse
 from openpyxl import Workbook
-from sqlalchemy import and_, delete, func, or_, select
+from sqlalchemy import and_, case, delete, func, or_, select
 from sqlalchemy.orm import Session
 
 from .. import config as app_config
@@ -28,6 +28,7 @@ from ..models import (
     TimetableVersion,
     TimetableRuleException,
     TimetableClassAlias,
+    Exam,
     Student,
     User,
     UserRole,
@@ -104,6 +105,8 @@ from ..schemas import (
     WorkflowUnitExtractionReviewIn,
     WorkflowUnitBlueprintOut,
     WorkflowUnitDeleteOut,
+    WorkflowExamLinkedUnitCreateIn,
+    WorkflowExamLinkedUnitCreateOut,
     WorkflowUnitOut,
     WorkflowWorkspaceOut,
     WorkflowLeafContentGenerateIn,
@@ -939,6 +942,12 @@ def _normalize_workflow_title(value, *, fallback: str) -> str:
     return normalized or fallback
 
 
+def _next_workflow_unit_order_index(db: Session, *, class_id: int) -> int:
+    return int(
+        db.scalar(select(func.coalesce(func.max(WorkflowUnit.order_index), 0)).where(WorkflowUnit.class_id == class_id)) or 0
+    ) + 1
+
+
 def _safe_checklist_kind(value) -> WorkflowChecklistItemKind:
     if isinstance(value, WorkflowChecklistItemKind):
         return value
@@ -961,6 +970,7 @@ def _safe_serialize_unit(db: Session, unit: WorkflowUnit, *, class_id: int) -> W
             return WorkflowUnitOut(
                 id=_safe_int(getattr(unit, "id", 0), default=0),
                 class_id=_safe_int(getattr(unit, "class_id", class_id), default=int(class_id)),
+                exam_id=_safe_optional_int(getattr(unit, "exam_id", None)),
                 unit_type=getattr(unit, "unit_type", WorkflowUnitType.CHAPTER),
                 status=getattr(unit, "status", WorkflowUnitStatus.ACTIVE),
                 title=_normalize_workflow_title(getattr(unit, "title", None), fallback="Untitled unit"),
@@ -1027,6 +1037,7 @@ def _serialize_unit(db: Session, unit: WorkflowUnit) -> WorkflowUnitOut:
     return WorkflowUnitOut(
         id=unit.id,
         class_id=unit.class_id,
+        exam_id=unit.exam_id,
         unit_type=unit.unit_type,
         status=unit.status,
         title=unit.title,
@@ -1044,6 +1055,157 @@ def _serialize_unit(db: Session, unit: WorkflowUnit) -> WorkflowUnitOut:
         extraction_reviewed_at=getattr(blueprint, "reviewed_at", None) if blueprint is not None else None,
         checklist=_serialize_checklist(items),
     )
+
+
+def _workflow_nodes_from_checklist_rows(items: list[WorkflowChecklistItem], *, root_title: str | None = None) -> list[dict[str, object]]:
+    serialized = _serialize_checklist(items)
+
+    def convert(node: WorkflowChecklistItemOut) -> dict[str, object]:
+        return {
+            "title": node.title,
+            "kind": node.item_kind.value,
+            "children": [convert(child) for child in node.children],
+        }
+
+    nodes = [convert(node) for node in serialized]
+    if root_title:
+        clean_root = str(root_title or "").strip()
+        if clean_root:
+            if len(nodes) == 1:
+                nodes[0]["title"] = clean_root
+            elif nodes:
+                nodes = [{"title": clean_root, "kind": WorkflowChecklistItemKind.CHAPTER.value, "children": nodes}]
+            else:
+                nodes = [{"title": clean_root, "kind": WorkflowChecklistItemKind.CHAPTER.value, "children": []}]
+    return nodes
+
+
+def _build_linked_exam_generated_payload(
+    db: Session,
+    *,
+    class_id: int,
+    exam: Exam,
+    unit_type: WorkflowUnitType,
+    title: str,
+) -> dict[str, object]:
+    if unit_type == WorkflowUnitType.EXAM:
+        nodes: list[dict[str, object]] = [
+            {
+                "title": title,
+                "kind": WorkflowChecklistItemKind.CHAPTER.value,
+                "children": [
+                    {"title": "Sujet complet", "kind": WorkflowChecklistItemKind.SECTION.value, "children": []},
+                    {"title": "Bareme et consignes", "kind": WorkflowChecklistItemKind.SECTION.value, "children": []},
+                    {"title": "Correction a venir", "kind": WorkflowChecklistItemKind.SECTION.value, "children": []},
+                ],
+            }
+        ]
+    else:
+        source_exam_unit = db.scalar(
+            select(WorkflowUnit)
+            .where(
+                WorkflowUnit.class_id == class_id,
+                WorkflowUnit.exam_id == exam.id,
+                WorkflowUnit.unit_type == WorkflowUnitType.EXAM,
+            )
+            .order_by(
+                case((WorkflowUnit.status == WorkflowUnitStatus.ACTIVE, 0), else_=1),
+                WorkflowUnit.created_at.desc(),
+                WorkflowUnit.id.desc(),
+            )
+        )
+        if source_exam_unit is not None:
+            source_items = db.scalars(
+                select(WorkflowChecklistItem)
+                .where(WorkflowChecklistItem.unit_id == source_exam_unit.id)
+                .order_by(WorkflowChecklistItem.position.asc())
+            ).all()
+            nodes = _workflow_nodes_from_checklist_rows(source_items, root_title=title)
+        else:
+            nodes = [
+                {
+                    "title": title,
+                    "kind": WorkflowChecklistItemKind.CHAPTER.value,
+                    "children": [
+                        {"title": "Correction detaillee", "kind": WorkflowChecklistItemKind.SECTION.value, "children": []},
+                        {"title": "Erreurs frequentes", "kind": WorkflowChecklistItemKind.SECTION.value, "children": []},
+                        {"title": "Remediation", "kind": WorkflowChecklistItemKind.SECTION.value, "children": []},
+                    ],
+                }
+            ]
+
+    return {
+        "source": "template",
+        "status": "ready",
+        "items": nodes,
+        "provider_context": {
+            "linked_exam_id": int(exam.id),
+            "linked_exam_title": str(exam.title or "").strip(),
+            "linked_unit_type": unit_type.value,
+        },
+    }
+
+
+def _create_unit_with_seeded_checklist(
+    db: Session,
+    *,
+    class_id: int,
+    current_user: User,
+    unit_type: WorkflowUnitType,
+    title: str,
+    generated: dict[str, object],
+    planned_hours: float | None = None,
+    exam_id: int | None = None,
+) -> WorkflowUnit:
+    normalized_title = str(title or "").strip()
+    if not normalized_title:
+        raise HTTPException(status_code=400, detail="Unit title is required.")
+    if planned_hours is not None and float(planned_hours) <= 0:
+        raise HTTPException(status_code=400, detail="planned_hours must be greater than zero.")
+    if db.scalar(
+        select(WorkflowUnit.id).where(
+            WorkflowUnit.class_id == class_id,
+            WorkflowUnit.status == WorkflowUnitStatus.ACTIVE,
+        )
+    ):
+        raise HTTPException(status_code=409, detail="An active unit already exists. Close it first.")
+
+    unit = WorkflowUnit(
+        class_id=class_id,
+        exam_id=exam_id,
+        unit_type=unit_type,
+        status=WorkflowUnitStatus.ACTIVE,
+        title=normalized_title,
+        planned_hours=planned_hours,
+        order_index=_next_workflow_unit_order_index(db, class_id=class_id),
+        created_by_user_id=current_user.id,
+    )
+    db.add(unit)
+    db.flush()
+
+    _store_generated_checklist_on_unit(
+        db,
+        unit=unit,
+        generated=generated,
+        extracted_text="",
+        document_hash=None,
+    )
+    log_audit(
+        db,
+        user=current_user,
+        action="workflow.unit.start",
+        entity_type="workflow_unit",
+        entity_id=unit.id,
+        class_id=class_id,
+        details={
+            "unit_type": unit_type.value,
+            "title": unit.title,
+            "planned_hours": planned_hours,
+            "generation_source": generated.get("source"),
+            "exam_id": exam_id,
+        },
+    )
+    return unit
 
 
 def _session_time_sort_value(value: time | None) -> int:
@@ -3184,6 +3346,61 @@ def start_unit(
     db.commit()
     db.refresh(unit)
     return _serialize_unit(db, unit)
+
+
+@router.post("/classes/{class_id}/exams/{exam_id}/linked-unit", response_model=WorkflowExamLinkedUnitCreateOut)
+def create_linked_exam_workflow_unit(
+    class_id: int,
+    exam_id: int,
+    payload: WorkflowExamLinkedUnitCreateIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkflowExamLinkedUnitCreateOut:
+    _ = ensure_class_writable(db, class_id, current_user)
+    exam = db.get(Exam, exam_id)
+    if exam is None or int(exam.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Exam not found.")
+    requested_type = payload.unit_type
+    if requested_type not in {WorkflowUnitType.EXAM, WorkflowUnitType.EXAM_CORRECTION}:
+        raise HTTPException(status_code=400, detail="Only exam or exam_correction workflow units can be linked to an exam.")
+
+    existing_active = db.scalar(
+        select(WorkflowUnit)
+        .where(
+            WorkflowUnit.class_id == class_id,
+            WorkflowUnit.exam_id == exam_id,
+            WorkflowUnit.unit_type == requested_type,
+            WorkflowUnit.status == WorkflowUnitStatus.ACTIVE,
+        )
+        .order_by(WorkflowUnit.created_at.desc(), WorkflowUnit.id.desc())
+    )
+    if existing_active is not None:
+        return WorkflowExamLinkedUnitCreateOut(
+            created=False,
+            unit=_serialize_unit(db, existing_active),
+        )
+
+    default_title = exam.title if requested_type == WorkflowUnitType.EXAM else f"Correction - {exam.title}"
+    title = _normalize_workflow_title(payload.title, fallback=default_title)
+    generated = _build_linked_exam_generated_payload(
+        db,
+        class_id=class_id,
+        exam=exam,
+        unit_type=requested_type,
+        title=title,
+    )
+    unit = _create_unit_with_seeded_checklist(
+        db,
+        class_id=class_id,
+        current_user=current_user,
+        unit_type=requested_type,
+        title=title,
+        generated=generated,
+        exam_id=exam.id,
+    )
+    db.commit()
+    db.refresh(unit)
+    return WorkflowExamLinkedUnitCreateOut(created=True, unit=_serialize_unit(db, unit))
 
 
 @router.post("/classes/{class_id}/units/{unit_id}/items", response_model=WorkflowChecklistItemOut, status_code=status.HTTP_201_CREATED)
