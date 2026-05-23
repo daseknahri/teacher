@@ -3597,27 +3597,27 @@ function _render(el, classId) {
               </div>
             </div>
             ${previewSessionNumber ? `
-            <div class="rounded-3xl border border-blue-200 bg-[linear-gradient(180deg,rgba(239,246,255,0.95),rgba(255,255,255,0.98))] p-4 flex flex-col gap-4 shadow-sm">
+            <div class="rounded-3xl border border-blue-200 bg-[linear-gradient(180deg,rgba(239,246,255,0.95),rgba(255,255,255,0.98))] p-3.5 flex flex-col gap-3.5 shadow-sm">
               <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.1fr)_minmax(260px,0.9fr)] gap-3 items-start">
-                <div class="rounded-2xl border border-white/80 bg-white/85 px-4 py-4 shadow-sm">
+                <div class="rounded-2xl border border-white/80 bg-white/85 px-4 py-3.5 shadow-sm">
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">Calendar Session Prep</p>
                   <p class="mt-1 text-[18px] font-semibold tracking-tight text-slate-800">${_escapeHtml(_workflowEntryContext?.session_label || `Unit Session ${previewSessionNumber}`)}</p>
                   <p class="mt-1 text-[12px] text-slate-500">${_workflowEntryContext?.session_date ? _escapeHtml(fmtDate(_workflowEntryContext.session_date)) : 'Scheduled from calendar'}</p>
-                  <div class="mt-3 flex items-center gap-2 flex-wrap">
+                  <div class="mt-2.5 flex items-center gap-2 flex-wrap">
                     <span class="badge ${previewRouteStatus.className}">${_escapeHtml(previewRouteStatus.label)}</span>
                     ${previewMatchedChecklist.length ? `<span class="badge badge-gray">${previewMatchedChecklist.length} matched row${previewMatchedChecklist.length === 1 ? '' : 's'}</span>` : ''}
                   </div>
                 </div>
-                <div class="rounded-2xl border border-white/80 bg-white/90 px-4 py-4 shadow-sm">
+                <div class="rounded-2xl border border-white/80 bg-white/90 px-4 py-3.5 shadow-sm">
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Ready To Do</p>
-                  <p class="mt-2 text-[12px] leading-relaxed text-slate-700">${previewMatchedChecklist.length ? _escapeHtml(previewRouteStatus.hint) : 'Review the planned route below, then start this session when you are ready to teach.'}</p>
-                  <div class="mt-3 flex gap-2 flex-wrap">
+                  <p class="mt-1.5 text-[11px] leading-relaxed text-slate-700">${previewMatchedChecklist.length ? _escapeHtml(previewRouteStatus.hint) : 'Review the planned route below, then start this session when you are ready to teach.'}</p>
+                  <div class="mt-2.5 flex gap-2 flex-wrap">
                     ${!session ? `<button id="btn-start-preview-session" class="btn btn-success btn-sm">Start This Session</button>` : ''}
                   </div>
                 </div>
               </div>
               <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                <div class="rounded-2xl border border-slate-200 bg-white p-3">
+                <div class="rounded-2xl border border-slate-200 bg-white p-2.5">
                   <h4 class="text-[12px] font-semibold text-slate-700">Planned Session Route</h4>
                   <div class="mt-2">
                     ${previewSessionPlanTree.length
@@ -3625,7 +3625,7 @@ function _render(el, classId) {
                       : '<p class="text-[12px] text-slate-500">No planned checklist flow saved for this unit session yet.</p>'}
                   </div>
                 </div>
-                <div class="rounded-2xl border border-slate-200 bg-white p-3">
+                <div class="rounded-2xl border border-slate-200 bg-white p-2.5">
                   <h4 class="text-[12px] font-semibold text-slate-700">Teacher Prep Suggestions</h4>
                   <div class="mt-2">
                     ${_renderSessionPlaybookPreview(
