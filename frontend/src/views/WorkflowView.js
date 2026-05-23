@@ -5726,6 +5726,14 @@ function _bindWorkflowEvents(el, classId) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
+        let nextSessionAutofill = null;
+        try {
+          nextSessionAutofill = await api(`/workflow/classes/${classId}/sessions/${session.id}/ensure-next`, {
+            method: 'POST',
+          });
+        } catch (_autofillErr) {
+          nextSessionAutofill = null;
+        }
         setActiveSession(null);
         // Refresh workspace
         const ws = await api(`/workflow/classes/${classId}`);
@@ -5735,7 +5743,17 @@ function _bindWorkflowEvents(el, classId) {
         _render(el, classId);
         const activeUnitId = Number(ws?.active_unit?.id || 0);
         const unitClosed = previousUnitId > 0 && activeUnitId !== previousUnitId;
-        showToast(unitClosed ? 'Session ended. Unit completed and closed.' : 'Session ended.', 'ok');
+        if (unitClosed) {
+          showToast('Session ended. Unit completed and closed.', 'ok');
+        } else if (nextSessionAutofill?.created && nextSessionAutofill?.session) {
+          const nextSession = nextSessionAutofill.session;
+          showToast(
+            `Session ended. Next session scheduled for ${fmtDate(nextSession.session_date)} at ${fmtTime(nextSession.start_time || '--:--')}.`,
+            'ok'
+          );
+        } else {
+          showToast('Session ended.', 'ok');
+        }
       } catch (err) {
         _setBusy(triggerBtn, false);
         if (_isClosedSessionConflict(err)) {

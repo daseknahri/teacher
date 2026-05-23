@@ -1,4 +1,5 @@
 from datetime import date, datetime, time
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -567,6 +568,12 @@ class WorkflowSessionEndIn(BaseModel):
     note: str | None = None
 
 
+class WorkflowSessionEnsureNextOut(BaseModel):
+    created: bool = False
+    reason: str | None = None
+    session: Optional["WorkflowSessionOut"] = None
+
+
 class WorkflowSessionConfirmIn(BaseModel):
     auto_close_unit: bool = True
     create_progress_items: bool = True
@@ -896,6 +903,7 @@ class WorkflowCalendarAutoPlanOut(BaseModel):
 
 
 WorkflowChecklistItemOut.model_rebuild()
+WorkflowSessionEnsureNextOut.model_rebuild()
 
 
 class WorkflowLeafContentSummaryOut(BaseModel):

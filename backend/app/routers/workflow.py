@@ -87,6 +87,7 @@ from ..schemas import (
     WorkflowSessionConfirmIn,
     WorkflowSessionConfirmOut,
     WorkflowSessionEndIn,
+    WorkflowSessionEnsureNextOut,
     WorkflowSessionOut,
     WorkflowSessionWriteupGenerateIn,
     WorkflowSessionWriteupImportAssistantIn,
@@ -1864,6 +1865,7 @@ def _build_timetable_candidates_for_count(
     *,
     class_id: int,
     start_date: date,
+    start_time_floor: time | None = None,
     requested_count: int,
     rules: list[ClassTimetableRule],
     skip_blocked_holidays: bool = True,
@@ -1930,6 +1932,15 @@ def _build_timetable_candidates_for_count(
         for candidate in candidates:
             if len(selected) >= safe_requested:
                 break
+            if (
+                start_time_floor is not None
+                and candidate["session_date"] == start_date
+                and (
+                    candidate.get("start_time") is None
+                    or candidate["start_time"] <= start_time_floor
+                )
+            ):
+                continue
             key = (candidate["session_date"], candidate["start_time"])
             if key in selected_keys:
                 stats["skipped_duplicate_count"] += 1
@@ -1940,6 +1951,128 @@ def _build_timetable_candidates_for_count(
         cursor = window_end + timedelta(days=1)
 
     return selected, stats, search_end_date
+
+
+def _unit_has_upcoming_session(
+    db: Session,
+    *,
+    unit_id: int,
+    after_date: date,
+    after_time: time | None = None,
+    exclude_session_id: int | None = None,
+) -> bool:
+    conditions = [
+        ClassSession.unit_id == int(unit_id),
+    ]
+    if exclude_session_id is not None:
+        conditions.append(ClassSession.id != int(exclude_session_id))
+
+    if after_time is None:
+        conditions.append(ClassSession.session_date >= after_date)
+    else:
+        conditions.append(
+            or_(
+                ClassSession.session_date > after_date,
+                and_(
+                    ClassSession.session_date == after_date,
+                    or_(
+                        ClassSession.start_time.is_(None),
+                        ClassSession.start_time > after_time,
+                    ),
+                ),
+            )
+        )
+
+    row_id = db.scalar(
+        select(ClassSession.id)
+        .where(*conditions)
+        .order_by(ClassSession.session_date.asc(), ClassSession.start_time.asc().nulls_last(), ClassSession.id.asc())
+        .limit(1)
+    )
+    return row_id is not None
+
+
+def _ensure_next_unit_session_from_timetable(
+    db: Session,
+    *,
+    class_id: int,
+    source_session: ClassSession,
+    current_user: User,
+) -> tuple[ClassSession | None, str]:
+    if source_session.unit_id is None:
+        return None, "no_unit"
+
+    unit = db.get(WorkflowUnit, int(source_session.unit_id))
+    if unit is None or unit.class_id != int(class_id):
+        return None, "unit_missing"
+    if unit.status != WorkflowUnitStatus.ACTIVE:
+        return None, "unit_not_active"
+
+    reference_time = source_session.end_time or source_session.start_time
+    if _unit_has_upcoming_session(
+        db,
+        unit_id=int(unit.id),
+        after_date=source_session.session_date,
+        after_time=reference_time,
+        exclude_session_id=int(source_session.id),
+    ):
+        return None, "upcoming_exists"
+
+    rules = db.scalars(
+        select(ClassTimetableRule)
+        .where(ClassTimetableRule.class_id == int(class_id))
+        .order_by(
+            ClassTimetableRule.weekday.asc(),
+            ClassTimetableRule.start_time.asc(),
+            ClassTimetableRule.effective_from.asc(),
+            ClassTimetableRule.id.asc(),
+        )
+    ).all()
+    if not rules:
+        return None, "no_timetable_rules"
+
+    students = db.scalars(select(Student).where(Student.class_id == int(class_id)).order_by(Student.id.asc())).all()
+    if not students:
+        return None, "no_students"
+
+    selected, _stats, _search_end_date = _build_timetable_candidates_for_count(
+        db,
+        class_id=int(class_id),
+        start_date=source_session.session_date,
+        start_time_floor=reference_time,
+        requested_count=1,
+        rules=rules,
+        skip_blocked_holidays=True,
+        max_search_days=180,
+        country_code="MA",
+    )
+    if not selected:
+        return None, "no_available_slot"
+
+    candidate = selected[0]
+    rule = candidate["rule"]
+    note = _session_note_from_rule(
+        prefix=f"Auto-planned next {unit.title} session",
+        rule=rule,
+        moved_from_date=candidate.get("moved_from_date"),
+        exception_note=candidate.get("exception_note"),
+    )
+    created = _create_workflow_session_with_students(
+        db,
+        class_id=int(class_id),
+        students=students,
+        session_date=candidate["session_date"],
+        start_time=candidate["start_time"],
+        end_time=candidate.get("end_time"),
+        note=note,
+        current_user=current_user,
+        unit_id=int(unit.id),
+        audit_action="workflow.session.auto_schedule_next",
+        audit_details={
+            "source_session_id": int(source_session.id),
+        },
+    )
+    return created, "created"
 
 
 def _session_note_from_rule(
@@ -5828,6 +5961,37 @@ def end_workflow_session(
     db.commit()
     db.refresh(session)
     return _serialize_session(db, session)
+
+
+@router.post("/classes/{class_id}/sessions/{session_id}/ensure-next", response_model=WorkflowSessionEnsureNextOut)
+def ensure_next_workflow_session(
+    class_id: int,
+    session_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkflowSessionEnsureNextOut:
+    _ = ensure_class_writable(db, class_id, current_user)
+    session = db.get(ClassSession, session_id)
+    if session is None or session.class_id != class_id or session.unit_id is None:
+        raise HTTPException(status_code=404, detail="Workflow session not found.")
+
+    created, reason = _ensure_next_unit_session_from_timetable(
+        db,
+        class_id=class_id,
+        source_session=session,
+        current_user=current_user,
+    )
+    if created is None:
+        db.rollback()
+        return WorkflowSessionEnsureNextOut(created=False, reason=reason, session=None)
+
+    db.commit()
+    db.refresh(created)
+    return WorkflowSessionEnsureNextOut(
+        created=True,
+        reason=reason,
+        session=_serialize_session(db, created),
+    )
 
 
 @router.post("/classes/{class_id}/sessions/{session_id}/confirm", response_model=WorkflowSessionConfirmOut)

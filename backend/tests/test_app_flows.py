@@ -1089,6 +1089,187 @@ def test_workflow_auto_plan_new_unit_dry_run_respects_active_unit_conflict(clien
     assert "active unit already exists" in str(dry_run_resp.json()["detail"]).lower()
 
 
+def test_workflow_end_session_can_auto_schedule_next_timetable_session(client):
+    headers = _auth_headers(client)
+    class_name = f"NEXT-SESSION-{uuid.uuid4().hex[:6]}"
+    class_resp = client.post("/classes", json={"name": class_name, "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    roster = _build_roster_file([("STD930", "A"), ("STD931", "B")])
+    import_resp = client.post(
+        f"/classes/{class_id}/students/import",
+        headers=headers,
+        files={"file": ("students.xlsx", roster, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert import_resp.status_code == 200
+
+    csv_content = _build_timetable_csv(
+        [
+            ("owner@school.edu", class_name, "Math", "Monday", "08:00", "09:00", "R12", "G1"),
+            ("owner@school.edu", class_name, "Math", "Wednesday", "10:00", "11:00", "R12", "G1"),
+        ]
+    )
+    apply_resp = client.post(
+        "/workflow/timetable/import/apply",
+        headers=headers,
+        data={
+            "mode": "append_new_slots",
+            "effective_from": "2026-09-01",
+            "create_missing_classes": "false",
+        },
+        files={"file": ("emploi.csv", csv_content, "text/csv")},
+    )
+    assert apply_resp.status_code == 200
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={"unit_type": "exam", "title": "Rationals Unit"},
+    )
+    assert unit_resp.status_code == 201
+    unit_id = int(unit_resp.json()["id"])
+
+    add_item_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/items",
+        headers=headers,
+        json={"title": "I- Multiplication", "item_kind": "section", "parent_item_id": None},
+    )
+    assert add_item_resp.status_code == 201
+
+    session_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions",
+        headers=headers,
+        json={
+            "unit_id": unit_id,
+            "session_date": "2026-09-07",
+            "start_time": "08:00:00",
+            "note": "Live unit session",
+        },
+    )
+    assert session_resp.status_code == 201
+    session_id = int(session_resp.json()["id"])
+
+    end_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/{session_id}/end",
+        headers=headers,
+        json={"end_time": "09:00:00"},
+    )
+    assert end_resp.status_code == 200
+
+    ensure_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/{session_id}/ensure-next",
+        headers=headers,
+    )
+    assert ensure_resp.status_code == 200
+    payload = ensure_resp.json()
+    assert payload["created"] is True
+    assert payload["reason"] == "created"
+    next_session = payload["session"]
+    assert next_session is not None
+    assert int(next_session["unit_id"]) == unit_id
+    assert str(next_session["session_date"]) == "2026-09-09"
+    assert str(next_session["start_time"]) == "10:00:00"
+    assert str(next_session["end_time"]) == "11:00:00"
+
+
+def test_workflow_end_session_does_not_duplicate_existing_upcoming_unit_session(client):
+    headers = _auth_headers(client)
+    class_name = f"NEXT-SESSION-SKIP-{uuid.uuid4().hex[:6]}"
+    class_resp = client.post("/classes", json={"name": class_name, "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    roster = _build_roster_file([("STD940", "A"), ("STD941", "B")])
+    import_resp = client.post(
+        f"/classes/{class_id}/students/import",
+        headers=headers,
+        files={"file": ("students.xlsx", roster, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert import_resp.status_code == 200
+
+    csv_content = _build_timetable_csv(
+        [
+            ("owner@school.edu", class_name, "Math", "Monday", "08:00", "09:00", "R12", "G1"),
+            ("owner@school.edu", class_name, "Math", "Wednesday", "10:00", "11:00", "R12", "G1"),
+        ]
+    )
+    apply_resp = client.post(
+        "/workflow/timetable/import/apply",
+        headers=headers,
+        data={
+            "mode": "append_new_slots",
+            "effective_from": "2026-09-01",
+            "create_missing_classes": "false",
+        },
+        files={"file": ("emploi.csv", csv_content, "text/csv")},
+    )
+    assert apply_resp.status_code == 200
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={"unit_type": "exam", "title": "Rationals Unit"},
+    )
+    assert unit_resp.status_code == 201
+    unit_id = int(unit_resp.json()["id"])
+
+    add_item_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/items",
+        headers=headers,
+        json={"title": "I- Multiplication", "item_kind": "section", "parent_item_id": None},
+    )
+    assert add_item_resp.status_code == 201
+
+    current_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions",
+        headers=headers,
+        json={
+            "unit_id": unit_id,
+            "session_date": "2026-09-07",
+            "start_time": "08:00:00",
+            "note": "Current session",
+        },
+    )
+    assert current_resp.status_code == 201
+    current_session_id = int(current_resp.json()["id"])
+
+    existing_future_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions",
+        headers=headers,
+        json={
+            "unit_id": unit_id,
+            "session_date": "2026-09-09",
+            "start_time": "10:00:00",
+            "end_time": "11:00:00",
+            "note": "Already planned next session",
+        },
+    )
+    assert existing_future_resp.status_code == 201
+
+    end_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/{current_session_id}/end",
+        headers=headers,
+        json={"end_time": "09:00:00"},
+    )
+    assert end_resp.status_code == 200
+
+    ensure_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/{current_session_id}/ensure-next",
+        headers=headers,
+    )
+    assert ensure_resp.status_code == 200
+    payload = ensure_resp.json()
+    assert payload["created"] is False
+    assert payload["reason"] == "upcoming_exists"
+    assert payload["session"] is None
+
+    calendar_resp = client.get(f"/workflow/classes/{class_id}/calendar", headers=headers)
+    assert calendar_resp.status_code == 200
+    unit_rows = [row for row in calendar_resp.json() if int(row.get("unit_id") or 0) == unit_id]
+    assert len(unit_rows) == 2
+
+
 def test_workflow_class_setup_creates_class_students_and_timetable(client):
     headers = _auth_headers(client)
     setup_resp = client.post(
