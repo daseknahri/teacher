@@ -3541,38 +3541,38 @@ function _render(el, classId) {
           <div class="p-5 flex flex-col gap-5">
             ${unit ? `
             <!-- Current unit: progress ring + info -->
-            <div class="grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] gap-4 items-start">
-              <div class="rounded-3xl border border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.9),rgba(255,255,255,0.98))] p-4 shadow-sm">
+            <div class="grid grid-cols-1 xl:grid-cols-[300px_minmax(0,1fr)] gap-4 items-start">
+              <div class="rounded-3xl border border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.9),rgba(255,255,255,0.98))] p-3.5 shadow-sm">
                 <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Current Unit Progress</p>
-                <div class="mt-3 flex items-center gap-4">
-                  <svg width="96" height="96" class="-rotate-90 flex-shrink-0">
+                <div class="mt-2.5 flex items-center gap-3.5">
+                  <svg width="88" height="88" class="-rotate-90 flex-shrink-0">
                     <circle cx="48" cy="48" r="${r}" stroke-width="8" class="progress-ring-track"/>
                     <circle cx="48" cy="48" r="${r}" stroke-width="8"
                       stroke-dasharray="${circ}" stroke-dashoffset="${offset}"
                       class="progress-ring-fill transition-all duration-500"/>
                   </svg>
                   <div class="min-w-0">
-                    <div class="text-[34px] font-bold text-slate-800 tracking-tight leading-none">${pct}%</div>
-                    <div class="text-[12px] text-slate-400 mt-1">${done}/${total} items done</div>
-                    <p class="mt-3 text-[12px] leading-relaxed text-slate-500">The checklist is the live progress record for this unit.</p>
+                    <div class="text-[32px] font-bold text-slate-800 tracking-tight leading-none">${pct}%</div>
+                    <div class="text-[11px] text-slate-400 mt-1">${done}/${total} items done</div>
+                    <p class="mt-2.5 text-[11px] leading-relaxed text-slate-500">The checklist is the live progress record for this unit.</p>
                   </div>
                 </div>
               </div>
-              <div class="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-4">
+              <div class="rounded-3xl border border-slate-200 bg-white p-3.5 shadow-sm flex flex-col gap-3.5">
                 <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                   <div class="min-w-0">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Current Unit</p>
-                    <h2 class="mt-1 text-[24px] font-semibold tracking-tight leading-tight text-slate-800 break-words">${unit.title || unit.name || ''}</h2>
+                    <h2 class="mt-1 text-[22px] font-semibold tracking-tight leading-tight text-slate-800 break-words">${unit.title || unit.name || ''}</h2>
                     <p class="text-[12px] text-slate-500 mt-1">Created ${fmtDate(unit.created_at || unit.createdAt)}</p>
-                    <div class="flex items-center gap-2 flex-wrap mt-3">
+                    <div class="flex items-center gap-2 flex-wrap mt-2.5">
                       ${unit.unit_type ? `<span class="badge badge-blue">${unit.unit_type}</span>` : ''}
                       <span class="badge ${extractionBadgeClass}">Extraction ${_escapeHtml(extractionLabel)}</span>
                       <span class="badge ${extractionReviewPending ? 'badge-amber' : 'badge-green'}">${extractionReviewPending ? 'Review Pending' : 'Reviewed'}</span>
                     </div>
                   </div>
-                  <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-3 lg:max-w-[320px]">
+                  <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-2.5 lg:max-w-[320px]">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focus For Now</p>
-                    <p class="mt-2 text-[12px] leading-relaxed text-slate-700">${extractionReviewPending ? 'Approve the extracted checklist once the structure looks right, then continue planning and teaching from it.' : 'The checklist is ready to drive planning and teaching. Keep building one reliable layer at a time.'}</p>
+                    <p class="mt-1.5 text-[11px] leading-relaxed text-slate-700">${extractionReviewPending ? 'Approve the extracted checklist once the structure looks right, then continue planning and teaching from it.' : 'The checklist is ready to drive planning and teaching. Keep building one reliable layer at a time.'}</p>
                   </div>
                 </div>
                 ${extractionError ? `<div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">Provider note: ${_escapeHtml(extractionError)}</div>` : ''}
