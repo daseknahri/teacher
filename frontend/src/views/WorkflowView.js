@@ -4078,7 +4078,7 @@ function _render(el, classId) {
                 <div class="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
                   <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Teaching Structure</p>
-                    <p class="mt-0.5 text-[10px] text-slate-500">Keep this tree clean. We will reuse it when communicating with NotebookLM.</p>
+                    <p class="mt-0.5 text-[10px] text-slate-500">Keep this tree clean. We will reuse it with NotebookLM later.</p>
                   </div>
                 </div>
               ${visibleChecklist.map(item => {
@@ -4103,8 +4103,8 @@ function _render(el, classId) {
                   ${item.is_completed || item.done ? 'Y' : (isStructural ? '·' : '')}
                 </div>
                 <span class="todo-title text-[12px] leading-snug flex-1">${item.title}</span>
-                ${isStructural ? '<span class="text-[10px] text-slate-400 whitespace-nowrap">Auto-completes with child rows</span>' : ''}
-                ${hasChildren ? `<button class="btn btn-ghost btn-sm !text-sky-600 btn-checklist-group-complete" data-item-id="${item.id}" title="Mark all unfinished lesson steps under this heading">Check group</button>` : ''}
+                ${isStructural ? '<span class="text-[10px] text-slate-400 whitespace-nowrap">Auto-completes from child rows</span>' : ''}
+                ${hasChildren ? `<button class="btn btn-ghost btn-sm !text-sky-600 !px-2 btn-checklist-group-complete" data-item-id="${item.id}" title="Mark all unfinished lesson steps under this heading">Check group</button>` : ''}
               </div>`;
     }).join('')}
               </div>
