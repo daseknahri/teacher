@@ -3861,7 +3861,7 @@ function _render(el, classId) {
                 <div class="flex gap-1 flex-wrap">
                   ${RECENT_SESSION_WINDOWS.map(filter => `
                   <button
-                    class="btn btn-ghost btn-sm ${_recentWindow === filter.key ? '!bg-slate-200 !text-slate-700' : '!text-slate-500'}"
+                    class="btn btn-ghost btn-sm ${_recentWindow === filter.key ? '!bg-slate-200 !text-slate-700' : '!text-slate-500'} !px-2.5"
                     data-recent-window="${filter.key}">${filter.label}</button>
                   `).join('')}
                 </div>
@@ -3893,7 +3893,7 @@ function _render(el, classId) {
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Unit Session Timeline</p>
                   <p class="mt-0.5 text-[11px] text-slate-500">The running record of sessions already captured for this unit.</p>
                 </div>
-                <button class="btn btn-ghost btn-sm !text-slate-500" data-unit-timeline-retry="${unit.id}">Refresh</button>
+                <button class="btn btn-ghost btn-sm !text-slate-500 !px-2.5" data-unit-timeline-retry="${unit.id}">Refresh</button>
               </div>
               ${unitTimelineState.loading && !unitTimelineState.loaded ? `
                 <div class="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-3 text-[12px] text-slate-500">Loading unit sessions...</div>
