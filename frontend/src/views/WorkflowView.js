@@ -3522,7 +3522,7 @@ function _render(el, classId) {
         <div class="live-dot"></div>
         <div class="live-banner-copy">
           <span class="live-banner-title">Session in progress${session.unit_session_number ? ` • Unit Session ${session.unit_session_number}` : ''}</span>
-          <span class="live-banner-meta">Started at ${fmtTime(session.start_time)} | ${fmtDate(session.session_date || session.date)}</span>
+          <span class="live-banner-meta">Scheduled for ${fmtDate(session.session_date || session.date)} at ${fmtTime(session.start_time)}</span>
         </div>
         <button id="btn-end-session-banner"
           class="btn btn-danger btn-sm">End Session</button>
@@ -4036,7 +4036,7 @@ function _render(el, classId) {
                     <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500">
                       <span>${_escapeHtml(fmtDate(session.session_date || session.date))}</span>
                       <span class="text-slate-300">&middot;</span>
-                      <span>${_escapeHtml(`Started at ${fmtTime(session.start_time)}`)}</span>
+                      <span>${_escapeHtml(`Scheduled at ${fmtTime(session.start_time)}`)}</span>
                       ${session?.unit_session_number ? `<span class="text-slate-300">&middot;</span><span>Unit Session ${Number(session.unit_session_number)}</span>` : ''}
                     </div>
                     <div class="mt-2 flex gap-2 flex-wrap">

@@ -4135,7 +4135,7 @@ function _renderCalendar(el, classId) {
                   <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500">
                     <span>${_escapeHtml(fmtDate(selectedEvent.session_date || selectedEvent.date))}</span>
                     <span class="text-slate-300">&middot;</span>
-                    <span>${_escapeHtml(`${fmtTime(selectedEvent.start_time)}${selectedEvent.end_time ? ` -> ${fmtTime(selectedEvent.end_time)}` : ''}`)}</span>
+                    <span>${_escapeHtml(`Scheduled ${fmtTime(selectedEvent.start_time)}${selectedEvent.end_time ? ` -> ${fmtTime(selectedEvent.end_time)}` : ''}`)}</span>
                     ${selectedSessionNumber ? `<span class="text-slate-300">&middot;</span><span>Unit Session ${Number(selectedSessionNumber)}</span>` : ''}
                   </div>
                   <div class="mt-2 flex gap-2 flex-wrap">
