@@ -3646,10 +3646,10 @@ function _render(el, classId) {
             <!-- Checklist tree -->
             ${checklist.length ? `
             <div class="flex flex-col gap-2 checklist-dnd-root" data-checklist-dnd-root>
-              <div class="flex items-start justify-between gap-3 mb-1 flex-wrap">
+              <div class="flex items-start justify-between gap-3 mb-0.5 flex-wrap">
                 <div class="min-w-0">
                   <h4 class="text-[12px] font-semibold text-slate-600">Checklist</h4>
-                  <div class="mt-1 flex items-center gap-2 flex-wrap">
+                  <div class="mt-0.5 flex items-center gap-1.5 flex-wrap">
                     ${previewSessionNumber ? `<span class="badge badge-blue">Focused on Session ${previewSessionNumber}</span>` : ''}
                     ${previewSessionNumber && _workflowPreviewFocusOnly ? `<span class="badge badge-green">Planned route only</span>` : ''}
                     ${previewSessionNumber && _workflowPreviewFocusOnly && _workflowPreviewHideDone ? `<span class="badge badge-amber">Remaining only</span>` : ''}
@@ -3663,7 +3663,7 @@ function _render(el, classId) {
                 </div>
               </div>
               ${previewSessionNumber ? `
-              <div class="rounded-xl border border-blue-100 bg-blue-50/70 px-3 py-2.5 mb-1">
+              <div class="rounded-xl border border-blue-100 bg-blue-50/70 px-3 py-2 mb-1">
                 <div class="flex items-start gap-2">
                   <span class="text-[10px] font-bold text-blue-700 mt-0.5">FOCUS</span>
                   <p class="text-[11px] text-blue-700 leading-tight">
@@ -3676,10 +3676,10 @@ function _render(el, classId) {
                 </div>
               </div>` : ''}
               ${previewSessionNumber && previewSummaryBadges.length ? `
-              <div class="flex flex-wrap gap-2 px-1 mb-1">
+              <div class="flex flex-wrap gap-1.5 px-1 mb-1">
                 ${previewSummaryBadges.map(label => `<span class="badge badge-gray">${_escapeHtml(label)}</span>`).join('')}
               </div>` : ''}
-              <div class="checklist-helper-strip rounded-xl border border-blue-100/70 bg-blue-50/40 px-3 py-2 mb-1">
+              <div class="checklist-helper-strip rounded-xl border border-blue-100/70 bg-blue-50/40 px-3 py-1.5 mb-1">
                 <p class="text-[11px] text-blue-700 leading-tight">
                   <span class="font-semibold">Reorder</span> by dragging a row before, inside, or after another row.
                 </p>
