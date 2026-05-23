@@ -3551,7 +3551,9 @@ async function _editSessionBlock({ classId, session, el }) {
     _sessionDetailCache.delete(Number(session.session_id));
     await _reloadCalendarData(classId);
     _renderCalendar(el, classId);
-    showToast('Session block updated.', 'ok');
+    const scheduledDate = fmtDate(payload.session_date || session.session_date || session.date);
+    const scheduledStart = fmtTime(payload.start_time || session.start_time || '--:--');
+    showToast(`Session rescheduled for ${scheduledDate} at ${scheduledStart}.`, 'ok');
     await _selectSession(Number(session.session_id), el, classId);
   } catch (err) {
     showToast(String(err?.message || 'Failed to update session block.'), 'error');
