@@ -662,14 +662,18 @@
     display: flex;
     align-items: flex-start;
     gap: var(--s-2);
-    padding: var(--s-2) var(--s-3);
+    padding: 10px var(--s-3);
     border-radius: var(--r-sm);
-    transition: background var(--duration-sm) var(--ease);
+    border: 1px solid transparent;
+    transition: background var(--duration-sm) var(--ease),
+        border-color var(--duration-sm) var(--ease),
+        box-shadow var(--duration-sm) var(--ease);
     cursor: pointer;
 }
 
 .todo-node:hover {
     background: var(--gray-50);
+    border-color: var(--gray-200);
 }
 
 .todo-node.depth-0 {
@@ -715,6 +719,30 @@
     font-size: 13px;
     flex: 1;
     line-height: 1.4;
+}
+
+.checklist-helper-strip {
+    backdrop-filter: blur(6px);
+}
+
+.checklist-edit-actions {
+    opacity: 0.82;
+    transition: opacity var(--duration-sm) var(--ease),
+        border-color var(--duration-sm) var(--ease),
+        box-shadow var(--duration-sm) var(--ease),
+        background var(--duration-sm) var(--ease);
+}
+
+.checklist-draggable-node:hover .checklist-edit-actions,
+.checklist-draggable-node:focus-within .checklist-edit-actions {
+    opacity: 1;
+    border-color: var(--gray-300);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+    background: rgba(255, 255, 255, 0.96);
+}
+
+.checklist-edit-actions .btn {
+    min-width: 0;
 }
 
 .todo-kind-badge {
@@ -1610,12 +1638,13 @@ code {
 /* ---- DRAG DROP: polished drop zones ---- */
 .todo-root-dropzone {
     margin-top: var(--s-2);
-    padding: var(--s-2) var(--s-3);
+    padding: 10px var(--s-3);
     border: 1.5px dashed var(--gray-300);
     border-radius: var(--r-sm);
     color: var(--text-muted);
     font-size: 11px;
     text-align: center;
+    background: rgba(248, 250, 252, 0.65);
     transition: border-color var(--duration-sm) var(--ease),
         background var(--duration-sm) var(--ease),
         color var(--duration-sm) var(--ease);

@@ -3679,9 +3679,9 @@ function _render(el, classId) {
               <div class="flex flex-wrap gap-2 px-1 mb-1">
                 ${previewSummaryBadges.map(label => `<span class="badge badge-gray">${_escapeHtml(label)}</span>`).join('')}
               </div>` : ''}
-              <div class="rounded-xl border border-blue-100/70 bg-blue-50/40 px-3 py-2 mb-1">
+              <div class="checklist-helper-strip rounded-xl border border-blue-100/70 bg-blue-50/40 px-3 py-2 mb-1">
                 <p class="text-[11px] text-blue-700 leading-tight">
-                  <span class="font-semibold">Reorder:</span> drag a row and drop it before, inside, or after another row.
+                  <span class="font-semibold">Reorder</span> by dragging a row before, inside, or after another row.
                 </p>
               </div>
               ${previewSessionNumber && _workflowPreviewFocusOnly && _workflowPreviewHideDone && !displayChecklist.length ? `
@@ -3719,7 +3719,7 @@ function _render(el, classId) {
                 <span class="todo-title text-[13px] leading-snug flex-1">${item.title}</span>
                 ${previewResumeTarget ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex-shrink-0">Resume here</span>` : previewMatch ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 flex-shrink-0">Planned now</span>` : ''}
                 ${item.item_kind && item.item_kind !== 'other' ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 flex-shrink-0">${item.item_kind}</span>` : ''}
-                <div class="row-hover-actions flex items-center gap-1 ml-auto flex-wrap rounded-full border border-slate-200 bg-white/90 px-1.5 py-1 shadow-sm">
+                <div class="row-hover-actions checklist-edit-actions flex items-center gap-1 ml-auto flex-wrap rounded-full border border-slate-200 bg-white/90 px-1.5 py-1 shadow-sm">
                   <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-up ${meta.canUp ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Move up">↑</button>
                   <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-down ${meta.canDown ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Move down">↓</button>
                   <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-indent ${meta.canIndent ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Nest under previous">→</button>
