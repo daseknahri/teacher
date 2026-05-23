@@ -3835,14 +3835,14 @@ function _render(el, classId) {
 
               <p id="unit-form-error" class="text-[12px] text-red-600 hidden"></p>
 
-              <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3 flex flex-col gap-2.5 lg:flex-row lg:items-center lg:justify-between">
+              <div class="rounded-2xl border border-slate-200 bg-white px-4 py-2.5 flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Create Or Extract</p>
                   <p class="mt-0.5 text-[11px] text-slate-500">${unit ? 'Unit creation is paused until the current active unit is closed.' : 'Create manually if you already know the structure, or extract the checklist directly from a PDF.'}</p>
                 </div>
                 <div class="flex gap-2 flex-wrap sm:flex-nowrap">
-                  <button id="btn-create-unit" class="btn btn-primary flex-1 sm:flex-none ${unit ? 'opacity-60 cursor-not-allowed' : ''}" ${unit ? 'disabled title="Close the current active unit first."' : ''}>Create Unit</button>
-                  <label id="pdf-upload-label" class="btn btn-secondary flex-1 sm:flex-none cursor-pointer ${unit ? 'opacity-60 pointer-events-none' : ''}" ${unit ? 'title="Close the current active unit first."' : ''}>
+                  <button id="btn-create-unit" class="btn btn-primary btn-sm flex-1 sm:flex-none ${unit ? 'opacity-60 cursor-not-allowed' : ''}" ${unit ? 'disabled title="Close the current active unit first."' : ''}>Create Unit</button>
+                  <label id="pdf-upload-label" class="btn btn-secondary btn-sm flex-1 sm:flex-none cursor-pointer ${unit ? 'opacity-60 pointer-events-none' : ''}" ${unit ? 'title="Close the current active unit first."' : ''}>
                     Extract from PDF
                     <input id="pdf-upload" type="file" accept=".pdf" class="hidden" ${unit ? 'disabled' : ''} />
                   </label>
