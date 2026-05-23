@@ -39,10 +39,10 @@ function _getUserPresentation() {
 function _navMarkup() {
   const navRoutes = isOwner() ? OWNER_NAV_ROUTES : TEACHER_NAV_ROUTES;
   return `
-      <p class="text-[9px] font-bold uppercase tracking-[0.12em] text-white/25 px-3 pt-1 pb-2.5">${isOwner() ? 'Admin' : 'Main'}</p>
+      <p class="text-[9px] font-bold uppercase tracking-[0.14em] text-white/25 px-3 pt-1 pb-2">${isOwner() ? 'Admin' : 'Main'}</p>
       ${navRoutes.map(r => `
         <button data-nav="${r.id}" class="nav-link" onclick="window.location.hash='${r.id}'">
-          <span class="w-6 h-6 rounded-lg bg-white/10 flex items-center justify-center text-[14px] flex-shrink-0">${r.icon}</span>
+          <span class="w-6 h-6 rounded-lg bg-white/8 flex items-center justify-center text-[12px] font-bold tracking-tight flex-shrink-0">${r.icon}</span>
           <span class="text-[13px]">${r.label}</span>
         </button>`).join('')}
   `;
@@ -51,7 +51,7 @@ function _navMarkup() {
 function _sidebarUserMarkup() {
   const { name, roleLabel, initials } = _getUserPresentation();
   return `
-      <div class="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/6 mb-0.5">
+      <div class="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-white/7 border border-white/6 mb-0.5">
         <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500
                     flex items-center justify-center text-[11px] font-extrabold text-white
                     flex-shrink-0 shadow-sm">${initials}</div>
@@ -146,7 +146,7 @@ export function renderShell() {
   sidebar.className = 'sidebar';
   sidebar.innerHTML = `
     <!-- Logo -->
-    <div class="flex items-center gap-3 px-5 py-5 border-b border-white/8">
+    <div class="flex items-center gap-3 px-4 py-4 border-b border-white/8">
       <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-400 to-blue-600
                   flex items-center justify-center text-[11px] font-black tracking-tight text-white shadow-lg shadow-blue-900/40
                   flex-shrink-0">TP</div>
@@ -157,12 +157,12 @@ export function renderShell() {
     </div>
 
     <!-- Nav links -->
-    <nav id="sidebar-nav" class="flex-1 flex flex-col gap-0.5 px-3 py-4 overflow-y-auto">
+    <nav id="sidebar-nav" class="flex-1 flex flex-col gap-0.5 px-3 py-3.5 overflow-y-auto">
       ${_navMarkup()}
     </nav>
 
     <!-- User card + logout -->
-    <div id="sidebar-user-card" class="px-3 py-4 border-t border-white/8 flex flex-col gap-1">
+    <div id="sidebar-user-card" class="px-3 py-3.5 border-t border-white/8 flex flex-col gap-1">
       ${_sidebarUserMarkup()}
     </div>
   `;
@@ -195,7 +195,7 @@ export function renderShell() {
 
     <!-- Right actions -->
     <div class="flex items-center gap-2 ml-auto">
-      <div id="topbar-context-title" class="hidden lg:block text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400 mr-2">Teaching Workspace</div>
+      <div id="topbar-context-title" class="hidden xl:block text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400 mr-1">Teaching Workspace</div>
       <div id="topbar-user-card" class="hidden md:flex items-center gap-2.5 px-3 py-1.5 rounded-full
                   bg-slate-100/80 border border-slate-200/50">
         ${_topbarUserMarkup()}
