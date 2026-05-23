@@ -3502,10 +3502,10 @@ function _render(el, classId) {
     <div class="view-container">
 
       ${_workflowEntryContext?.source === 'calendar' ? `
-      <div class="mb-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 flex items-start justify-between gap-3">
+      <div class="mb-3.5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-2.5 flex items-start justify-between gap-3">
         <div>
-          <p class="text-[13px] font-semibold text-blue-800">Opened from Calendar</p>
-          <p class="text-[12px] text-blue-700 mt-1">
+          <p class="text-[12px] font-semibold text-blue-800">Opened from Calendar</p>
+          <p class="text-[11px] text-blue-700 mt-0.5">
             ${_escapeHtml(_workflowEntryContext.session_label || 'Selected session')}
             ${_workflowEntryContext.session_date ? ` • ${_escapeHtml(fmtDate(_workflowEntryContext.session_date))}` : ''}
           </p>
