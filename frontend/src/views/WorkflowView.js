@@ -3915,10 +3915,10 @@ function _render(el, classId) {
                       </div>
                       <span class="badge ${s.end_time ? 'badge-green' : 'badge-amber'}">${s.end_time ? 'Closed' : 'Open'}</span>
                     </div>
-                    <div class="mt-2 flex items-center gap-2 flex-wrap">
+                    <div class="mt-1.5 flex items-center gap-2 flex-wrap">
                       <span class="badge badge-green">${s.checked_items_count ?? 0} done</span>
                       ${Number(s.absent_count || 0) > 0 ? `<span class="badge badge-red">${s.absent_count} absent</span>` : ''}
-                      ${s.note ? `<span class="text-[11px] text-slate-500 truncate max-w-[320px]" title="${_escapeHtmlAttr(s.note)}">${_escapeHtml(s.note)}</span>` : ''}
+                      ${s.note ? `<span class="text-[10px] text-slate-500 truncate max-w-[320px]" title="${_escapeHtmlAttr(s.note)}">${_escapeHtml(s.note)}</span>` : ''}
                     </div>
                   </div>`).join('')}
                 </div>
@@ -3936,17 +3936,21 @@ function _render(el, classId) {
                 <p class="mt-0.5 text-[11px] text-slate-500">Closed units stay here so you can reopen the latest one or keep old work archived.</p>
               </div>
               ${closed.map((u, index) => `
-              <div class="flex items-center gap-3 px-3.5 py-2.5 bg-slate-50/80 rounded-2xl border border-slate-200">
+              <div class="flex items-start sm:items-center gap-3 px-3.5 py-2.5 bg-slate-50/80 rounded-2xl border border-slate-200">
                 <div class="flex-1 min-w-0">
                   <span class="text-[13px] text-slate-600 font-semibold truncate block">${u.title || u.name}</span>
                   <p class="text-[11px] text-slate-400 mt-0.5">Closed ${fmtDate(u.closed_at || u.closedAt || u.created_at || u.createdAt)}</p>
-                  ${u.unit_type ? `<span class="badge badge-gray" style="font-size:10px">${u.unit_type.replace('_', ' ')}</span>` : ''}
+                  <div class="mt-1 flex items-center gap-1.5 flex-wrap">
+                    ${u.unit_type ? `<span class="badge badge-gray" style="font-size:10px">${u.unit_type.replace('_', ' ')}</span>` : ''}
+                    <span class="badge badge-gray opacity-50">Archived</span>
+                  </div>
                 </div>
-                ${!unit && index === 0
+                <div class="flex items-center gap-1.5 flex-wrap sm:justify-end">
+                  ${!unit && index === 0
           ? `<button class="btn btn-secondary btn-sm btn-reopen-unit" data-unit-id="${u.id}">Re-open</button>`
           : ''}
-                <button class="btn btn-danger btn-sm btn-delete-unit" data-unit-id="${u.id}">Delete</button>
-                <span class="badge badge-gray opacity-50">Archived</span>
+                  <button class="btn btn-danger btn-sm btn-delete-unit" data-unit-id="${u.id}">Delete</button>
+                </div>
               </div>`).join('')}
             </div>` : ''}
           </div>
