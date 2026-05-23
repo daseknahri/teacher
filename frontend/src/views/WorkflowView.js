@@ -3852,11 +3852,11 @@ function _render(el, classId) {
 
             ${recentSessions.length ? `
             <!-- Recent sessions -->
-            <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-3">
+            <div class="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm flex flex-col gap-2.5">
               <div class="flex items-start justify-between gap-3 flex-wrap">
                 <div>
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Recent Sessions</p>
-                  <p class="mt-1 text-[12px] text-slate-500">A quick read of the most recent classroom activity for this class.</p>
+                  <p class="mt-0.5 text-[11px] text-slate-500">A quick read of recent classroom activity for this class.</p>
                 </div>
                 <div class="flex gap-1 flex-wrap">
                   ${RECENT_SESSION_WINDOWS.map(filter => `
@@ -3867,9 +3867,9 @@ function _render(el, classId) {
                 </div>
               </div>
               ${visibleRecentSessions.length ? `
-              <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div class="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
                 ${visibleRecentSessions.slice(0, 8).map(s => `
-              <div class="px-4 py-3 bg-slate-50/80 rounded-2xl border border-slate-200">
+              <div class="px-3.5 py-2.5 bg-slate-50/80 rounded-2xl border border-slate-200">
                 <div class="flex items-center justify-between gap-2 flex-wrap">
                   <div class="min-w-0">
                     <p class="text-[13px] font-semibold text-slate-700">${fmtDate(s.session_date || s.date)}</p>
@@ -3887,11 +3887,11 @@ function _render(el, classId) {
 
             ${unit ? `
             <!-- Unit session timeline -->
-            <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-3">
+            <div class="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm flex flex-col gap-2.5">
               <div class="flex items-start justify-between gap-3 flex-wrap">
                 <div>
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Unit Session Timeline</p>
-                  <p class="mt-1 text-[12px] text-slate-500">The running record of sessions already captured for this unit.</p>
+                  <p class="mt-0.5 text-[11px] text-slate-500">The running record of sessions already captured for this unit.</p>
                 </div>
                 <button class="btn btn-ghost btn-sm !text-slate-500" data-unit-timeline-retry="${unit.id}">Refresh</button>
               </div>
@@ -3904,9 +3904,9 @@ function _render(el, classId) {
                 </div>
               ` : ''}
               ${!unitTimelineState.loading && !unitTimelineState.error && unitTimelineState.sessions.length ? `
-                <div class="max-h-[260px] overflow-auto rounded-2xl border border-slate-200">
+                <div class="max-h-[240px] overflow-auto rounded-2xl border border-slate-200">
                   ${unitTimelineState.sessions.map(s => `
-                  <div class="px-4 py-3 border-b border-slate-100 last:border-b-0 bg-white">
+                  <div class="px-3.5 py-2.5 border-b border-slate-100 last:border-b-0 bg-white">
                     <div class="flex items-center justify-between gap-2 flex-wrap">
                       <div class="flex items-center gap-2 flex-wrap">
                       ${s.unit_session_number ? `<span class="badge badge-blue">Session ${s.unit_session_number}</span>` : '<span class="badge badge-gray">Session</span>'}
@@ -3930,13 +3930,13 @@ function _render(el, classId) {
 
             ${closed.length ? `
             <!-- Past units -->
-            <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm flex flex-col gap-3">
+            <div class="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm flex flex-col gap-2.5">
               <div>
                 <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Past Units</p>
-                <p class="mt-1 text-[12px] text-slate-500">Closed units stay here so you can reopen the latest one or keep old work archived.</p>
+                <p class="mt-0.5 text-[11px] text-slate-500">Closed units stay here so you can reopen the latest one or keep old work archived.</p>
               </div>
               ${closed.map((u, index) => `
-              <div class="flex items-center gap-3 px-4 py-3 bg-slate-50/80 rounded-2xl border border-slate-200">
+              <div class="flex items-center gap-3 px-3.5 py-2.5 bg-slate-50/80 rounded-2xl border border-slate-200">
                 <div class="flex-1 min-w-0">
                   <span class="text-[13px] text-slate-600 font-semibold truncate block">${u.title || u.name}</span>
                   <p class="text-[11px] text-slate-400 mt-0.5">Closed ${fmtDate(u.closed_at || u.closedAt || u.created_at || u.createdAt)}</p>
