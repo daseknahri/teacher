@@ -3958,22 +3958,22 @@ function _render(el, classId) {
 
         <!-- TAB 1: Attendance Grid -->
         <div class="${_activeTab === 1 ? 'block' : 'hidden'}">
-          <div class="p-5 flex flex-col gap-4">
-            <div class="rounded-2xl border border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,0.98))] p-3.5 shadow-sm">
-              <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.25fr)_minmax(240px,0.75fr)] gap-3 items-start">
-                <div class="min-w-0 rounded-2xl border border-white/80 bg-white/75 px-4 py-3.5 shadow-sm">
+          <div class="p-4.5 flex flex-col gap-3.5">
+            <div class="rounded-2xl border border-slate-200 bg-[linear-gradient(180deg,rgba(248,250,252,0.96),rgba(255,255,255,0.98))] p-3 shadow-sm">
+              <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.25fr)_minmax(240px,0.75fr)] gap-2.5 items-start">
+                <div class="min-w-0 rounded-2xl border border-white/80 bg-white/75 px-3.5 py-3 shadow-sm">
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Attendance</p>
-                  <h3 class="mt-1 text-[22px] font-semibold tracking-tight text-slate-800">Mark Attendance</h3>
-                  <p class="mt-1.5 text-[12px] leading-relaxed text-slate-500">Tap a student to toggle absent or present before you start or update the session.</p>
-                  <div class="mt-2.5 flex gap-2 flex-wrap">
+                  <h3 class="mt-1 text-[21px] font-semibold tracking-tight text-slate-800">Mark Attendance</h3>
+                  <p class="mt-1 text-[12px] leading-relaxed text-slate-500">Tap a student to toggle absent or present before you start or update the session.</p>
+                  <div class="mt-2 flex gap-2 flex-wrap">
                     <span class="badge badge-red">${getAbsentIds().size} absent</span>
                     <span class="badge badge-green">${students.length - getAbsentIds().size} present</span>
                     <span class="badge badge-gray">${students.length} total</span>
                   </div>
                 </div>
-                <div class="rounded-2xl border border-white/80 bg-white/90 px-4 py-3.5 shadow-sm">
+                <div class="rounded-2xl border border-white/80 bg-white/90 px-3.5 py-3 shadow-sm">
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">What To Do</p>
-                  <div class="mt-1.5 flex flex-col gap-1.5 text-[11px] text-slate-700">
+                  <div class="mt-1 flex flex-col gap-1 text-[11px] text-slate-700">
                     <p>1. Mark who is absent.</p>
                     <p>2. Save attendance when it matches the classroom.</p>
                     <p>3. Keep the rest of the workflow simple.</p>
@@ -3986,8 +3986,8 @@ function _render(el, classId) {
               <div class="text-xl font-black opacity-30">ROSTER</div>
               <p class="text-[13px] text-slate-400">No students - import a roster first.</p>
             </div>` : `
-            <div class="rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm">
-              <div class="flex items-center justify-between gap-2 mb-2.5 flex-wrap">
+            <div class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+              <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
                 <div>
                   <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Student Grid</p>
                   <p class="mt-0.5 text-[10px] text-slate-500">Green means present. Red means absent.</p>
@@ -4010,7 +4010,7 @@ function _render(el, classId) {
           }).join('')}
             </div>
             </div>`}
-            <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3.5 flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between shadow-sm">
+            <div class="rounded-2xl border border-slate-200 bg-white px-3.5 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between shadow-sm">
               <div>
                 <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Save Attendance</p>
                 <p class="mt-0.5 text-[11px] text-slate-500">${session ? 'Update the live session attendance after reviewing the grid.' : 'Start the session and save the attendance in one step.'}</p>
@@ -4025,32 +4025,32 @@ function _render(el, classId) {
 
         <!-- TAB 2: Session Active -->
         <div class="${_activeTab === 2 ? 'block' : 'hidden'}">
-          <div class="p-5 flex flex-col gap-4">
+          <div class="p-4.5 flex flex-col gap-3.5">
             ${session ? `
-            <div class="rounded-2xl border border-amber-200 bg-[linear-gradient(180deg,rgba(255,247,237,0.96),rgba(255,255,255,0.98))] p-3.5 sm:p-4 shadow-sm">
-              <div class="flex flex-col gap-3">
-                <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.55fr)] gap-3 items-start">
-                  <div class="min-w-0 rounded-2xl border border-white/80 bg-white/75 px-4 py-3.5 shadow-sm">
+            <div class="rounded-2xl border border-amber-200 bg-[linear-gradient(180deg,rgba(255,247,237,0.96),rgba(255,255,255,0.98))] p-3 sm:p-3.5 shadow-sm">
+              <div class="flex flex-col gap-2.5">
+                <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1.45fr)_minmax(260px,0.55fr)] gap-2.5 items-start">
+                  <div class="min-w-0 rounded-2xl border border-white/80 bg-white/75 px-3.5 py-3 shadow-sm">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Session Active</p>
-                    <p class="mt-1 text-[23px] font-semibold tracking-tight leading-tight text-slate-900 break-words">${_escapeHtml(unit?.title || session?.unit_title || 'Active session')}</p>
-                    <div class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500">
+                    <p class="mt-1 text-[22px] font-semibold tracking-tight leading-tight text-slate-900 break-words">${_escapeHtml(unit?.title || session?.unit_title || 'Active session')}</p>
+                    <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-slate-500">
                       <span>${_escapeHtml(fmtDate(session.session_date || session.date))}</span>
                       <span class="text-slate-300">&middot;</span>
                       <span>${_escapeHtml(`Started at ${fmtTime(session.start_time)}`)}</span>
                       ${session?.unit_session_number ? `<span class="text-slate-300">&middot;</span><span>Unit Session ${Number(session.unit_session_number)}</span>` : ''}
                     </div>
-                    <div class="mt-2.5 flex gap-2 flex-wrap">
+                    <div class="mt-2 flex gap-2 flex-wrap">
                       <span class="badge badge-amber">Live now</span>
                       <span class="badge badge-gray">${activeSessionCheckedChecklist.length} checked</span>
                     </div>
                   </div>
-                  <div class="rounded-2xl border border-white/80 bg-white/90 px-4 py-3.5 shadow-sm">
+                  <div class="rounded-2xl border border-white/80 bg-white/90 px-3.5 py-3 shadow-sm">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focus For Now</p>
-                    <p class="mt-1.5 text-[12px] leading-relaxed text-slate-700">The checklist is the main session record. Check only what was really covered.</p>
-                    <p class="mt-1.5 text-[11px] text-slate-500">We will preserve this structure and use it later when we talk to NotebookLM.</p>
+                    <p class="mt-1 text-[12px] leading-relaxed text-slate-700">The checklist is the main session record. Check only what was really covered.</p>
+                    <p class="mt-1 text-[11px] text-slate-500">We will preserve this structure and use it later when we talk to NotebookLM.</p>
                   </div>
                 </div>
-                <div class="rounded-2xl border border-amber-100 bg-white/92 px-4 py-2.5 shadow-sm">
+                <div class="rounded-2xl border border-amber-100 bg-white/92 px-3.5 py-2 shadow-sm">
                   <div class="flex flex-col gap-1.5 lg:flex-row lg:items-center lg:justify-between">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">Simple Workflow</p>
                     <div class="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-700">
@@ -4074,8 +4074,8 @@ function _render(el, classId) {
                   <button data-checklist-collapse-all class="btn btn-ghost btn-sm !text-slate-500" title="Collapse all checklist branches">Collapse All</button>
                 </div>
               </div>
-              <div class="rounded-2xl border border-slate-200 bg-white px-4 py-2.5">
-                <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
+              <div class="rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5">
+                <div class="flex items-center justify-between gap-2 mb-1.5 flex-wrap">
                   <div>
                     <p class="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-400">Teaching Structure</p>
                     <p class="mt-0.5 text-[10px] text-slate-500">Keep this tree clean. We will reuse it when communicating with NotebookLM.</p>
