@@ -238,13 +238,13 @@
 .badge {
     display: inline-flex;
     align-items: center;
-    gap: var(--s-1);
-    font-size: 11px;
+    gap: 3px;
+    font-size: 10px;
     font-weight: 600;
-    padding: 2px var(--s-2);
+    padding: 1px 7px;
     border-radius: var(--r-full);
     white-space: nowrap;
-    line-height: 1.5;
+    line-height: 1.4;
 }
 
 .badge-blue {
