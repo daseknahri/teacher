@@ -4097,9 +4097,9 @@ function _renderCalendar(el, classId) {
         </div>` : ''}
       </div>
 
-      <div class="card p-3.5 mt-3.5">
+      <div class="card p-3 mt-3">
         <h3 class="text-[13px] font-semibold text-slate-700">Planning Summary</h3>
-        <p class="text-[11px] text-slate-500 mt-1.5">
+        <p class="text-[11px] text-slate-500 mt-1">
           ${plannedSlotCount} planned slot${plannedSlotCount !== 1 ? 's' : ''} in this week.
           ${weekExceptionRows.length > 0 ? `${weekExceptionRows.length} timetable change${weekExceptionRows.length !== 1 ? 's' : ''} applied in background.` : 'No timetable changes this week.'}
         </p>
@@ -4241,14 +4241,14 @@ function _renderCalendar(el, classId) {
               <h4 class="text-[12px] font-semibold text-slate-500 uppercase tracking-wider">Session Note</h4>
               <p class="mt-0.5 text-[10px] text-slate-500">Teacher note captured for this lesson.</p>
               ${selectedSessionNotePreview
-      ? `<p class="mt-2 text-[12px] text-slate-700 whitespace-pre-wrap leading-relaxed">${_escapeHtml(selectedSessionNotePreview)}</p>${selectedSessionNote.length > selectedSessionNotePreview.length ? '<p class="mt-1.5 text-[10px] text-slate-400">The note is longer in full edit view.</p>' : ''}`
+      ? `<p class="mt-1.5 text-[12px] text-slate-700 whitespace-pre-wrap leading-relaxed">${_escapeHtml(selectedSessionNotePreview)}</p>${selectedSessionNote.length > selectedSessionNotePreview.length ? '<p class="mt-1 text-[10px] text-slate-400">The note is longer in full edit view.</p>' : ''}`
       : '<p class="text-[12px] text-slate-500 mt-2">No note for this session.</p>'}
             </div>
           </div>
           </div>
         </div>
       </div>` : `
-      <div class="card p-4">
+      <div class="card p-3.5">
         <p class="text-[12px] text-slate-500">Click a session block in the weekly timetable to view absences, structured headlines, and note.</p>
       </div>`}
     </div>`;
