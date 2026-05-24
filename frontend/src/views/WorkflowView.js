@@ -254,6 +254,15 @@ async function _loadUnitAssistantArtifacts(classId, unitId, { force = false } = 
   return safeRows;
 }
 
+function _countAssistantArtifactsForChecklistItem(classId, unitId, itemId) {
+  const cacheKey = `${Number(classId || 0)}:${Number(unitId || 0)}`;
+  const rows = _unitAssistantArtifactCache.get(cacheKey);
+  if (!Array.isArray(rows) || !rows.length) return 0;
+  const targetId = Number(itemId || 0);
+  if (!targetId) return 0;
+  return rows.filter(row => Number(row?.checklist_item_id || 0) === targetId).length;
+}
+
 function _filterAssistantArtifactsForSection(artifacts, sectionPlan, fallbackTitle = '') {
   const safeRows = Array.isArray(artifacts) ? artifacts : [];
   const targetTitle = String(sectionPlan?.section_title || fallbackTitle || '').trim().toLowerCase();
@@ -1404,7 +1413,7 @@ function _assistantArtifactKindLabel(value) {
   return 'Teacher notes';
 }
 
-function _openUnitAssistantModal({ classId, unit, blueprint, initial = {} }) {
+function _openUnitAssistantModal({ classId, unit, blueprint, initial = {}, onArtifactChange = null }) {
   const sections = _buildUnitAssistantSections(blueprint);
   const normalizedInitialPath = Array.isArray(initial?.sectionPath)
     ? initial.sectionPath.map(value => String(value || '').trim()).filter(Boolean)
@@ -1593,6 +1602,9 @@ function _openUnitAssistantModal({ classId, unit, blueprint, initial = {} }) {
         _unitAssistantArtifactCache.delete(`${Number(classId || 0)}:${Number(unit?.id || 0)}`);
         showToast(`${_assistantArtifactKindLabel(artifactKind)} saved.`, 'ok');
         await loadSavedArtifacts();
+        if (typeof onArtifactChange === 'function') {
+          await onArtifactChange();
+        }
       } catch (err) {
         setError(String(err?.message || 'Failed to save the guidance.'));
       }
@@ -1673,6 +1685,9 @@ function _openUnitAssistantModal({ classId, unit, blueprint, initial = {} }) {
           state.savedArtifacts = state.savedArtifacts.filter(item => Number(item?.id || 0) !== artifactId);
           renderSavedArtifacts();
           showToast('Saved guidance deleted.', 'ok');
+          if (typeof onArtifactChange === 'function') {
+            await onArtifactChange();
+          }
         } catch (err) {
           setError(String(err?.message || 'Failed to delete the saved guidance.'));
         }
@@ -3790,6 +3805,7 @@ function _render(el, classId) {
     const previewMatch = previewSessionTitleKeys.has(String(item?.title || '').trim().toLowerCase());
     const previewResumeTarget = previewResumeTargetId != null && itemId === previewResumeTargetId;
     const latestAttachment = Array.isArray(item.attachments) && item.attachments.length ? item.attachments[0] : null;
+    const savedGuidanceCount = _countAssistantArtifactsForChecklistItem(classId, unit?.id, item.id);
     return `
               <div class="todo-node group checklist-draggable-node ${isDone ? 'done' : ''} ${previewMatch ? '!bg-blue-50/70 !border-blue-200' : ''}"
                    data-item-id="${item.id}" data-dnd-target-id="${item.id}" ${previewMatch ? 'data-preview-match="1"' : ''} ${previewResumeTarget ? 'data-preview-scroll-target="1"' : ''}
@@ -3812,6 +3828,7 @@ function _render(el, classId) {
                 <div class="flex items-center gap-1 flex-wrap">
                   ${latestAttachment ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex-shrink-0">${item.attachments.length > 1 ? `${item.attachments.length} images` : 'Image ready'}</span>` : ''}
                   ${item.teacher_note ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex-shrink-0">Note saved</span>` : ''}
+                  ${savedGuidanceCount ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 flex-shrink-0">${savedGuidanceCount > 1 ? `${savedGuidanceCount} guidance` : 'Guidance saved'}</span>` : ''}
                   <label class="btn btn-ghost btn-sm !text-indigo-600 !px-2 cursor-pointer" title="Attach screenshot to this checklist row">
                     Attach image
                     <input type="file" accept="image/png,image/jpeg,image/webp,image/bmp" class="hidden input-item-attachment" data-item-id="${item.id}" />
@@ -4192,6 +4209,7 @@ function _render(el, classId) {
       const depthPad = _checklistDepthPadding(item.depth);
       const isStructural = _isStructuralChecklistItem(item) || hasChildren;
       const latestAttachment = Array.isArray(item.attachments) && item.attachments.length ? item.attachments[0] : null;
+      const savedGuidanceCount = _countAssistantArtifactsForChecklistItem(classId, unit?.id, item.id);
       return `
               <div class="todo-node group ${item.is_completed || item.done ? 'done' : ''} ${isStructural ? 'cursor-default' : ''}"
                    data-item-id="${item.id}" data-session-id="${session.id}" data-class-id="${classId}"
@@ -4212,6 +4230,7 @@ function _render(el, classId) {
                 <div class="flex items-center gap-1 flex-wrap">
                   ${latestAttachment ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex-shrink-0">${item.attachments.length > 1 ? `${item.attachments.length} images` : 'Image ready'}</span>` : ''}
                   ${item.teacher_note ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex-shrink-0">Note saved</span>` : ''}
+                  ${savedGuidanceCount ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-sky-100 text-sky-700 flex-shrink-0">${savedGuidanceCount > 1 ? `${savedGuidanceCount} guidance` : 'Guidance saved'}</span>` : ''}
                   <label class="btn btn-ghost btn-sm !text-indigo-600 !px-2 cursor-pointer" title="Attach screenshot to this checklist row">
                     Attach image
                     <input type="file" accept="image/png,image/jpeg,image/webp,image/bmp" class="hidden input-item-attachment" data-item-id="${item.id}" />
@@ -4898,6 +4917,18 @@ function _moveChecklistItemByDrop(draft, dragItemId, targetItemId, mode = 'after
 
 function _bindWorkflowEvents(el, classId) {
   const unitErrorEl = el.querySelector('#unit-form-error');
+  const activeUnitForArtifacts = getActiveUnit();
+  if (activeUnitForArtifacts?.id) {
+    const artifactCacheKey = `${Number(classId || 0)}:${Number(activeUnitForArtifacts.id || 0)}`;
+    if (!_unitAssistantArtifactCache.has(artifactCacheKey)) {
+      _loadUnitAssistantArtifacts(classId, activeUnitForArtifacts.id)
+        .then(() => {
+          const currentUnit = getActiveUnit();
+          if (currentUnit?.id === activeUnitForArtifacts.id) _render(el, classId);
+        })
+        .catch(() => {});
+    }
+  }
   const setUnitFormError = (message) => {
     if (!unitErrorEl) return;
     const text = String(message || '').trim();
@@ -6004,6 +6035,11 @@ function _bindWorkflowEvents(el, classId) {
             initial: {
               ...prefill,
               checklistItemId: itemId,
+            },
+            onArtifactChange: async () => {
+              const ws = await api(`/workflow/classes/${classId}`);
+              setWorkspace(ws);
+              _render(el, classId);
             },
           });
         } catch (err) {
