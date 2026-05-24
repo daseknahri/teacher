@@ -597,11 +597,13 @@ class WorkflowChecklistItemCreateIn(BaseModel):
     title: str
     item_kind: WorkflowChecklistItemKind = WorkflowChecklistItemKind.OTHER
     parent_item_id: int | None = None
+    teacher_note: str | None = None
 
 
 class WorkflowChecklistItemUpdateIn(BaseModel):
     title: str | None = None
     item_kind: WorkflowChecklistItemKind | None = None
+    teacher_note: str | None = None
 
 
 class WorkflowChecklistReorderItemIn(BaseModel):
@@ -635,6 +637,7 @@ class WorkflowChecklistItemOut(BaseModel):
     is_completed: bool
     completed_session_id: int | None
     completed_at: datetime | None
+    teacher_note: str | None = None
     attachments: list[WorkflowChecklistItemAttachmentOut] = Field(default_factory=list)
     children: list["WorkflowChecklistItemOut"] = Field(default_factory=list)
 

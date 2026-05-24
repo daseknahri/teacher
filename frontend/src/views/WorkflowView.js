@@ -3751,11 +3751,13 @@ function _render(el, classId) {
                 ${showChecklistAttachments ? `
                 <div class="flex items-center gap-1 flex-wrap">
                   ${latestAttachment ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex-shrink-0">${item.attachments.length > 1 ? `${item.attachments.length} images` : 'Image ready'}</span>` : ''}
+                  ${item.teacher_note ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex-shrink-0">Note saved</span>` : ''}
                   <label class="btn btn-ghost btn-sm !text-indigo-600 !px-2 cursor-pointer" title="Attach screenshot to this checklist row">
                     Attach image
                     <input type="file" accept="image/png,image/jpeg,image/webp,image/bmp" class="hidden input-item-attachment" data-item-id="${item.id}" />
                   </label>
                   ${latestAttachment ? `<button class="btn btn-ghost btn-sm !text-emerald-700 !px-2 btn-view-item-attachment" data-item-id="${item.id}">View</button>` : ''}
+                  <button class="btn btn-ghost btn-sm !text-amber-700 !px-2 btn-item-note" data-item-id="${item.id}">${item.teacher_note ? 'Edit note' : 'Add note'}</button>
                 </div>` : ''}
                 <div class="row-hover-actions checklist-edit-actions flex items-center gap-1 ml-auto flex-wrap rounded-full border border-slate-200 bg-white/90 px-1.5 py-1 shadow-sm">
                   <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-up ${meta.canUp ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Move up">↑</button>
@@ -3765,7 +3767,7 @@ function _render(el, classId) {
                   <button class="btn btn-ghost btn-sm !text-slate-400 todo-drag-handle transition-all hover:!text-blue-500" data-drag-item-id="${item.id}" draggable="true" title="Drag to reorder / nest">⋮⋮</button>
                   <div class="h-4 w-px bg-slate-200 mx-0.5"></div>
                   <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-add-child" data-item-id="${item.id}" title="Add child">+Child</button>
-                  <button class="btn btn-ghost btn-sm !text-blue-600 btn-item-edit" data-item-id="${item.id}" data-item-kind="${item.item_kind || 'other'}" data-item-title="${_escapeHtmlAttr(item.title)}" title="Edit item">Edit</button>
+                  <button class="btn btn-ghost btn-sm !text-blue-600 btn-item-edit" data-item-id="${item.id}" data-item-kind="${item.item_kind || 'other'}" data-item-title="${_escapeHtmlAttr(item.title)}" data-item-note="${_escapeHtmlAttr(item.teacher_note || '')}" title="Edit item">Edit</button>
                   <button class="btn btn-ghost btn-sm !text-red-600 btn-item-delete" data-item-id="${item.id}" title="Delete item">Delete</button>
                 </div>
               </div>`;
@@ -4148,11 +4150,13 @@ function _render(el, classId) {
                 ${showChecklistAttachments ? `
                 <div class="flex items-center gap-1 flex-wrap">
                   ${latestAttachment ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex-shrink-0">${item.attachments.length > 1 ? `${item.attachments.length} images` : 'Image ready'}</span>` : ''}
+                  ${item.teacher_note ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex-shrink-0">Note saved</span>` : ''}
                   <label class="btn btn-ghost btn-sm !text-indigo-600 !px-2 cursor-pointer" title="Attach screenshot to this checklist row">
                     Attach image
                     <input type="file" accept="image/png,image/jpeg,image/webp,image/bmp" class="hidden input-item-attachment" data-item-id="${item.id}" />
                   </label>
                   ${latestAttachment ? `<button class="btn btn-ghost btn-sm !text-emerald-700 !px-2 btn-view-item-attachment" data-item-id="${item.id}">View</button>` : ''}
+                  <button class="btn btn-ghost btn-sm !text-amber-700 !px-2 btn-item-note" data-item-id="${item.id}">${item.teacher_note ? 'Edit note' : 'Add note'}</button>
                 </div>` : ''}
                 ${isStructural ? '<span class="text-[10px] text-slate-400 whitespace-nowrap">Auto-completes from child rows</span>' : ''}
                 ${hasChildren ? `<button class="btn btn-ghost btn-sm !text-sky-600 !px-2 btn-checklist-group-complete" data-item-id="${item.id}" title="Mark all unfinished lesson steps under this heading">Check group</button>` : ''}
@@ -5756,13 +5760,13 @@ function _bindWorkflowEvents(el, classId) {
     await _withActionLock(`workflow:item-add-root:${classId}`, async () => {
       const unit = getActiveUnit();
       if (!unit) return;
-      const values = await _editChecklistItemModal({ title: '', item_kind: 'other', mode: 'create' });
+      const values = await _editChecklistItemModal({ title: '', item_kind: 'other', teacher_note: '', mode: 'create' });
       if (!values) return;
       try {
         await api(`/workflow/classes/${classId}/units/${unit.id}/items`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: values.title, item_kind: values.item_kind, parent_item_id: null }),
+          body: JSON.stringify({ title: values.title, item_kind: values.item_kind, teacher_note: values.teacher_note, parent_item_id: null }),
         });
         const ws = await api(`/workflow/classes/${classId}`);
         setWorkspace(ws);
@@ -5781,13 +5785,13 @@ function _bindWorkflowEvents(el, classId) {
       await _withActionLock(`workflow:item-add-child:${classId}:${parentId}`, async () => {
         const unit = getActiveUnit();
         if (!unit) return;
-        const values = await _editChecklistItemModal({ title: '', item_kind: 'other', mode: 'create' });
+        const values = await _editChecklistItemModal({ title: '', item_kind: 'other', teacher_note: '', mode: 'create' });
         if (!values) return;
         try {
           await api(`/workflow/classes/${classId}/units/${unit.id}/items`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: values.title, item_kind: values.item_kind, parent_item_id: parentId }),
+            body: JSON.stringify({ title: values.title, item_kind: values.item_kind, teacher_note: values.teacher_note, parent_item_id: parentId }),
           });
           const ws = await api(`/workflow/classes/${classId}`);
           setWorkspace(ws);
@@ -5810,6 +5814,7 @@ function _bindWorkflowEvents(el, classId) {
         const values = await _editChecklistItemModal({
           title: String(btn.dataset.itemTitle || ''),
           item_kind: String(btn.dataset.itemKind || 'other'),
+          teacher_note: String(btn.dataset.itemNote || ''),
           mode: 'edit',
         });
         if (!values) return;
@@ -5817,7 +5822,7 @@ function _bindWorkflowEvents(el, classId) {
           await api(`/workflow/classes/${classId}/units/${unit.id}/items/${itemId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title: values.title, item_kind: values.item_kind }),
+            body: JSON.stringify({ title: values.title, item_kind: values.item_kind, teacher_note: values.teacher_note }),
           });
           const ws = await api(`/workflow/classes/${classId}`);
           setWorkspace(ws);
@@ -5845,6 +5850,38 @@ function _bindWorkflowEvents(el, classId) {
           setWorkspace(ws);
           _render(el, classId);
           showToast('Checklist item deleted.', 'ok');
+        } catch (err) {
+          showToast(err.message, 'error');
+        }
+      });
+    });
+  });
+
+  el.querySelectorAll('.btn-item-note').forEach(btn => {
+    btn.addEventListener('click', async event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const itemId = Number(btn.dataset.itemId);
+      const unit = getActiveUnit();
+      if (!itemId || !unit?.id) return;
+      const item = _checklist(unit).find(row => Number(row?.id) === itemId) || null;
+      if (!item) return;
+      await _withActionLock(`workflow:item-note:${classId}:${itemId}`, async () => {
+        const values = await _editChecklistItemNoteModal({
+          title: String(item.title || ''),
+          teacher_note: String(item.teacher_note || ''),
+        });
+        if (!values) return;
+        try {
+          await api(`/workflow/classes/${classId}/units/${unit.id}/items/${itemId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ teacher_note: values.teacher_note }),
+          });
+          const ws = await api(`/workflow/classes/${classId}`);
+          setWorkspace(ws);
+          _render(el, classId);
+          showToast(values.teacher_note ? 'Checklist note saved.' : 'Checklist note cleared.', 'ok');
         } catch (err) {
           showToast(err.message, 'error');
         }
@@ -6978,7 +7015,7 @@ function _bindWorkflowEvents(el, classId) {
   }
 }
 
-function _editChecklistItemModal({ title = '', item_kind = 'other', mode = 'create' } = {}) {
+function _editChecklistItemModal({ title = '', item_kind = 'other', teacher_note = '', mode = 'create' } = {}) {
   return new Promise(resolve => {
     const overlay = document.createElement('div');
     overlay.className = 'modal-overlay';
@@ -6997,6 +7034,10 @@ function _editChecklistItemModal({ title = '', item_kind = 'other', mode = 'crea
             <select id="check-item-kind" class="!h-10">
               ${CHECKLIST_KINDS.map(kind => `<option value="${kind}" ${String(item_kind || 'other') === kind ? 'selected' : ''}>${kind}</option>`).join('')}
             </select>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Teacher note</label>
+            <textarea id="check-item-note" rows="4" placeholder="Optional note for this checklist row">${_escapeHtml(String(teacher_note || ''))}</textarea>
           </div>
         </div>
         <div class="px-6 pb-5 flex gap-3 justify-end">
@@ -7017,15 +7058,59 @@ function _editChecklistItemModal({ title = '', item_kind = 'other', mode = 'crea
     overlay.querySelector('#check-item-save')?.addEventListener('click', () => {
       const titleValue = String(overlay.querySelector('#check-item-title')?.value || '').trim();
       const kindValue = String(overlay.querySelector('#check-item-kind')?.value || 'other');
+      const noteValue = String(overlay.querySelector('#check-item-note')?.value || '').trim();
       if (!titleValue) {
         showToast('Title is required.', 'warning');
         return;
       }
-      cleanup({ title: titleValue, item_kind: kindValue });
+      cleanup({ title: titleValue, item_kind: kindValue, teacher_note: noteValue });
     });
 
     document.body.appendChild(overlay);
     overlay.querySelector('#check-item-title')?.focus();
+  });
+}
+
+function _editChecklistItemNoteModal({ title = '', teacher_note = '' } = {}) {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal max-w-lg">
+        <div class="px-6 py-5 border-b border-slate-100">
+          <h2 class="text-[16px] font-bold text-slate-800">Checklist Note</h2>
+          <p class="mt-1 text-[12px] text-slate-500">${_escapeHtml(String(title || 'Checklist item'))}</p>
+        </div>
+        <div class="px-6 py-5 flex flex-col gap-3">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Teacher note</label>
+            <textarea id="check-row-note" rows="5" placeholder="Short teaching note, reminder, or prompt context">${_escapeHtml(String(teacher_note || ''))}</textarea>
+          </div>
+        </div>
+        <div class="px-6 pb-5 flex gap-3 justify-end">
+          <button id="check-row-note-cancel" class="btn btn-ghost">Cancel</button>
+          <button id="check-row-note-clear" class="btn btn-ghost">Clear</button>
+          <button id="check-row-note-save" class="btn btn-primary">Save note</button>
+        </div>
+      </div>`;
+
+    function cleanup(value) {
+      overlay.remove();
+      resolve(value);
+    }
+
+    overlay.addEventListener('click', e => {
+      if (e.target === overlay) cleanup(null);
+    });
+    overlay.querySelector('#check-row-note-cancel')?.addEventListener('click', () => cleanup(null));
+    overlay.querySelector('#check-row-note-clear')?.addEventListener('click', () => cleanup({ teacher_note: '' }));
+    overlay.querySelector('#check-row-note-save')?.addEventListener('click', () => {
+      const noteValue = String(overlay.querySelector('#check-row-note')?.value || '').trim();
+      cleanup({ teacher_note: noteValue });
+    });
+
+    document.body.appendChild(overlay);
+    overlay.querySelector('#check-row-note')?.focus();
   });
 }
 

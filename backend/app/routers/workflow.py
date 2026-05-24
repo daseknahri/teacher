@@ -925,6 +925,7 @@ def _serialize_checklist(items: list[WorkflowChecklistItem]) -> list[WorkflowChe
             is_completed=bool(row.is_completed),
             completed_session_id=_safe_optional_int(row.completed_session_id),
             completed_at=row.completed_at,
+            teacher_note=str(row.teacher_note or "").strip() or None,
             attachments=[
                 WorkflowChecklistItemAttachmentOut(
                     id=_safe_int(attachment.id, default=0),
@@ -3813,6 +3814,7 @@ def create_workflow_checklist_item(
         parent_item_id=parent_item.id if parent_item is not None else None,
         item_kind=payload.item_kind,
         title=title[:500],
+        teacher_note=str(payload.teacher_note or "").strip()[:4000] or None,
         position=position,
         depth=depth,
         is_completed=False,
@@ -3848,6 +3850,7 @@ def create_workflow_checklist_item(
         is_completed=item.is_completed,
         completed_session_id=item.completed_session_id,
         completed_at=item.completed_at,
+        teacher_note=str(item.teacher_note or "").strip() or None,
         children=[],
     )
 
@@ -3948,6 +3951,8 @@ def update_workflow_checklist_item(
         item.title = title[:500]
     if payload.item_kind is not None:
         item.item_kind = payload.item_kind
+    if payload.teacher_note is not None:
+        item.teacher_note = str(payload.teacher_note or "").strip()[:4000] or None
 
     log_audit(
         db,
@@ -3960,6 +3965,7 @@ def update_workflow_checklist_item(
             "unit_id": unit.id,
             "title": item.title,
             "item_kind": item.item_kind.value,
+            "has_teacher_note": bool(str(item.teacher_note or "").strip()),
         },
     )
     db.commit()
@@ -3975,6 +3981,7 @@ def update_workflow_checklist_item(
         is_completed=item.is_completed,
         completed_session_id=item.completed_session_id,
         completed_at=item.completed_at,
+        teacher_note=str(item.teacher_note or "").strip() or None,
         children=[],
     )
 
@@ -6518,6 +6525,7 @@ def toggle_workflow_item(
         is_completed=item.is_completed,
         completed_session_id=item.completed_session_id,
         completed_at=item.completed_at,
+        teacher_note=str(item.teacher_note or "").strip() or None,
         children=[],
     )
 

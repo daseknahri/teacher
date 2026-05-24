@@ -215,3 +215,5 @@ def ensure_schema_compatibility() -> None:
             conn.execute(text("UPDATE workflow_prepared_sections SET provider = 'notebooklm' WHERE provider IS NULL"))
             conn.execute(text("UPDATE workflow_prepared_sections SET status = 'indexed' WHERE status IS NULL"))
             conn.execute(text("UPDATE workflow_prepared_sections SET benchmark_status = 'pending' WHERE benchmark_status IS NULL"))
+
+        _ensure_column("workflow_checklist_items", "teacher_note", "TEXT NULL")

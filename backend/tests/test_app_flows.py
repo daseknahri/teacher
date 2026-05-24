@@ -6698,6 +6698,60 @@ def test_chapter_checklist_item_accepts_image_attachment(client):
     assert section_after_delete["attachments"] == []
 
 
+def test_checklist_item_teacher_note_persists_and_updates(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": f"Checklist Note {uuid.uuid4().hex[:6]}"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={"unit_type": "chapter", "title": "Chapitre note", "source_text": "I- Fraction"},
+    )
+    assert unit_resp.status_code == 201
+    unit = unit_resp.json()
+
+    workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_resp.status_code == 200
+    root_id = int(workspace_resp.json()["active_unit"]["checklist"][0]["id"])
+
+    add_item_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit['id']}/items",
+        headers=headers,
+        json={
+            "title": "I- Fraction",
+            "item_kind": "section",
+            "parent_item_id": root_id,
+            "teacher_note": "Montrer l'idee avec un exemple simple.",
+        },
+    )
+    assert add_item_resp.status_code == 201
+    item = add_item_resp.json()
+    assert item["teacher_note"] == "Montrer l'idee avec un exemple simple."
+
+    update_resp = client.put(
+        f"/workflow/classes/{class_id}/units/{unit['id']}/items/{item['id']}",
+        headers=headers,
+        json={"teacher_note": "Insister sur la simplification finale."},
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.json()["teacher_note"] == "Insister sur la simplification finale."
+
+    workspace_after = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_after.status_code == 200
+    child_row = next(row for row in workspace_after.json()["active_unit"]["checklist"][0]["children"] if row["title"] == "I- Fraction")
+    assert child_row["teacher_note"] == "Insister sur la simplification finale."
+
+    clear_resp = client.put(
+        f"/workflow/classes/{class_id}/units/{unit['id']}/items/{item['id']}",
+        headers=headers,
+        json={"teacher_note": ""},
+    )
+    assert clear_resp.status_code == 200
+    assert clear_resp.json()["teacher_note"] is None
+
+
 def test_import_students_from_notescc_list_format(client):
     headers = _auth_headers(client)
     class_resp = client.post("/classes", json={"name": "NotesCC List Class"}, headers=headers)

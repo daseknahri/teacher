@@ -338,6 +338,7 @@ class WorkflowChecklistItem(Base):
     )
     item_kind: Mapped[WorkflowChecklistItemKind] = mapped_column(SQLEnum(WorkflowChecklistItemKind), default=WorkflowChecklistItemKind.OTHER)
     title: Mapped[str] = mapped_column(String(500))
+    teacher_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     position: Mapped[int] = mapped_column(Integer, default=0)
     depth: Mapped[int] = mapped_column(Integer, default=0)
     is_completed: Mapped[bool] = mapped_column(Boolean, default=False)
