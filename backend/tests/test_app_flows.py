@@ -6215,6 +6215,11 @@ def test_create_linked_exam_workflow_unit_from_exam(client):
     assert body["unit"]["exam_title"] == "CC2"
     assert body["unit"]["checklist"]
     assert body["unit"]["checklist"][0]["title"] == "CC2"
+    exam_child_titles = [row["title"] for row in body["unit"]["checklist"][0]["children"]]
+    assert "Preparation du sujet" in exam_child_titles
+    assert "Sujet complet" in exam_child_titles
+    assert "Bareme et consignes" in exam_child_titles
+    assert "Corrige attendu" in exam_child_titles
 
     linked_again = client.post(
         f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
@@ -6269,6 +6274,9 @@ def test_create_linked_exam_correction_workflow_reuses_exam_structure(client):
     correction_child_titles = [row["title"] for row in correction_checklist[0]["children"]]
     assert "Sujet complet" in correction_child_titles
     assert "Bareme et consignes" in correction_child_titles
+    assert "Corrige detaille" in correction_child_titles
+    assert "Erreurs frequentes" in correction_child_titles
+    assert "Remediation" in correction_child_titles
 
 
 def test_exam_list_includes_linked_workflow_status(client):
