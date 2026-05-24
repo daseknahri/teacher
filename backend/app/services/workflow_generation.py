@@ -2199,6 +2199,7 @@ async def _notebooklm_generate_checklist_async(
             notebook_id=notebook_id,
             source_ids=[],
             notebook_title=notebook_title,
+            notebook_role=_notebooklm_role_for_unit_type(unit_type),
         )
         return None, provider_context, raw_result, f"notebooklm_request_failed:{exc.__class__.__name__}"
 
@@ -2206,6 +2207,7 @@ async def _notebooklm_generate_checklist_async(
         notebook_id=notebook_id,
         source_ids=raw_result.get("source_ids") if isinstance(raw_result, dict) else [],
         notebook_title=notebook_title,
+        notebook_role=_notebooklm_role_for_unit_type(unit_type),
     )
     outline_candidates = [
         (str(row.get("variant") or "outline"), row.get("outline_items"))
@@ -3484,6 +3486,7 @@ async def _notebooklm_generate_unit_material_async(
                 notebook_id=notebook_id,
                 source_ids=source_ids,
                 notebook_title=notebook_title,
+                notebook_role=_notebooklm_role_for_unit_type(unit_type),
             )
             if normalized_material_type == "study_guide":
                 extra_instructions = _build_notebooklm_study_guide_instructions(
@@ -3898,13 +3901,32 @@ async def _notebooklm_attach_source(
     return [str(source.id or "").strip()] if str(source.id or "").strip() else []
 
 
-def _build_notebooklm_provider_context(*, notebook_id: str, source_ids: list[str] | Any, notebook_title: str) -> dict[str, Any]:
+def _notebooklm_role_for_unit_type(unit_type: WorkflowUnitType | None) -> str:
+    if unit_type == WorkflowUnitType.CHAPTER:
+        return "chapter_outline"
+    if unit_type == WorkflowUnitType.EXERCISE_SERIES:
+        return "exercise_outline"
+    if unit_type == WorkflowUnitType.EXAM:
+        return "exam_outline"
+    if unit_type == WorkflowUnitType.EXAM_CORRECTION:
+        return "correction_outline"
+    return "unit_outline"
+
+
+def _build_notebooklm_provider_context(
+    *,
+    notebook_id: str,
+    source_ids: list[str] | Any,
+    notebook_title: str,
+    notebook_role: str | None = None,
+) -> dict[str, Any]:
     source_id_rows = [str(value).strip() for value in (source_ids or []) if str(value).strip()]
     return {
         "provider": "notebooklm",
         "notebook_id": str(notebook_id or "").strip() or None,
         "source_ids": source_id_rows,
         "notebook_title": str(notebook_title or "").strip() or None,
+        "notebook_role": str(notebook_role or "").strip() or None,
     }
 
 

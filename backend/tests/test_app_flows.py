@@ -2106,12 +2106,13 @@ def test_workflow_unit_reextract_updates_checklist_and_blueprint(client, monkeyp
             "model": "notebooklm-py",
             "status": "ready",
             "error_message": None,
-            "provider_context": {
-                "provider": "notebooklm",
-                "notebook_id": "nb-rerun-1",
-                "source_ids": ["src-rerun-1"],
-                "notebook_title": "Teacher Progress - Les nombres rationnels",
-            },
+                "provider_context": {
+                    "provider": "notebooklm",
+                    "notebook_id": "nb-rerun-1",
+                    "source_ids": ["src-rerun-1"],
+                    "notebook_title": "Teacher Progress - Les nombres rationnels",
+                    "notebook_role": "chapter_outline",
+                },
             "unit_map": {
                 "unit_title": "Les nombres rationnels : Somme et difference",
                 "unit_type": "chapter",
@@ -2189,6 +2190,7 @@ def test_workflow_unit_reextract_updates_checklist_and_blueprint(client, monkeyp
     assert blueprint["provider"] == "notebooklm"
     assert blueprint["model"] == "notebooklm-py"
     assert blueprint["blueprint_json"]["provider_context"]["notebook_id"] == "nb-rerun-1"
+    assert blueprint["blueprint_json"]["provider_context"]["notebook_role"] == "chapter_outline"
     assert blueprint["unit_map_json"]["source_mode"] == "notebooklm-unit-map"
     assert blueprint["unit_map_json"]["activity_blocks"] == ["Activites"]
     assert blueprint["raw_provider_response"]["raw_provider_response"]["responses"][0]["prompt"] == "Extract the pedagogical outline only."
@@ -3050,6 +3052,16 @@ def test_notebooklm_prompt_omits_noisy_source_hint_when_pdf_is_attached():
     assert "N'inclus pas les rubriques meta enseignant" in prompt
     assert "indentation de deux espaces par niveau" in prompt
     assert "aucun commentaire avant ou apres la liste" in prompt
+
+
+def test_notebooklm_role_mapping_separates_unit_types():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    assert workflow_generation._notebooklm_role_for_unit_type(WorkflowUnitType.CHAPTER) == "chapter_outline"
+    assert workflow_generation._notebooklm_role_for_unit_type(WorkflowUnitType.EXERCISE_SERIES) == "exercise_outline"
+    assert workflow_generation._notebooklm_role_for_unit_type(WorkflowUnitType.EXAM) == "exam_outline"
+    assert workflow_generation._notebooklm_role_for_unit_type(WorkflowUnitType.EXAM_CORRECTION) == "correction_outline"
 
 
 def test_notebooklm_prompt_for_exercise_series_is_minimal():
@@ -4101,6 +4113,7 @@ def test_notebooklm_generate_checklist_async_uses_outline_only_flow(monkeypatch)
     assert error_message is None
     assert items
     assert provider_context["notebook_id"] == "nb-test-123"
+    assert provider_context["notebook_role"] == "chapter_outline"
     assert raw_result["response_mode"] == "outline_only"
     assert "content_pack" not in raw_result
     assert len(recorded_prompts) == 2
