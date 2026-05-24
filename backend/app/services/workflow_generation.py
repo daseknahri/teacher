@@ -2081,6 +2081,11 @@ def _candidate_needs_structural_repair(
 ) -> bool:
     if not items:
         return True
+    if unit_type == WorkflowUnitType.EXERCISE_SERIES and _exercise_series_outline_has_richer_exact_titles(
+        items,
+        reference_outline,
+    ):
+        return True
     candidate_quality = _score_checklist_quality(items, unit_type=unit_type, unit_title=unit_title)
     baseline_quality = _score_checklist_quality(reference_outline, unit_type=unit_type, unit_title=unit_title)
     candidate_score = _score_checklist_candidate(
@@ -6048,6 +6053,49 @@ def _exercise_series_sort_key(title: str) -> tuple[int, str, int, str]:
     letter = str(match.group(2) or "").upper()
     minor = int(match.group(3) or 0)
     return (major, letter, minor, raw.lower())
+
+
+def _exercise_series_title_identity(title: str) -> str:
+    raw = _normalize_outline_title(title)
+    match = re.match(r"^\s*(?:exercice|exercise|application)\s+([0-9]+(?:[A-Z])?(?:\.[0-9]+)?)\b", raw, re.IGNORECASE)
+    if not match:
+        return ""
+    return str(match.group(1) or "").strip().upper()
+
+
+def _exercise_series_outline_has_richer_exact_titles(
+    candidate_items: list[dict[str, Any]] | None,
+    reference_outline: list[dict[str, Any]] | None,
+) -> bool:
+    if not candidate_items or not reference_outline:
+        return False
+    candidate_titles: dict[str, str] = {}
+    reference_titles: dict[str, str] = {}
+    for node in _flatten_checklist_nodes(candidate_items):
+        if str(node.get("kind") or "").strip().lower() != WorkflowChecklistItemKind.EXERCISE.value:
+            continue
+        title = _normalize_outline_title(node.get("title"))
+        key = _exercise_series_title_identity(title)
+        if key and title:
+            candidate_titles[key] = title
+    for node in _flatten_checklist_nodes(reference_outline):
+        if str(node.get("kind") or "").strip().lower() != WorkflowChecklistItemKind.EXERCISE.value:
+            continue
+        title = _normalize_outline_title(node.get("title"))
+        key = _exercise_series_title_identity(title)
+        if key and title:
+            reference_titles[key] = title
+    if not candidate_titles or not reference_titles:
+        return False
+    for key, reference_title in reference_titles.items():
+        candidate_title = candidate_titles.get(key)
+        if not candidate_title:
+            continue
+        if candidate_title == reference_title:
+            continue
+        if len(reference_title) > len(candidate_title) and reference_title.startswith(candidate_title):
+            return True
+    return False
 
 
 def _is_explicit_topic_outline_title(title: str, kind: str) -> bool:

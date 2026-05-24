@@ -3426,6 +3426,107 @@ def test_generate_unit_checklist_package_repairs_weak_exercise_series_outline_wi
     assert package["raw_provider_response"]["selected_structure_source"] == "pdf_layout_seed"
 
 
+def test_candidate_needs_structural_repair_for_richer_exercise_series_titles():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    candidate_items = [
+        {
+            "title": "Nombres relatifs en ecriture fractionnaire exercice 2B",
+            "kind": "section",
+            "children": [
+                {"title": "Exercice 1", "kind": "exercise", "children": []},
+                {"title": "Exercice 2", "kind": "exercise", "children": []},
+                {"title": "Exercice 2B.3", "kind": "exercise", "children": []},
+                {"title": "Exercice 2B.4", "kind": "exercise", "children": []},
+            ],
+        }
+    ]
+    reference_outline = [
+        {
+            "title": "Nombres relatifs en ecriture fractionnaire exercice 2B",
+            "kind": "section",
+            "children": [
+                {"title": "Exercice 1", "kind": "exercise", "children": []},
+                {"title": "Exercice 2", "kind": "exercise", "children": []},
+                {"title": "Exercice 2B.3 - POLYNESIE 2001", "kind": "exercise", "children": []},
+                {"title": "Exercice 2B.4 - AFRIQUE DU NORD 2001", "kind": "exercise", "children": []},
+            ],
+        }
+    ]
+
+    assert workflow_generation._candidate_needs_structural_repair(
+        candidate_items,
+        reference_outline=reference_outline,
+        unit_type=WorkflowUnitType.EXERCISE_SERIES,
+        unit_title="Nombres relatifs en ecriture fractionnaire exercice 2B",
+    ) is True
+
+
+def test_generate_unit_checklist_package_repairs_weaker_exact_exercise_titles_with_pdf_layout_seed(monkeypatch):
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    weak_exact_items = [
+        {
+            "title": "Nombres relatifs en ecriture fractionnaire exercice 2B",
+            "kind": "section",
+            "children": [
+                {"title": "Exercice 1", "kind": "exercise", "children": []},
+                {"title": "Exercice 2", "kind": "exercise", "children": []},
+                {"title": "Exercice 2B.3", "kind": "exercise", "children": []},
+                {"title": "Exercice 2B.4", "kind": "exercise", "children": []},
+            ],
+        }
+    ]
+    repair_outline = [
+        {
+            "title": "Nombres relatifs en ecriture fractionnaire exercice 2B",
+            "kind": "section",
+            "children": [
+                {"title": "Exercice 1", "kind": "exercise", "children": []},
+                {"title": "Exercice 2", "kind": "exercise", "children": []},
+                {"title": "Exercice 2B.3 - POLYNESIE 2001", "kind": "exercise", "children": []},
+                {"title": "Exercice 2B.4 - AFRIQUE DU NORD 2001", "kind": "exercise", "children": []},
+            ],
+        }
+    ]
+
+    monkeypatch.setattr(
+        workflow_generation,
+        "_notebooklm_generate_checklist",
+        lambda **kwargs: (
+            weak_exact_items,
+            {"provider": "notebooklm", "notebook_id": "nb-test", "source_ids": ["src-1"], "notebook_role": "exercise_outline"},
+            {"response_mode": "outline_only"},
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_generation,
+        "_build_pdf_layout_outline_seed",
+        lambda **kwargs: repair_outline,
+    )
+
+    package = workflow_generation.generate_unit_checklist_package(
+        unit_type=WorkflowUnitType.EXERCISE_SERIES,
+        title="Nombres relatifs en ecriture fractionnaire exercice 2B",
+        source_text="weak text",
+        session_count=4,
+        provider="notebooklm",
+        document_path="fake.pdf",
+    )
+
+    repaired_children = package["items"][0]["children"]
+    assert [str(row.get("title") or "") for row in repaired_children] == [
+        "Exercice 1",
+        "Exercice 2",
+        "Exercice 2B.3 - POLYNESIE 2001",
+        "Exercice 2B.4 - AFRIQUE DU NORD 2001",
+    ]
+    assert package["raw_provider_response"]["selected_structure_source"] == "pdf_layout_seed"
+
+
 def test_pdf_text_extraction_preserves_line_break_structure():
     from app.services import workflow as workflow_service
 
