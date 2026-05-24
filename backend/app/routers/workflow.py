@@ -1208,6 +1208,50 @@ def _create_unit_with_seeded_checklist(
     return unit
 
 
+def _reopen_workflow_unit_record(
+    db: Session,
+    *,
+    class_id: int,
+    unit: WorkflowUnit,
+    current_user: User,
+) -> WorkflowUnit:
+    active_unit = db.scalar(
+        select(WorkflowUnit).where(
+            WorkflowUnit.class_id == class_id,
+            WorkflowUnit.status == WorkflowUnitStatus.ACTIVE,
+        )
+    )
+    if active_unit is not None:
+        raise HTTPException(status_code=409, detail="An active unit already exists. Close it first.")
+
+    open_workflow_session = db.scalar(
+        select(ClassSession).where(
+            ClassSession.class_id == class_id,
+            ClassSession.unit_id.is_not(None),
+            ClassSession.end_time.is_(None),
+        )
+    )
+    if open_workflow_session is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Session #{open_workflow_session.id} is still open. End it first.",
+        )
+
+    unit.status = WorkflowUnitStatus.ACTIVE
+    unit.closed_at = None
+    unit.order_index = _next_workflow_unit_order_index(db, class_id=class_id)
+    log_audit(
+        db,
+        user=current_user,
+        action="workflow.unit.reopen",
+        entity_type="workflow_unit",
+        entity_id=unit.id,
+        class_id=class_id,
+        details={"title": unit.title, "unit_type": unit.unit_type.value},
+    )
+    return unit
+
+
 def _session_time_sort_value(value: time | None) -> int:
     if value is None:
         return (24 * 60) + 1
@@ -3377,7 +3421,32 @@ def create_linked_exam_workflow_unit(
     if existing_active is not None:
         return WorkflowExamLinkedUnitCreateOut(
             created=False,
+            reopened=False,
             unit=_serialize_unit(db, existing_active),
+        )
+
+    existing_latest = db.scalar(
+        select(WorkflowUnit)
+        .where(
+            WorkflowUnit.class_id == class_id,
+            WorkflowUnit.exam_id == exam_id,
+            WorkflowUnit.unit_type == requested_type,
+        )
+        .order_by(WorkflowUnit.created_at.desc(), WorkflowUnit.id.desc())
+    )
+    if existing_latest is not None and existing_latest.status == WorkflowUnitStatus.CLOSED:
+        _reopen_workflow_unit_record(
+            db,
+            class_id=class_id,
+            unit=existing_latest,
+            current_user=current_user,
+        )
+        db.commit()
+        db.refresh(existing_latest)
+        return WorkflowExamLinkedUnitCreateOut(
+            created=False,
+            reopened=True,
+            unit=_serialize_unit(db, existing_latest),
         )
 
     default_title = exam.title if requested_type == WorkflowUnitType.EXAM else f"Correction - {exam.title}"
@@ -3400,7 +3469,7 @@ def create_linked_exam_workflow_unit(
     )
     db.commit()
     db.refresh(unit)
-    return WorkflowExamLinkedUnitCreateOut(created=True, unit=_serialize_unit(db, unit))
+    return WorkflowExamLinkedUnitCreateOut(created=True, reopened=False, unit=_serialize_unit(db, unit))
 
 
 @router.post("/classes/{class_id}/units/{unit_id}/items", response_model=WorkflowChecklistItemOut, status_code=status.HTTP_201_CREATED)
@@ -7107,43 +7176,11 @@ def reopen_workflow_unit(
     if unit.status != WorkflowUnitStatus.CLOSED:
         raise HTTPException(status_code=409, detail="Only closed unit can be reopened.")
 
-    active_unit = db.scalar(
-        select(WorkflowUnit).where(
-            WorkflowUnit.class_id == class_id,
-            WorkflowUnit.status == WorkflowUnitStatus.ACTIVE,
-        )
-    )
-    if active_unit is not None:
-        raise HTTPException(status_code=409, detail="An active unit already exists. Close it first.")
-
-    open_workflow_session = db.scalar(
-        select(ClassSession).where(
-            ClassSession.class_id == class_id,
-            ClassSession.unit_id.is_not(None),
-            ClassSession.end_time.is_(None),
-        )
-    )
-    if open_workflow_session is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Session #{open_workflow_session.id} is still open. End it first.",
-        )
-
-    next_index = int(
-        db.scalar(select(func.coalesce(func.max(WorkflowUnit.order_index), 0)).where(WorkflowUnit.class_id == class_id)) or 0
-    ) + 1
-    unit.status = WorkflowUnitStatus.ACTIVE
-    unit.closed_at = None
-    unit.order_index = next_index
-
-    log_audit(
+    _reopen_workflow_unit_record(
         db,
-        user=current_user,
-        action="workflow.unit.reopen",
-        entity_type="workflow_unit",
-        entity_id=unit.id,
         class_id=class_id,
-        details={"title": unit.title, "unit_type": unit.unit_type.value},
+        unit=unit,
+        current_user=current_user,
     )
     db.commit()
     db.refresh(unit)

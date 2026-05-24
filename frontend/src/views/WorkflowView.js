@@ -18,6 +18,7 @@ import {
   setActiveUnit, setActiveSession, setCalendar, setWorkspace,
   getAbsentIds, toggleAbsent,
 } from '../state/workflow.js';
+import { setSelectedExamId } from '../state/exam.js';
 import { getSelectedId, getStudents } from '../state/class.js';
 import { showToast } from '../utils/toast.js';
 import { askConfirm } from '../utils/modal.js';
@@ -3566,6 +3567,7 @@ function _render(el, classId) {
                     <p class="text-[12px] text-slate-500 mt-1">Created ${fmtDate(unit.created_at || unit.createdAt)}</p>
                     <div class="flex items-center gap-2 flex-wrap mt-2.5">
                       ${unit.unit_type ? `<span class="badge badge-blue">${unit.unit_type}</span>` : ''}
+                      ${unit.exam_id ? `<span class="badge badge-gray">Linked exam #${unit.exam_id}</span>` : ''}
                       <span class="badge ${extractionBadgeClass}">Extraction ${_escapeHtml(extractionLabel)}</span>
                       <span class="badge ${extractionReviewPending ? 'badge-amber' : 'badge-green'}">${extractionReviewPending ? 'Review Pending' : 'Reviewed'}</span>
                     </div>
@@ -3583,6 +3585,7 @@ function _render(el, classId) {
                     <div class="mt-2.5 flex gap-2 flex-wrap">
                       ${!session ? `<button id="btn-start-session" class="btn btn-success">Start Session</button>` : ''}
                       ${unit.document_name ? `<button id="btn-download-unit-doc" class="btn btn-secondary btn-sm">Unit PDF</button>` : ''}
+                      ${unit.exam_id ? `<button id="btn-open-linked-exam" class="btn btn-secondary btn-sm">Open Exam Record</button>` : ''}
                       <button id="btn-toggle-extraction-review" class="btn ${extractionReviewPending ? 'btn-primary' : 'btn-secondary'} btn-sm">${extractionReviewPending ? 'Approve Extraction' : 'Mark Needs Review'}</button>
                       <button id="btn-rerun-ai-extraction" class="btn btn-secondary btn-sm">Re-run AI</button>
                       <button id="btn-plan-active-unit" class="btn btn-secondary btn-sm">Plan Sessions</button>
@@ -6515,6 +6518,17 @@ function _bindWorkflowEvents(el, classId) {
 
   el.querySelector('#btn-preview-session-ai-details')?.addEventListener('click', () => {
     el.querySelector('#btn-view-ai-details')?.click();
+  });
+
+  el.querySelector('#btn-open-linked-exam')?.addEventListener('click', () => {
+    const unit = getActiveUnit();
+    const examId = Number(unit?.exam_id || 0) || null;
+    if (!examId) {
+      showToast('No linked exam record found for this unit.', 'warning');
+      return;
+    }
+    setSelectedExamId(examId);
+    navigate('exams');
   });
 
   el.querySelectorAll('.btn-session-playbook-request').forEach(button => {

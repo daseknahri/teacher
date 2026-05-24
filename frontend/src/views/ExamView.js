@@ -291,7 +291,14 @@ function _bindExamEvents(el, classId) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ unit_type: unitType }),
       });
-      showToast(result?.created ? `${label} ready in Workflow.` : `${label} already active in Workflow.`, 'ok');
+      showToast(
+        result?.created
+          ? `${label} ready in Workflow.`
+          : result?.reopened
+            ? `${label} reopened in Workflow.`
+            : `${label} already active in Workflow.`,
+        'ok'
+      );
       navigate('workflow');
     } catch (err) {
       showToast(err.message || `Failed to open ${label.toLowerCase()}.`, 'error');

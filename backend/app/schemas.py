@@ -656,6 +656,7 @@ class WorkflowExamLinkedUnitCreateIn(BaseModel):
 
 class WorkflowExamLinkedUnitCreateOut(BaseModel):
     created: bool = True
+    reopened: bool = False
     unit: WorkflowUnitOut
 
 

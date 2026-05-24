@@ -6300,6 +6300,51 @@ def test_exam_list_includes_linked_workflow_status(client):
     assert row["linked_correction_workflow_unit_id"] is None
 
 
+def test_create_linked_exam_workflow_reopens_closed_linked_unit(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": f"Exam Reopen {uuid.uuid4().hex[:6]}"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    exam_resp = client.post(
+        f"/classes/{class_id}/exams",
+        headers=headers,
+        json={"title": "CC5", "exam_date": "2026-07-01", "max_score": 20, "weight": 1},
+    )
+    assert exam_resp.status_code == 201
+    exam_id = int(exam_resp.json()["id"])
+
+    first_link = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam"},
+    )
+    assert first_link.status_code == 200
+    first_body = first_link.json()
+    unit_id = int(first_body["unit"]["id"])
+
+    close_resp = client.post(f"/workflow/classes/{class_id}/units/{unit_id}/close", headers=headers)
+    assert close_resp.status_code == 200
+
+    reopen_resp = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam"},
+    )
+    assert reopen_resp.status_code == 200
+    reopen_body = reopen_resp.json()
+    assert reopen_body["created"] is False
+    assert reopen_body["reopened"] is True
+    assert int(reopen_body["unit"]["id"]) == unit_id
+    assert reopen_body["unit"]["status"] == "active"
+
+    exams_resp = client.get(f"/classes/{class_id}/exams", headers=headers)
+    assert exams_resp.status_code == 200
+    exam_row = next(item for item in exams_resp.json() if int(item["id"]) == exam_id)
+    assert int(exam_row["linked_exam_workflow_unit_id"]) == unit_id
+    assert exam_row["linked_exam_workflow_status"] == "active"
+
+
 def test_import_students_from_notescc_list_format(client):
     headers = _auth_headers(client)
     class_resp = client.post("/classes", json={"name": "NotesCC List Class"}, headers=headers)
