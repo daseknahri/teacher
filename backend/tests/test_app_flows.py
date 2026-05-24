@@ -6550,6 +6550,19 @@ def test_linked_exam_workflow_checklist_item_accepts_image_attachment(client):
     assert download_resp.status_code == 200
     assert download_resp.headers["content-type"].startswith("image/png")
 
+    delete_resp = client.delete(
+        f"/workflow/classes/{class_id}/units/{unit['id']}/items/{exercise_1['id']}/attachments/{attachment['id']}",
+        headers=headers,
+    )
+    assert delete_resp.status_code == 200
+    assert int(delete_resp.json()["deleted_attachment_id"]) == int(attachment["id"])
+
+    workspace_after_delete = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_after_delete.status_code == 200
+    active_unit_after_delete = workspace_after_delete.json()["active_unit"]
+    exercise_1_after_delete = next(row for row in active_unit_after_delete["checklist"][0]["children"] if row["title"] == "Exercice 1")
+    assert exercise_1_after_delete["attachments"] == []
+
 
 def test_import_students_from_notescc_list_format(client):
     headers = _auth_headers(client)

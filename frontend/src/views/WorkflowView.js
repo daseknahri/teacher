@@ -3750,12 +3750,12 @@ function _render(el, classId) {
                 ${item.item_kind && item.item_kind !== 'other' ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 flex-shrink-0">${item.item_kind}</span>` : ''}
                 ${showChecklistAttachments ? `
                 <div class="flex items-center gap-1 flex-wrap">
-                  ${latestAttachment ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex-shrink-0">Image ready</span>` : ''}
+                  ${latestAttachment ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex-shrink-0">${item.attachments.length > 1 ? `${item.attachments.length} images` : 'Image ready'}</span>` : ''}
                   <label class="btn btn-ghost btn-sm !text-indigo-600 !px-2 cursor-pointer" title="Attach screenshot to this checklist row">
                     Attach image
                     <input type="file" accept="image/png,image/jpeg,image/webp,image/bmp" class="hidden input-item-attachment" data-item-id="${item.id}" />
                   </label>
-                  ${latestAttachment ? `<button class="btn btn-ghost btn-sm !text-emerald-700 !px-2 btn-view-item-attachment" data-item-id="${item.id}" data-attachment-id="${latestAttachment.id}" data-attachment-name="${_escapeHtmlAttr(latestAttachment.file_name || 'image')}">View</button>` : ''}
+                  ${latestAttachment ? `<button class="btn btn-ghost btn-sm !text-emerald-700 !px-2 btn-view-item-attachment" data-item-id="${item.id}">View</button>` : ''}
                 </div>` : ''}
                 <div class="row-hover-actions checklist-edit-actions flex items-center gap-1 ml-auto flex-wrap rounded-full border border-slate-200 bg-white/90 px-1.5 py-1 shadow-sm">
                   <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-up ${meta.canUp ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Move up">↑</button>
@@ -4147,12 +4147,12 @@ function _render(el, classId) {
                 <span class="todo-title text-[12px] leading-snug flex-1">${item.title}</span>
                 ${showChecklistAttachments ? `
                 <div class="flex items-center gap-1 flex-wrap">
-                  ${latestAttachment ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex-shrink-0">Image ready</span>` : ''}
+                  ${latestAttachment ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex-shrink-0">${item.attachments.length > 1 ? `${item.attachments.length} images` : 'Image ready'}</span>` : ''}
                   <label class="btn btn-ghost btn-sm !text-indigo-600 !px-2 cursor-pointer" title="Attach screenshot to this checklist row">
                     Attach image
                     <input type="file" accept="image/png,image/jpeg,image/webp,image/bmp" class="hidden input-item-attachment" data-item-id="${item.id}" />
                   </label>
-                  ${latestAttachment ? `<button class="btn btn-ghost btn-sm !text-emerald-700 !px-2 btn-view-item-attachment" data-item-id="${item.id}" data-attachment-id="${latestAttachment.id}" data-attachment-name="${_escapeHtmlAttr(latestAttachment.file_name || 'image')}">View</button>` : ''}
+                  ${latestAttachment ? `<button class="btn btn-ghost btn-sm !text-emerald-700 !px-2 btn-view-item-attachment" data-item-id="${item.id}">View</button>` : ''}
                 </div>` : ''}
                 ${isStructural ? '<span class="text-[10px] text-slate-400 whitespace-nowrap">Auto-completes from child rows</span>' : ''}
                 ${hasChildren ? `<button class="btn btn-ghost btn-sm !text-sky-600 !px-2 btn-checklist-group-complete" data-item-id="${item.id}" title="Mark all unfinished lesson steps under this heading">Check group</button>` : ''}
@@ -4197,11 +4197,11 @@ function _flatItems(item) {
   return result;
 }
 
-async function _openChecklistAttachmentPreview({ classId, unitId, itemId, attachment }) {
-  if (!attachment?.id) return;
-  showToast('Opening screenshot...', 'info');
-  const blob = await fetchBlobWithAuth(`/workflow/classes/${classId}/units/${unitId}/items/${itemId}/attachments/${attachment.id}`);
-  const objectUrl = URL.createObjectURL(blob);
+async function _openChecklistAttachmentPreview({ classId, unitId, item, onChange }) {
+  const attachments = Array.isArray(item?.attachments) ? item.attachments.slice() : [];
+  if (!attachments.length) return;
+  let selectedIndex = 0;
+  let objectUrl = null;
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
@@ -4209,27 +4209,81 @@ async function _openChecklistAttachmentPreview({ classId, unitId, itemId, attach
       <div class="flex items-center justify-between gap-3 px-6 py-4 border-b border-slate-100">
         <div>
           <h2 class="text-[16px] font-bold text-slate-800">Checklist Screenshot</h2>
-          <p class="text-[12px] text-slate-400 mt-0.5">${_escapeHtml(attachment.file_name || 'Attached image')}</p>
+          <p id="checklist-attachment-subtitle" class="text-[12px] text-slate-400 mt-0.5"></p>
         </div>
         <div class="flex items-center gap-2">
+          <button id="btn-delete-checklist-attachment" class="btn btn-ghost btn-sm !text-red-600">Delete</button>
           <button id="btn-download-checklist-attachment" class="btn btn-secondary btn-sm">Download</button>
           <button id="btn-close-checklist-attachment" class="btn btn-ghost btn-sm">Close</button>
         </div>
       </div>
-      <div class="px-6 py-5">
-        <img src="${objectUrl}" alt="${_escapeHtmlAttr(attachment.file_name || 'Checklist screenshot')}" class="max-h-[75vh] w-full object-contain rounded-2xl border border-slate-200 bg-slate-50" />
+      <div class="px-6 py-5 grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <div id="checklist-attachment-list" class="rounded-2xl border border-slate-200 bg-slate-50 p-2 flex flex-col gap-2 max-h-[72vh] overflow-auto"></div>
+        <div>
+          <img id="checklist-attachment-image" src="" alt="Checklist screenshot" class="max-h-[72vh] w-full object-contain rounded-2xl border border-slate-200 bg-slate-50" />
+        </div>
       </div>
     </div>`;
+  const subtitle = overlay.querySelector('#checklist-attachment-subtitle');
+  const imageEl = overlay.querySelector('#checklist-attachment-image');
+  const listEl = overlay.querySelector('#checklist-attachment-list');
+  async function loadAttachment(index) {
+    if (!attachments[index]) return;
+    selectedIndex = index;
+    if (objectUrl) {
+      URL.revokeObjectURL(objectUrl);
+      objectUrl = null;
+    }
+    const attachment = attachments[selectedIndex];
+    subtitle.textContent = `${attachment.file_name || 'Attached image'} • ${selectedIndex + 1}/${attachments.length}`;
+    showToast('Opening screenshot...', 'info');
+    const blob = await fetchBlobWithAuth(`/workflow/classes/${classId}/units/${unitId}/items/${item.id}/attachments/${attachment.id}`);
+    objectUrl = URL.createObjectURL(blob);
+    imageEl.src = objectUrl;
+    imageEl.alt = attachment.file_name || 'Checklist screenshot';
+    listEl.innerHTML = attachments.map((entry, idx) => `
+      <button class="w-full text-left rounded-xl border px-3 py-2 text-[12px] ${idx === selectedIndex ? 'border-emerald-300 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-700'} btn-select-checklist-attachment" data-attachment-index="${idx}">
+        <div class="font-semibold truncate">${_escapeHtml(entry.file_name || `Image ${idx + 1}`)}</div>
+        <div class="text-[10px] mt-0.5 ${idx === selectedIndex ? 'text-emerald-600' : 'text-slate-400'}">Image ${idx + 1}</div>
+      </button>
+    `).join('');
+    listEl.querySelectorAll('.btn-select-checklist-attachment').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const nextIndex = Number(btn.dataset.attachmentIndex);
+        if (!Number.isFinite(nextIndex) || nextIndex === selectedIndex) return;
+        await loadAttachment(nextIndex);
+      });
+    });
+  }
   function cleanup() {
     overlay.remove();
-    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    if (objectUrl) setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
   }
   overlay.addEventListener('click', e => { if (e.target === overlay) cleanup(); });
   overlay.querySelector('#btn-close-checklist-attachment')?.addEventListener('click', cleanup);
   overlay.querySelector('#btn-download-checklist-attachment')?.addEventListener('click', async () => {
-    await downloadWithAuth(`/workflow/classes/${classId}/units/${unitId}/items/${itemId}/attachments/${attachment.id}`, attachment.file_name || 'checklist-image');
+    const attachment = attachments[selectedIndex];
+    await downloadWithAuth(`/workflow/classes/${classId}/units/${unitId}/items/${item.id}/attachments/${attachment.id}`, attachment.file_name || 'checklist-image');
+  });
+  overlay.querySelector('#btn-delete-checklist-attachment')?.addEventListener('click', async () => {
+    const attachment = attachments[selectedIndex];
+    const ok = await askConfirm(`Delete "${attachment.file_name || 'this image'}" from this checklist row?`, { danger: true });
+    if (!ok) return;
+    await api(`/workflow/classes/${classId}/units/${unitId}/items/${item.id}/attachments/${attachment.id}`, { method: 'DELETE' });
+    attachments.splice(selectedIndex, 1);
+    if (!attachments.length) {
+      cleanup();
+      if (typeof onChange === 'function') await onChange();
+      showToast('Checklist screenshot deleted.', 'ok');
+      return;
+    }
+    if (selectedIndex >= attachments.length) selectedIndex = attachments.length - 1;
+    if (typeof onChange === 'function') await onChange();
+    showToast('Checklist screenshot deleted.', 'ok');
+    await loadAttachment(selectedIndex);
   });
   document.body.appendChild(overlay);
+  await loadAttachment(0);
 }
 /* also expose on unit */
 function _checklist(unit) {
@@ -5830,17 +5884,19 @@ function _bindWorkflowEvents(el, classId) {
       event.preventDefault();
       event.stopPropagation();
       const itemId = Number(btn.dataset.itemId);
-      const attachmentId = Number(btn.dataset.attachmentId);
       const unit = getActiveUnit();
-      if (!itemId || !attachmentId || !unit?.id) return;
+      if (!itemId || !unit?.id) return;
+      const item = _checklist(unit).find(row => Number(row?.id) === itemId) || null;
+      if (!item || !Array.isArray(item.attachments) || !item.attachments.length) return;
       try {
         await _openChecklistAttachmentPreview({
           classId,
           unitId: Number(unit.id),
-          itemId,
-          attachment: {
-            id: attachmentId,
-            file_name: String(btn.dataset.attachmentName || '').trim() || 'image',
+          item,
+          onChange: async () => {
+            const ws = await api(`/workflow/classes/${classId}`);
+            setWorkspace(ws);
+            _render(el, classId);
           },
         });
       } catch (err) {

@@ -3726,6 +3726,44 @@ def download_workflow_checklist_item_attachment(
     return FileResponse(path=str(path), media_type=str(attachment.file_content_type or "application/octet-stream"), filename=filename)
 
 
+@router.delete("/classes/{class_id}/units/{unit_id}/items/{item_id}/attachments/{attachment_id}")
+def delete_workflow_checklist_item_attachment(
+    class_id: int,
+    unit_id: int,
+    item_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ = ensure_class_writable(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, unit_id)
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Unit not found.")
+    if unit.status != WorkflowUnitStatus.ACTIVE:
+        raise HTTPException(status_code=409, detail="Only active units can update checklist screenshots.")
+    item = db.get(WorkflowChecklistItem, item_id)
+    if item is None or int(item.unit_id) != int(unit_id):
+        raise HTTPException(status_code=404, detail="Checklist item not found.")
+    attachment = db.get(WorkflowChecklistItemAttachment, attachment_id)
+    if attachment is None or int(attachment.item_id) != int(item_id):
+        raise HTTPException(status_code=404, detail="Checklist attachment not found.")
+    deleted_file = _safe_unlink(str(attachment.file_path or "").strip())
+    deleted_id = int(attachment.id)
+    file_name = str(attachment.file_name or "").strip() or None
+    db.delete(attachment)
+    log_audit(
+        db,
+        user=current_user,
+        action="workflow.item.attachment.delete",
+        entity_type="workflow_item_attachment",
+        entity_id=deleted_id,
+        class_id=class_id,
+        details={"unit_id": int(unit_id), "item_id": int(item_id), "file_name": file_name, "deleted_file": deleted_file},
+    )
+    db.commit()
+    return {"deleted_attachment_id": deleted_id, "deleted_file": deleted_file}
+
+
 @router.post("/classes/{class_id}/units/{unit_id}/items", response_model=WorkflowChecklistItemOut, status_code=status.HTTP_201_CREATED)
 def create_workflow_checklist_item(
     class_id: int,
