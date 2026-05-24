@@ -6354,6 +6354,55 @@ def test_create_linked_exam_workflow_reopens_closed_linked_unit(client):
     assert exam_row["linked_exam_workflow_status"] == "active"
 
 
+def test_linked_exam_workflow_exposes_exam_results_summary(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": f"Exam Results Link {uuid.uuid4().hex[:6]}"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    roster = _build_roster_file([("STD400", "Rita"), ("STD401", "Amine"), ("STD402", "Salma")])
+    roster_resp = client.post(
+        f"/classes/{class_id}/students/import",
+        headers=headers,
+        files={"file": ("students.xlsx", roster, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert roster_resp.status_code == 200
+
+    exam_resp = client.post(
+        f"/classes/{class_id}/exams",
+        headers=headers,
+        json={"title": "CC6", "exam_date": "2026-07-08", "max_score": 20, "weight": 1},
+    )
+    assert exam_resp.status_code == 201
+    exam_id = int(exam_resp.json()["id"])
+
+    results_file = _build_exam_file(
+        [
+            ("STD400", "Rita", 18, "A", ""),
+            ("STD401", "Amine", 11, "B", ""),
+            ("STD402", "Salma", 7, "C", ""),
+        ]
+    )
+    import_resp = client.post(
+        f"/exams/{exam_id}/results/import",
+        headers=headers,
+        files={"file": ("results.xlsx", results_file, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert import_resp.status_code == 200
+    assert import_resp.json()["imported"] == 3
+
+    linked_resp = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam"},
+    )
+    assert linked_resp.status_code == 200
+    unit = linked_resp.json()["unit"]
+    assert unit["exam_results_count"] == 3
+    assert float(unit["exam_results_average_score"]) == 12.0
+    assert unit["exam_results_passed_count"] == 2
+
+
 def test_import_students_from_notescc_list_format(client):
     headers = _auth_headers(client)
     class_resp = client.post("/classes", json={"name": "NotesCC List Class"}, headers=headers)

@@ -3487,6 +3487,9 @@ function _render(el, classId) {
   const isLinkedExamUnit = Boolean(unit?.exam_id);
   const isExamWorkflowUnit = unit?.unit_type === 'exam';
   const isExamCorrectionUnit = unit?.unit_type === 'exam_correction';
+  const examResultsCount = Number(unit?.exam_results_count || 0) || 0;
+  const examResultsAverage = unit?.exam_results_average_score != null ? Number(unit.exam_results_average_score) : null;
+  const examResultsPassed = Number(unit?.exam_results_passed_count || 0) || 0;
   const showExtractionControls = !isLinkedExamUnit;
   const extractionBadgeClass = extractionSource === 'notebooklm'
     ? 'badge-green'
@@ -3497,9 +3500,13 @@ function _render(el, classId) {
         : 'badge-gray';
   const extractionLabel = extractionSource || 'unknown';
   const unitFocusText = isExamWorkflowUnit
-    ? 'Use this checklist to organize the exam paper, expected correction, and supervision points.'
+    ? examResultsCount
+      ? `Use this checklist to organize the paper, expected correction, and supervision points. ${examResultsCount} result${examResultsCount === 1 ? '' : 's'} already imported for this exam.`
+      : 'Use this checklist to organize the exam paper, expected correction, and supervision points. Import results later from the exam record when they are ready.'
     : isExamCorrectionUnit
-      ? 'Use this checklist to guide the correction, highlight common mistakes, and plan remediation.'
+      ? examResultsCount
+        ? `Use this checklist to guide the correction, highlight common mistakes, and plan remediation from ${examResultsCount} imported result${examResultsCount === 1 ? '' : 's'}.`
+        : 'Use this checklist to guide the correction, highlight common mistakes, and plan remediation. Import the exam results first if you want the correction flow grounded in real outcomes.'
       : extractionReviewPending
         ? 'Approve the extracted checklist once the structure looks right, then continue planning and teaching from it.'
         : 'The checklist is ready to drive planning and teaching. Keep building one reliable layer at a time.';
@@ -3579,6 +3586,8 @@ function _render(el, classId) {
                     <div class="flex items-center gap-2 flex-wrap mt-2.5">
                       ${unit.unit_type ? `<span class="badge badge-blue">${unit.unit_type}</span>` : ''}
                       ${unit.exam_id ? `<span class="badge badge-gray">Linked exam: ${_escapeHtml(unit.exam_title || `#${unit.exam_id}`)}</span>` : ''}
+                      ${unit.exam_id ? `<span class="badge ${examResultsCount ? 'badge-green' : 'badge-amber'}">${examResultsCount ? `${examResultsCount} result${examResultsCount === 1 ? '' : 's'} imported` : 'No results imported yet'}</span>` : ''}
+                      ${unit.exam_id && examResultsAverage != null ? `<span class="badge badge-gray">Avg ${_escapeHtml(fmtScore(examResultsAverage))}${Number.isFinite(examResultsPassed) ? ` • ${examResultsPassed} passed` : ''}</span>` : ''}
                       ${isLinkedExamUnit
                         ? '<span class="badge badge-blue">Template checklist</span>'
                         : `<span class="badge ${extractionBadgeClass}">Extraction ${_escapeHtml(extractionLabel)}</span>`}

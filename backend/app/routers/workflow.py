@@ -29,6 +29,7 @@ from ..models import (
     TimetableRuleException,
     TimetableClassAlias,
     Exam,
+    ExamResult,
     Student,
     User,
     UserRole,
@@ -972,6 +973,9 @@ def _safe_serialize_unit(db: Session, unit: WorkflowUnit, *, class_id: int) -> W
                 class_id=_safe_int(getattr(unit, "class_id", class_id), default=int(class_id)),
                 exam_id=_safe_optional_int(getattr(unit, "exam_id", None)),
                 exam_title=str(getattr(getattr(unit, "exam", None), "title", "") or "").strip() or None,
+                exam_results_count=0,
+                exam_results_average_score=None,
+                exam_results_passed_count=0,
                 unit_type=getattr(unit, "unit_type", WorkflowUnitType.CHAPTER),
                 status=getattr(unit, "status", WorkflowUnitStatus.ACTIVE),
                 title=_normalize_workflow_title(getattr(unit, "title", None), fallback="Untitled unit"),
@@ -995,6 +999,28 @@ def _safe_serialize_unit(db: Session, unit: WorkflowUnit, *, class_id: int) -> W
                 extra={"class_id": int(class_id), "unit_id": _safe_int(getattr(unit, "id", 0), default=0)},
             )
             return None
+
+
+def _serialize_exam_results_summary(db: Session, exam: Exam | None) -> tuple[int, float | None, int]:
+    exam_id = _safe_optional_int(getattr(exam, "id", None))
+    if exam_id is None:
+        return 0, None, 0
+    max_score = float(getattr(exam, "max_score", 0) or 0)
+    pass_mark = (max_score / 2.0) if max_score > 0 else 10.0
+    row = db.execute(
+        select(
+            func.count(ExamResult.id),
+            func.avg(ExamResult.score),
+            func.coalesce(
+                func.sum(case((ExamResult.score >= pass_mark, 1), else_=0)),
+                0,
+            ),
+        ).where(ExamResult.exam_id == exam_id)
+    ).one()
+    count = int(row[0] or 0)
+    average = float(row[1]) if row[1] is not None else None
+    passed = int(row[2] or 0)
+    return count, average, passed
 
 
 def _safe_serialize_session(db: Session, session: ClassSession, *, class_id: int) -> WorkflowSessionOut | None:
@@ -1035,11 +1061,18 @@ def _serialize_unit(db: Session, unit: WorkflowUnit) -> WorkflowUnitOut:
     progress_total = len(items)
     progress_done = sum(1 for item in items if item.is_completed)
     blueprint = unit.blueprint
+    exam_results_count, exam_results_average_score, exam_results_passed_count = _serialize_exam_results_summary(
+        db,
+        getattr(unit, "exam", None),
+    )
     return WorkflowUnitOut(
         id=unit.id,
         class_id=unit.class_id,
         exam_id=unit.exam_id,
         exam_title=str(getattr(getattr(unit, "exam", None), "title", "") or "").strip() or None,
+        exam_results_count=exam_results_count,
+        exam_results_average_score=exam_results_average_score,
+        exam_results_passed_count=exam_results_passed_count,
         unit_type=unit.unit_type,
         status=unit.status,
         title=unit.title,
