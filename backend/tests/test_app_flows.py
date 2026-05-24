@@ -3045,8 +3045,8 @@ def test_notebooklm_prompt_omits_noisy_source_hint_when_pdf_is_attached():
 
     assert "Indice textuel de secours" not in prompt
     assert "Retourne la liste hierarchique de tous les headlines pedagogiques visibles utiles pour enseigner." in prompt
-    assert "A l'interieur de chaque concept ou section, organise les headlines visibles dans l'ordre de classe suivant" in prompt
-    assert "Si une activite prepare clairement un concept, rattache-la au debut de ce concept" in prompt
+    assert "Garde uniquement les headlines visibles; ne reorganise pas l'ordre" in prompt
+    assert "garde-la seulement si elle apparait comme un vrai headline du document" in prompt
     assert "N'inclus pas les rubriques meta enseignant" in prompt
     assert "indentation de deux espaces par niveau" in prompt
     assert "aucun commentaire avant ou apres la liste" in prompt
