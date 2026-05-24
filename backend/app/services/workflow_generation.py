@@ -101,6 +101,7 @@ PDF_LAYOUT_LINE_GAP = 2.8
 PDF_LAYOUT_HEADING_WORD_LIMIT = 18
 PDF_LAYOUT_HEADING_MAX_CHARS = 120
 PDF_LAYOUT_MIN_SIZE_DELTA = 1.0
+PDF_OCR_MAX_PAGES = 8
 
 
 def _resolve_notebooklm_home() -> Path:
@@ -654,6 +655,17 @@ def generate_unit_checklist_package(
                 if isinstance(raw_provider_response, dict):
                     raw_provider_response["selected_structure_source"] = selected_structure_source
                     raw_provider_response["unit_map"] = unit_map
+                repair_outline = _build_pdf_layout_outline_seed(unit_type=unit_type, title=title, document_path=document_path)
+                if repair_outline and _candidate_needs_structural_repair(
+                    selected_outline,
+                    reference_outline=repair_outline,
+                    unit_type=unit_type,
+                    unit_title=title,
+                ):
+                    selected_outline = repair_outline
+                    selected_structure_source = "pdf_layout_seed"
+                    if isinstance(raw_provider_response, dict):
+                        raw_provider_response["selected_structure_source"] = selected_structure_source
                 items = _copy_jsonable(selected_outline)
                 items = _apply_session_numbers(items, session_count=session_count)
                 if unit_type in {WorkflowUnitType.CHAPTER, WorkflowUnitType.EXERCISE_SERIES}:
@@ -1925,6 +1937,41 @@ def _build_pdf_layout_outline_seed(
     candidate_lines = _extract_pdf_heading_candidate_lines(source, unit_type=unit_type)
     if not candidate_lines:
         return []
+    if unit_type == WorkflowUnitType.EXERCISE_SERIES:
+        normalized_titles: list[str] = []
+        seen: set[str] = set()
+        for line in candidate_lines:
+            normalized = _normalize_exercise_series_headline_title(line)
+            if not normalized:
+                continue
+            key = _title_key(normalized)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            normalized_titles.append(normalized)
+        more_specific_prefixes = {
+            title_value.split(" - ", 1)[0]
+            for title_value in normalized_titles
+            if "."
+            in title_value.split(" - ", 1)[0]
+        }
+        normalized_titles = [
+            row
+            for row in normalized_titles
+            if row.split(" - ", 1)[0] not in {prefix.rsplit(".", 1)[0] for prefix in more_specific_prefixes}
+        ]
+        normalized_titles.sort(key=_exercise_series_sort_key)
+        if normalized_titles:
+            return [
+                {
+                    "title": _normalize_outline_title(title) or "Serie d'exercices",
+                    "kind": WorkflowChecklistItemKind.SECTION.value,
+                    "children": [
+                        {"title": row, "kind": WorkflowChecklistItemKind.EXERCISE.value, "children": []}
+                        for row in normalized_titles
+                    ],
+                }
+            ]
     base_items = _fallback_generate_checklist(unit_type=unit_type, title=title, source_text="\n".join(candidate_lines))
     return _postprocess_checklist_items(base_items, unit_type=unit_type, unit_title=title)
 
@@ -1995,6 +2042,19 @@ def _select_reference_outline_seed(
     unit_type: WorkflowUnitType,
     unit_title: str,
 ) -> list[dict[str, Any]]:
+    if unit_type == WorkflowUnitType.EXERCISE_SERIES:
+        layout_exercise_count = sum(
+            1
+            for node in _flatten_checklist_nodes(layout_seed)
+            if str(node.get("kind") or "").strip().lower() == WorkflowChecklistItemKind.EXERCISE.value
+        )
+        outline_exercise_count = sum(
+            1
+            for node in _flatten_checklist_nodes(outline_seed)
+            if str(node.get("kind") or "").strip().lower() == WorkflowChecklistItemKind.EXERCISE.value
+        )
+        if layout_exercise_count > outline_exercise_count:
+            return layout_seed
     if layout_seed and outline_seed:
         layout_score = _score_checklist_candidate(
             layout_seed,
@@ -5903,6 +5963,16 @@ def _normalize_exercise_series_notebooklm_outline_items(
     if not exercises:
         return []
 
+    more_specific_prefixes = {
+        str(row.get("title") or "").split(" - ", 1)[0]
+        for row in exercises
+        if "." in str(row.get("title") or "").split(" - ", 1)[0]
+    }
+    if more_specific_prefixes:
+        drop_prefixes = {prefix.rsplit(".", 1)[0] for prefix in more_specific_prefixes}
+        exercises = [row for row in exercises if str(row.get("title") or "").split(" - ", 1)[0] not in drop_prefixes]
+    exercises.sort(key=lambda row: _exercise_series_sort_key(str(row.get("title") or "")))
+
     return [
         {
             "title": root_title,
@@ -5947,13 +6017,37 @@ def _normalize_exercise_series_headline_title(title: str) -> str:
     raw = _normalize_outline_title(title)
     if not raw:
         return ""
-    match = re.match(r"^\s*(exercice|exercise|application)\s+(\d+)\b", raw, re.IGNORECASE)
+    match = re.match(r"^\s*(exercice|exercise|application)\s*([0-9]+(?:[A-Z])?(?:\.[0-9]+)?)\b(?:\s*[:-]?\s*(.*))?$", raw, re.IGNORECASE)
     if not match:
         return ""
     label = match.group(1).strip()
     number = match.group(2).strip()
+    tail = str(match.group(3) or "").strip()
     normalized_label = "Application" if _fold_text_key(label).startswith("application") else "Exercice"
+    tail = re.sub(r"([A-Z])(\d{4})$", r"\1 \2", tail)
+    tail = re.sub(r"\s+", " ", tail).strip(" -")
+    folded_tail = _fold_text_key(tail)
+    if tail and (
+        len(tail) > 36
+        or ":" in tail
+        or tail.startswith("(")
+        or folded_tail.startswith(("calculer", "ecrire", "donner", "simplifier", "effectuer", "determiner"))
+    ):
+        tail = ""
+    if tail:
+        return f"{normalized_label} {number} - {tail}"
     return f"{normalized_label} {number}"
+
+
+def _exercise_series_sort_key(title: str) -> tuple[int, str, int, str]:
+    raw = _normalize_outline_title(title)
+    match = re.match(r"^\s*(?:exercice|exercise|application)\s+([0-9]+)([A-Z]?)(?:\.([0-9]+))?", raw, re.IGNORECASE)
+    if not match:
+        return (9999, "ZZ", 9999, raw.lower())
+    major = int(match.group(1) or 0)
+    letter = str(match.group(2) or "").upper()
+    minor = int(match.group(3) or 0)
+    return (major, letter, minor, raw.lower())
 
 
 def _is_explicit_topic_outline_title(title: str, kind: str) -> bool:
@@ -7343,20 +7437,26 @@ def _fallback_generate_checklist(
 
 def _extract_pdf_heading_candidate_lines(source: Path, *, unit_type: WorkflowUnitType) -> list[str]:
     rows = _extract_pdf_layout_rows(source)
-    if not rows:
-        return []
-    heading_rows = _select_pdf_heading_rows(rows, unit_type=unit_type)
     output: list[str] = []
     seen: set[str] = set()
-    for row in heading_rows:
-        text = _normalize_outline_title(row.get("text"))
-        if not text or _is_metadata_noise_line(text):
-            continue
-        key = _semantic_title_key(text) or _title_key(text)
-        if not key or key in seen:
-            continue
-        seen.add(key)
-        output.append(text)
+    if rows:
+        heading_rows = _select_pdf_heading_rows(rows, unit_type=unit_type)
+        for row in heading_rows:
+            text = _normalize_outline_title(row.get("text"))
+            if not text or _is_metadata_noise_line(text):
+                continue
+            key = _semantic_title_key(text) or _title_key(text)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            output.append(text)
+    if unit_type == WorkflowUnitType.EXERCISE_SERIES:
+        for text in _extract_pdf_ocr_heading_candidate_lines(source):
+            key = _semantic_title_key(text) or _title_key(text)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            output.append(text)
     return output
 
 
@@ -7423,6 +7523,78 @@ def _extract_pdf_layout_rows(source: Path) -> list[dict[str, Any]]:
                 }
             )
     return rows
+
+
+def _extract_pdf_ocr_heading_candidate_lines(source: Path) -> list[str]:
+    try:
+        import pypdfium2 as pdfium
+        from rapidocr_onnxruntime import RapidOCR
+    except Exception:
+        return []
+
+    try:
+        document = pdfium.PdfDocument(str(source))
+    except Exception:
+        return []
+
+    ocr = RapidOCR()
+    output: list[str] = []
+    seen: set[str] = set()
+    total_pages = min(len(document), PDF_OCR_MAX_PAGES)
+    for page_index in range(total_pages):
+        try:
+            page = document[page_index]
+            image_path = source.parent / f".tmp_ocr_{source.stem}_{page_index + 1}.png"
+            page.render(scale=2.2).to_pil().save(image_path)
+            try:
+                result, _ = ocr(str(image_path))
+            finally:
+                try:
+                    image_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+        except Exception:
+            continue
+        for row in result or []:
+            if not isinstance(row, (list, tuple)) or len(row) < 3:
+                continue
+            text = _normalize_exercise_series_ocr_heading(row[1])
+            score = float(row[2] or 0.0)
+            if not text or score < 0.92:
+                continue
+            key = _semantic_title_key(text) or _title_key(text)
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            output.append(text)
+    return output
+
+
+def _normalize_exercise_series_ocr_heading(value: Any) -> str:
+    text = _normalize_outline_title(value)
+    if not text:
+        return ""
+    compact = re.sub(r"\s+", "", text)
+    match = re.match(r"^EXERCICE([0-9]+(?:[A-Z])?(?:\.[0-9]+)?)[:-]?(.*)$", compact, re.IGNORECASE)
+    if not match:
+        spaced = re.match(r"^EXERCICE\s+([0-9]+(?:[A-Z])?(?:\.[0-9]+)?)\s*[:-]?\s*(.*)$", text, re.IGNORECASE)
+        if not spaced:
+            return ""
+        number = spaced.group(1).strip()
+        tail = str(spaced.group(2) or "").strip()
+    else:
+        number = match.group(1).strip()
+        tail = str(match.group(2) or "").strip()
+
+    tail = re.sub(r"(?<=[A-Z])0(?=[A-Z])", "O", tail)
+    tail = re.sub(r"([A-Z])(\d{4})$", r"\1 \2", tail)
+    tail = re.sub(r"([A-Z]{4,})(DU|DE|DES|LA|LE)([A-Z]{3,})", r"\1 \2 \3", tail)
+    tail = re.sub(r"([a-z])([A-Z])", r"\1 \2", tail)
+    tail = re.sub(r"\s*-\s*", " - ", tail)
+    tail = re.sub(r"\s+", " ", tail).strip(" -")
+    if tail:
+        return f"Exercice {number} - {tail}"
+    return f"Exercice {number}"
 
 
 def _select_pdf_heading_rows(rows: list[dict[str, Any]], *, unit_type: WorkflowUnitType) -> list[dict[str, Any]]:

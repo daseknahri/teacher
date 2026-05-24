@@ -3064,6 +3064,16 @@ def test_notebooklm_role_mapping_separates_unit_types():
     assert workflow_generation._notebooklm_role_for_unit_type(WorkflowUnitType.EXAM_CORRECTION) == "correction_outline"
 
 
+def test_normalize_exercise_series_headline_title_keeps_compound_exercise_names():
+    from app.services import workflow_generation
+
+    assert workflow_generation._normalize_exercise_series_headline_title("EXERCICE 2") == "Exercice 2"
+    assert workflow_generation._normalize_exercise_series_headline_title("EXERCICE2B.3-POLYNESIE2001") == "Exercice 2B.3 - POLYNESIE 2001"
+    assert workflow_generation._normalize_exercise_series_headline_title(
+        "EXERCICE 1 Calculer en donnant le résultat en écriture fractionnaire:"
+    ) == "Exercice 1"
+
+
 def test_notebooklm_prompt_for_exercise_series_is_minimal():
     from app.models import WorkflowUnitType
     from app.services import workflow_generation
@@ -3316,6 +3326,104 @@ def test_postprocess_checklist_preserves_exercise_series_root():
     assert len(normalized) == 1
     assert normalized[0]["title"] == "Triangle, milieux et paralleles - exercices"
     assert [str(row.get("title") or "") for row in normalized[0].get("children", [])] == ["Exercice 1", "Exercice 2"]
+
+
+def test_select_reference_outline_seed_prefers_richer_layout_for_exercise_series():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    layout_seed = [
+        {
+            "title": "Serie",
+            "kind": "section",
+            "children": [
+                {"title": "Exercice 1", "kind": "exercise", "children": []},
+                {"title": "Exercice 2", "kind": "exercise", "children": []},
+                {"title": "Exercice 3", "kind": "exercise", "children": []},
+            ],
+        }
+    ]
+    outline_seed = [
+        {
+            "title": "Serie",
+            "kind": "section",
+            "children": [
+                {"title": "Exercice 1", "kind": "exercise", "children": []},
+                {"title": "Exercice 2", "kind": "exercise", "children": []},
+            ],
+        }
+    ]
+
+    selected = workflow_generation._select_reference_outline_seed(
+        layout_seed=layout_seed,
+        outline_seed=outline_seed,
+        unit_type=WorkflowUnitType.EXERCISE_SERIES,
+        unit_title="Serie",
+    )
+
+    assert selected == layout_seed
+
+
+def test_generate_unit_checklist_package_repairs_weak_exercise_series_outline_with_pdf_layout_seed(monkeypatch):
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    weak_items = [
+        {
+            "title": "Nombres relatifs en ecriture fractionnaire exercice 2B",
+            "kind": "section",
+            "children": [
+                {"title": "Exercice 1", "kind": "exercise", "children": []},
+                {"title": "Exercice 2", "kind": "exercise", "children": []},
+            ],
+        }
+    ]
+    repair_outline = [
+        {
+            "title": "Nombres relatifs en ecriture fractionnaire exercice 2B",
+            "kind": "section",
+            "children": [
+                {"title": "Exercice 1", "kind": "exercise", "children": []},
+                {"title": "Exercice 2", "kind": "exercise", "children": []},
+                {"title": "Exercice 2B.3 - POLYNESIE 2001", "kind": "exercise", "children": []},
+                {"title": "Exercice 2B.4 - AFRIQUE DU NORD 2001", "kind": "exercise", "children": []},
+            ],
+        }
+    ]
+
+    monkeypatch.setattr(
+        workflow_generation,
+        "_notebooklm_generate_checklist",
+        lambda **kwargs: (
+            weak_items,
+            {"provider": "notebooklm", "notebook_id": "nb-test", "source_ids": ["src-1"], "notebook_role": "exercise_outline"},
+            {"response_mode": "outline_only"},
+            None,
+        ),
+    )
+    monkeypatch.setattr(
+        workflow_generation,
+        "_build_pdf_layout_outline_seed",
+        lambda **kwargs: repair_outline,
+    )
+
+    package = workflow_generation.generate_unit_checklist_package(
+        unit_type=WorkflowUnitType.EXERCISE_SERIES,
+        title="Nombres relatifs en ecriture fractionnaire exercice 2B",
+        source_text="weak text",
+        session_count=4,
+        provider="notebooklm",
+        document_path="fake.pdf",
+    )
+
+    repaired_children = package["items"][0]["children"]
+    assert [str(row.get("title") or "") for row in repaired_children] == [
+        "Exercice 1",
+        "Exercice 2",
+        "Exercice 2B.3 - POLYNESIE 2001",
+        "Exercice 2B.4 - AFRIQUE DU NORD 2001",
+    ]
+    assert package["raw_provider_response"]["selected_structure_source"] == "pdf_layout_seed"
 
 
 def test_pdf_text_extraction_preserves_line_break_structure():

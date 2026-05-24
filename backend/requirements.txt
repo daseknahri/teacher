@@ -12,6 +12,7 @@ httpx==0.28.1
 psycopg[binary]==3.2.6
 pypdf==5.4.0
 pypdfium2==4.30.0
+rapidocr-onnxruntime==1.4.4
 arabic-reshaper==3.0.0
 python-bidi==0.4.2
 notebooklm-py==0.4.1
