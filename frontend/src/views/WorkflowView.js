@@ -3484,6 +3484,10 @@ function _render(el, classId) {
   const extractionError = String(unit?.extraction_error || '').trim();
   const extractionReviewed = unit ? unit.extraction_reviewed !== false : true;
   const extractionReviewPending = Boolean(unit?.extraction_source) && !extractionReviewed;
+  const isLinkedExamUnit = Boolean(unit?.exam_id);
+  const isExamWorkflowUnit = unit?.unit_type === 'exam';
+  const isExamCorrectionUnit = unit?.unit_type === 'exam_correction';
+  const showExtractionControls = !isLinkedExamUnit;
   const extractionBadgeClass = extractionSource === 'notebooklm'
     ? 'badge-green'
     : extractionSource === 'openai'
@@ -3492,6 +3496,13 @@ function _render(el, classId) {
         ? 'badge-amber'
         : 'badge-gray';
   const extractionLabel = extractionSource || 'unknown';
+  const unitFocusText = isExamWorkflowUnit
+    ? 'Use this checklist to organize the exam paper, expected correction, and supervision points.'
+    : isExamCorrectionUnit
+      ? 'Use this checklist to guide the correction, highlight common mistakes, and plan remediation.'
+      : extractionReviewPending
+        ? 'Approve the extracted checklist once the structure looks right, then continue planning and teaching from it.'
+        : 'The checklist is ready to drive planning and teaching. Keep building one reliable layer at a time.';
 
   const tabs = [
     { label: 'Unit Setup', disabled: false },
@@ -3568,17 +3579,21 @@ function _render(el, classId) {
                     <div class="flex items-center gap-2 flex-wrap mt-2.5">
                       ${unit.unit_type ? `<span class="badge badge-blue">${unit.unit_type}</span>` : ''}
                       ${unit.exam_id ? `<span class="badge badge-gray">Linked exam: ${_escapeHtml(unit.exam_title || `#${unit.exam_id}`)}</span>` : ''}
-                      <span class="badge ${extractionBadgeClass}">Extraction ${_escapeHtml(extractionLabel)}</span>
-                      <span class="badge ${extractionReviewPending ? 'badge-amber' : 'badge-green'}">${extractionReviewPending ? 'Review Pending' : 'Reviewed'}</span>
+                      ${isLinkedExamUnit
+                        ? '<span class="badge badge-blue">Template checklist</span>'
+                        : `<span class="badge ${extractionBadgeClass}">Extraction ${_escapeHtml(extractionLabel)}</span>`}
+                      ${showExtractionControls
+                        ? `<span class="badge ${extractionReviewPending ? 'badge-amber' : 'badge-green'}">${extractionReviewPending ? 'Review Pending' : 'Reviewed'}</span>`
+                        : '<span class="badge badge-green">Reviewed</span>'}
                     </div>
                   </div>
                   <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-2.5 lg:max-w-[320px]">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focus For Now</p>
-                    <p class="mt-1.5 text-[11px] leading-relaxed text-slate-700">${extractionReviewPending ? 'Approve the extracted checklist once the structure looks right, then continue planning and teaching from it.' : 'The checklist is ready to drive planning and teaching. Keep building one reliable layer at a time.'}</p>
+                    <p class="mt-1.5 text-[11px] leading-relaxed text-slate-700">${unitFocusText}</p>
                   </div>
                 </div>
                 ${extractionError ? `<div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">Provider note: ${_escapeHtml(extractionError)}</div>` : ''}
-                ${extractionReviewPending ? `<div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">Review the extracted checklist before you rely on it for teaching.</div>` : ''}
+                ${showExtractionControls && extractionReviewPending ? `<div class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-[12px] text-amber-800">Review the extracted checklist before you rely on it for teaching.</div>` : ''}
                 <div class="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-start">
                   <div class="rounded-2xl border border-slate-200 bg-slate-50/70 px-4 py-2.5">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Main Actions</p>
@@ -3586,8 +3601,8 @@ function _render(el, classId) {
                       ${!session ? `<button id="btn-start-session" class="btn btn-success">Start Session</button>` : ''}
                       ${unit.document_name ? `<button id="btn-download-unit-doc" class="btn btn-secondary btn-sm">Unit PDF</button>` : ''}
                       ${unit.exam_id ? `<button id="btn-open-linked-exam" class="btn btn-secondary btn-sm">Open Exam Record</button>` : ''}
-                      <button id="btn-toggle-extraction-review" class="btn ${extractionReviewPending ? 'btn-primary' : 'btn-secondary'} btn-sm">${extractionReviewPending ? 'Approve Extraction' : 'Mark Needs Review'}</button>
-                      <button id="btn-rerun-ai-extraction" class="btn btn-secondary btn-sm">Re-run AI</button>
+                      ${showExtractionControls ? `<button id="btn-toggle-extraction-review" class="btn ${extractionReviewPending ? 'btn-primary' : 'btn-secondary'} btn-sm">${extractionReviewPending ? 'Approve Extraction' : 'Mark Needs Review'}</button>` : ''}
+                      ${showExtractionControls ? '<button id="btn-rerun-ai-extraction" class="btn btn-secondary btn-sm">Re-run AI</button>' : ''}
                       <button id="btn-plan-active-unit" class="btn btn-secondary btn-sm">Plan Sessions</button>
                       <button id="btn-add-item-root" class="btn btn-secondary btn-sm">Add Item</button>
                     </div>
