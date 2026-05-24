@@ -631,6 +631,7 @@ class WorkflowUnitOut(BaseModel):
     id: int
     class_id: int
     exam_id: int | None = None
+    exam_title: str | None = None
     unit_type: WorkflowUnitType
     status: WorkflowUnitStatus
     title: str

@@ -3567,7 +3567,7 @@ function _render(el, classId) {
                     <p class="text-[12px] text-slate-500 mt-1">Created ${fmtDate(unit.created_at || unit.createdAt)}</p>
                     <div class="flex items-center gap-2 flex-wrap mt-2.5">
                       ${unit.unit_type ? `<span class="badge badge-blue">${unit.unit_type}</span>` : ''}
-                      ${unit.exam_id ? `<span class="badge badge-gray">Linked exam #${unit.exam_id}</span>` : ''}
+                      ${unit.exam_id ? `<span class="badge badge-gray">Linked exam: ${_escapeHtml(unit.exam_title || `#${unit.exam_id}`)}</span>` : ''}
                       <span class="badge ${extractionBadgeClass}">Extraction ${_escapeHtml(extractionLabel)}</span>
                       <span class="badge ${extractionReviewPending ? 'badge-amber' : 'badge-green'}">${extractionReviewPending ? 'Review Pending' : 'Reviewed'}</span>
                     </div>
@@ -3945,6 +3945,7 @@ function _render(el, classId) {
                   <p class="text-[11px] text-slate-400 mt-0.5">Closed ${fmtDate(u.closed_at || u.closedAt || u.created_at || u.createdAt)}</p>
                   <div class="mt-1 flex items-center gap-1.5 flex-wrap">
                     ${u.unit_type ? `<span class="badge badge-gray" style="font-size:10px">${u.unit_type.replace('_', ' ')}</span>` : ''}
+                    ${u.exam_id ? `<span class="badge badge-gray" style="font-size:10px">Exam: ${_escapeHtml(u.exam_title || `#${u.exam_id}`)}</span>` : ''}
                     <span class="badge badge-gray opacity-50">Archived</span>
                   </div>
                 </div>
@@ -3952,6 +3953,7 @@ function _render(el, classId) {
                   ${!unit && index === 0
           ? `<button class="btn btn-secondary btn-sm btn-reopen-unit" data-unit-id="${u.id}">Re-open</button>`
           : ''}
+                  ${u.exam_id ? `<button class="btn btn-ghost btn-sm btn-open-unit-exam" data-exam-id="${u.exam_id}">Exam</button>` : ''}
                   <button class="btn btn-danger btn-sm btn-delete-unit" data-unit-id="${u.id}">Delete</button>
                 </div>
               </div>`).join('')}
@@ -6529,6 +6531,18 @@ function _bindWorkflowEvents(el, classId) {
     }
     setSelectedExamId(examId);
     navigate('exams');
+  });
+
+  el.querySelectorAll('.btn-open-unit-exam').forEach(button => {
+    button.addEventListener('click', () => {
+      const examId = Number(button.dataset.examId || 0) || null;
+      if (!examId) {
+        showToast('No linked exam record found for this unit.', 'warning');
+        return;
+      }
+      setSelectedExamId(examId);
+      navigate('exams');
+    });
   });
 
   el.querySelectorAll('.btn-session-playbook-request').forEach(button => {

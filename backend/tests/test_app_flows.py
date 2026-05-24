@@ -6212,6 +6212,7 @@ def test_create_linked_exam_workflow_unit_from_exam(client):
     assert body["created"] is True
     assert body["unit"]["unit_type"] == "exam"
     assert int(body["unit"]["exam_id"]) == exam_id
+    assert body["unit"]["exam_title"] == "CC2"
     assert body["unit"]["checklist"]
     assert body["unit"]["checklist"][0]["title"] == "CC2"
 

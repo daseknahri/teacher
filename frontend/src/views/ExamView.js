@@ -70,6 +70,16 @@ function _renderExam(el, classId) {
   const results = getResults();
   const examWorkflowActive = exam?.linked_exam_workflow_status === 'active';
   const correctionWorkflowActive = exam?.linked_correction_workflow_status === 'active';
+  const examWorkflowLabel = examWorkflowActive
+    ? 'Open Exam Workflow'
+    : exam?.linked_exam_workflow_unit_id
+      ? 'Reopen Exam Workflow'
+      : 'Exam Workflow';
+  const correctionWorkflowLabel = correctionWorkflowActive
+    ? 'Open Correction Workflow'
+    : exam?.linked_correction_workflow_unit_id
+      ? 'Reopen Correction Workflow'
+      : 'Correction Workflow';
 
   // Stats
   const scores = results.map(r => r.score).filter(s => s != null);
@@ -116,8 +126,8 @@ function _renderExam(el, classId) {
             <button id="btn-import-results" class="btn btn-secondary"> Import</button>
             <button id="btn-export-results" class="btn btn-secondary"> Export</button>
             ${exam && !exam.is_archived ? `
-              <button id="btn-create-exam-workflow" class="btn btn-ghost btn-sm" title="Create or reopen the workflow unit for this exam">${examWorkflowActive ? 'Open Exam Workflow' : 'Exam Workflow'}</button>
-              <button id="btn-create-correction-workflow" class="btn btn-ghost btn-sm" title="Create or reopen the workflow unit for this exam correction">${correctionWorkflowActive ? 'Open Correction Workflow' : 'Correction Workflow'}</button>
+              <button id="btn-create-exam-workflow" class="btn btn-ghost btn-sm" title="Create, reopen, or open the workflow unit for this exam">${examWorkflowLabel}</button>
+              <button id="btn-create-correction-workflow" class="btn btn-ghost btn-sm" title="Create, reopen, or open the workflow unit for this exam correction">${correctionWorkflowLabel}</button>
             ` : ''}
           ` : ''}
           ${exam && !exam.is_archived ? `
