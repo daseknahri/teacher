@@ -2198,6 +2198,9 @@ def _notebooklm_generate_checklist(
             error_message=f"notebooklm_runtime_error:{exc.__class__.__name__}:{exc}",
             refresh_required=_looks_like_notebooklm_auth_error_message(str(exc)),
         )
+        detail = re.sub(r"\s+", " ", str(exc or "")).strip(" :")
+        if detail:
+            return None, None, None, f"notebooklm_runtime_error:{exc.__class__.__name__}:{detail}"
         return None, None, None, f"notebooklm_runtime_error:{exc.__class__.__name__}"
 
 
@@ -2293,6 +2296,9 @@ async def _notebooklm_generate_checklist_async(
             notebook_title=notebook_title,
             notebook_role=_notebooklm_role_for_unit_type(unit_type),
         )
+        detail = re.sub(r"\s+", " ", str(exc or "")).strip(" :")
+        if detail:
+            return None, provider_context, raw_result, f"notebooklm_request_failed:{exc.__class__.__name__}:{detail}"
         return None, provider_context, raw_result, f"notebooklm_request_failed:{exc.__class__.__name__}"
 
     provider_context = _build_notebooklm_provider_context(
@@ -5747,8 +5753,8 @@ def _select_best_notebooklm_outline_candidate(
     )
     for name, items in candidates[1:]:
         if unit_type == WorkflowUnitType.EXERCISE_SERIES and _exercise_series_outline_has_richer_exact_titles(
-            items,
             best_items,
+            items,
         ):
             best_name = name
             best_items = items

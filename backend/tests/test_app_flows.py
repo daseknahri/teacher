@@ -3571,6 +3571,34 @@ def test_select_best_notebooklm_outline_candidate_prefers_richer_exercise_titles
     assert items == review_items
 
 
+def test_notebooklm_generate_checklist_surfaces_runtime_error_detail(monkeypatch):
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    def raise_value_error(coro):
+        try:
+            coro.close()
+        except Exception:
+            pass
+        raise ValueError("test notebooklm runtime failure")
+
+    monkeypatch.setattr(workflow_generation.asyncio, "run", raise_value_error)
+
+    items, provider_context, raw_provider_response, error_message = workflow_generation._notebooklm_generate_checklist(
+        unit_type=WorkflowUnitType.EXERCISE_SERIES,
+        title="Serie",
+        source_text="",
+        session_count=4,
+        document_path=None,
+        outline_hint_lines=None,
+    )
+
+    assert items is None
+    assert provider_context is None
+    assert raw_provider_response is None
+    assert error_message == "notebooklm_runtime_error:ValueError:test notebooklm runtime failure"
+
+
 def test_pdf_text_extraction_preserves_line_break_structure():
     from app.services import workflow as workflow_service
 
