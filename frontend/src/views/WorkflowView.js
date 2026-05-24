@@ -3488,6 +3488,7 @@ function _render(el, classId) {
   const isExamWorkflowUnit = unit?.unit_type === 'exam';
   const isExamCorrectionUnit = unit?.unit_type === 'exam_correction';
   const showChecklistAttachments = isLinkedExamUnit || ['exercise_series', 'chapter'].includes(unit?.unit_type);
+  const canAskRowAssistant = Boolean(unit?.extraction_source);
   const examResultsCount = Number(unit?.exam_results_count || 0) || 0;
   const examResultsAverage = unit?.exam_results_average_score != null ? Number(unit.exam_results_average_score) : null;
   const examResultsPassed = Number(unit?.exam_results_passed_count || 0) || 0;
@@ -3758,6 +3759,7 @@ function _render(el, classId) {
                   </label>
                   ${latestAttachment ? `<button class="btn btn-ghost btn-sm !text-emerald-700 !px-2 btn-view-item-attachment" data-item-id="${item.id}">View</button>` : ''}
                   <button class="btn btn-ghost btn-sm !text-amber-700 !px-2 btn-item-note" data-item-id="${item.id}">${item.teacher_note ? 'Edit note' : 'Add note'}</button>
+                  ${canAskRowAssistant ? `<button class="btn btn-ghost btn-sm !text-sky-700 !px-2 btn-item-assistant" data-item-id="${item.id}">Ask</button>` : ''}
                 </div>` : ''}
                 <div class="row-hover-actions checklist-edit-actions flex items-center gap-1 ml-auto flex-wrap rounded-full border border-slate-200 bg-white/90 px-1.5 py-1 shadow-sm">
                   <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-up ${meta.canUp ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Move up">↑</button>
@@ -4157,6 +4159,7 @@ function _render(el, classId) {
                   </label>
                   ${latestAttachment ? `<button class="btn btn-ghost btn-sm !text-emerald-700 !px-2 btn-view-item-attachment" data-item-id="${item.id}">View</button>` : ''}
                   <button class="btn btn-ghost btn-sm !text-amber-700 !px-2 btn-item-note" data-item-id="${item.id}">${item.teacher_note ? 'Edit note' : 'Add note'}</button>
+                  ${canAskRowAssistant ? `<button class="btn btn-ghost btn-sm !text-sky-700 !px-2 btn-item-assistant" data-item-id="${item.id}">Ask</button>` : ''}
                 </div>` : ''}
                 ${isStructural ? '<span class="text-[10px] text-slate-400 whitespace-nowrap">Auto-completes from child rows</span>' : ''}
                 ${hasChildren ? `<button class="btn btn-ghost btn-sm !text-sky-600 !px-2 btn-checklist-group-complete" data-item-id="${item.id}" title="Mark all unfinished lesson steps under this heading">Check group</button>` : ''}
@@ -4295,6 +4298,29 @@ function _checklist(unit) {
   // Backend returns WorkflowUnitOut.checklist; keep fallbacks for legacy payloads.
   const roots = unit.checklist ?? unit.checklist_items ?? unit.children ?? [];
   return Array.isArray(roots) ? roots.flatMap(_flatItems) : [];
+}
+
+function _buildChecklistItemPath(items, itemId) {
+  const targetId = Number(itemId || 0);
+  if (!targetId || !Array.isArray(items) || !items.length) return [];
+  const byId = new Map();
+  items.forEach(row => {
+    const rowId = Number(row?.id || 0);
+    if (rowId > 0) byId.set(rowId, row);
+  });
+  const path = [];
+  let current = byId.get(targetId) || null;
+  const seen = new Set();
+  while (current) {
+    const currentId = Number(current?.id || 0);
+    if (!currentId || seen.has(currentId)) break;
+    seen.add(currentId);
+    const title = String(current?.title || '').trim();
+    if (title) path.unshift(title);
+    const parentId = Number(current?.parent_item_id || 0);
+    current = parentId > 0 ? (byId.get(parentId) || null) : null;
+  }
+  return path;
 }
 
 function _syncChecklistCollapseState(unit, items) {
@@ -5884,6 +5910,55 @@ function _bindWorkflowEvents(el, classId) {
           showToast(values.teacher_note ? 'Checklist note saved.' : 'Checklist note cleared.', 'ok');
         } catch (err) {
           showToast(err.message, 'error');
+        }
+      });
+    });
+  });
+
+  el.querySelectorAll('.btn-item-assistant').forEach(btn => {
+    btn.addEventListener('click', async event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const itemId = Number(btn.dataset.itemId);
+      const unit = getActiveUnit();
+      if (!itemId || !unit?.id) return;
+      const items = _checklist(unit);
+      const item = items.find(row => Number(row?.id) === itemId) || null;
+      if (!item) return;
+      await _withActionLock(`workflow:item-assistant:${classId}:${itemId}`, async () => {
+        try {
+          const state = await _loadUnitBlueprint(classId, unit.id, { force: false });
+          if (state?.error) {
+            showToast(state.error, 'error');
+            return;
+          }
+          if (!state?.item) {
+            showToast('No saved unit intelligence is available for this row yet.', 'warning');
+            return;
+          }
+          const rowPath = _buildChecklistItemPath(items, itemId);
+          const noteText = String(item.teacher_note || '').trim();
+          const attachmentCount = Array.isArray(item.attachments) ? item.attachments.length : 0;
+          const requestParts = [
+            `Help me work on this checklist row: ${String(item.title || '').trim()}.`,
+            rowPath.length ? `Checklist path: ${rowPath.join(' > ')}.` : '',
+            noteText ? `Teacher note: ${noteText}` : '',
+            attachmentCount ? `The row also has ${attachmentCount} attached screenshot${attachmentCount === 1 ? '' : 's'} that I am using while teaching.` : '',
+            'Use the saved unit structure and keep the answer focused on this exact row.',
+          ].filter(Boolean);
+          _openUnitAssistantModal({
+            classId,
+            unit,
+            blueprint: state.item,
+            initial: {
+              sectionTitle: rowPath[rowPath.length - 1] || String(item.title || '').trim(),
+              sectionPath: rowPath,
+              teacherRequest: requestParts.join(' '),
+              assistantAction: 'explain_section',
+            },
+          });
+        } catch (err) {
+          showToast(String(err?.message || 'Failed to open row guidance.'), 'error');
         }
       });
     });
