@@ -3052,6 +3052,24 @@ def test_notebooklm_prompt_omits_noisy_source_hint_when_pdf_is_attached():
     assert "aucun commentaire avant ou apres la liste" in prompt
 
 
+def test_notebooklm_prompt_for_exercise_series_is_minimal():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    prompt = workflow_generation._build_notebooklm_checklist_prompt(
+        unit_type=WorkflowUnitType.EXERCISE_SERIES,
+        title="Triangle, milieux et paralleles - exercices",
+        source_hint="",
+        session_count=6,
+    )
+
+    assert "Retourne une liste MINIMALE des headlines utiles." in prompt
+    assert "garde uniquement les headlines explicites des exercices visibles" in prompt.lower()
+    assert "N'ajoute pas de sous-noeud sous un exercice." in prompt
+    assert "N'inclus pas d'activites, definitions, remarques, exemples" in prompt
+    assert "A l'interieur de chaque concept ou section" not in prompt
+
+
 def test_notebooklm_prompt_omits_slug_like_title_hint():
     from app.models import WorkflowUnitType
     from app.services import workflow_generation
@@ -3228,6 +3246,64 @@ def test_parse_notebooklm_outline_response_keeps_itemized_rows_when_nested_under
     second_children = [str(row.get("title") or "") for row in chapter["children"][1]["children"][0]["children"]]
     assert first_children == ["Activite 1 :", "Regle :", "Exercice 1 :"]
     assert second_children == ["Activite 2 :", "Definition :", "Exercice 2 :"]
+
+
+def test_parse_notebooklm_outline_response_minimizes_exercise_series_to_title_and_exercise_headlines():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    answer = "\n".join(
+        [
+            "- Triangle, milieux et paralleles - exercices",
+            "  - Triangle, milieux et paralleles - exercices",
+            "  - Exercice 1 :",
+            "    - Exercice 1 :",
+            "  - Exercice 2 : (Ex13/14/17/18 - p48)",
+            "    - Exercice 2 :",
+            "  - Remarque :",
+            "  - Exemple :",
+        ]
+    )
+
+    items = workflow_generation._parse_notebooklm_outline_response(
+        answer,
+        unit_type=WorkflowUnitType.EXERCISE_SERIES,
+        unit_title="Triangle, milieux et paralleles - exercices",
+    )
+
+    assert items
+    assert len(items) == 1
+    root = items[0]
+    assert root["title"] == "Triangle, milieux et paralleles - exercices"
+    assert root["kind"] == "section"
+    child_titles = [str(row.get("title") or "") for row in root.get("children", [])]
+    child_kinds = [str(row.get("kind") or "") for row in root.get("children", [])]
+    assert child_titles == ["Exercice 1", "Exercice 2"]
+    assert child_kinds == ["exercise", "exercise"]
+
+
+def test_postprocess_checklist_preserves_exercise_series_root():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    normalized = workflow_generation._postprocess_checklist_items(
+        [
+            {
+                "title": "Triangle, milieux et paralleles - exercices",
+                "kind": "section",
+                "children": [
+                    {"title": "Exercice 1", "kind": "exercise", "children": []},
+                    {"title": "Exercice 2", "kind": "exercise", "children": []},
+                ],
+            }
+        ],
+        unit_type=WorkflowUnitType.EXERCISE_SERIES,
+        unit_title="Triangle, milieux et paralleles - exercices",
+    )
+
+    assert len(normalized) == 1
+    assert normalized[0]["title"] == "Triangle, milieux et paralleles - exercices"
+    assert [str(row.get("title") or "") for row in normalized[0].get("children", [])] == ["Exercice 1", "Exercice 2"]
 
 
 def test_pdf_text_extraction_preserves_line_break_structure():

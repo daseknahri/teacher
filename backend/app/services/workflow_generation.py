@@ -2148,8 +2148,13 @@ async def _notebooklm_generate_checklist_async(
                     ),
                 )
             ]
-            if unit_type == WorkflowUnitType.CHAPTER:
-                prompt_variants.append(("completeness_review", _build_notebooklm_checklist_review_prompt()))
+            if unit_type in {WorkflowUnitType.CHAPTER, WorkflowUnitType.EXERCISE_SERIES}:
+                review_prompt = (
+                    _build_notebooklm_checklist_review_prompt_for_exercise_series()
+                    if unit_type == WorkflowUnitType.EXERCISE_SERIES
+                    else _build_notebooklm_checklist_review_prompt()
+                )
+                prompt_variants.append(("completeness_review", review_prompt))
 
             candidate_rows: list[dict[str, Any]] = []
             for variant_name, prompt in prompt_variants:
@@ -3912,6 +3917,34 @@ def _build_notebooklm_checklist_prompt(
     outline_hint_lines: list[str] | None = None,
 ) -> str:
     del session_count
+    if unit_type == WorkflowUnitType.EXERCISE_SERIES:
+        prompt_parts = [
+            "Lis ce PDF comme une serie d'exercices de mathematiques.",
+            "Retourne une liste MINIMALE des headlines utiles.",
+            "Regles:",
+            "- Garde le titre complet de la serie comme racine.",
+            "- Ensuite, garde uniquement les headlines explicites des exercices visibles dans le document.",
+            "- Pour chaque exercice, garde seulement le headline minimal avec son numero visible, par exemple: Exercice 1, Exercice 2, Exercice 3.",
+            "- N'ajoute pas de sous-noeud sous un exercice.",
+            "- N'inclus pas d'activites, definitions, remarques, exemples, consignes internes, calculs, corrections, sous-questions ou paragraphes.",
+            "- N'inclus pas de doublons, meme si le meme titre apparait deux fois dans le document.",
+            "- Garde l'ordre exact du document.",
+            "- Si un titre est coupe sur deux lignes, reconstitue-le.",
+            "- N'invente pas de nouveaux titres.",
+            "Format attendu:",
+            "- une ligne par titre",
+            "- chaque ligne commence par -",
+            "- indentation de deux espaces par niveau",
+            "- aucun commentaire avant ou apres la liste",
+        ]
+        source_block = ""
+        trimmed_hint = str(source_hint or "").strip()
+        if trimmed_hint:
+            source_block = f"\nTexte source de secours si le PDF est indisponible:\n{trimmed_hint}"
+        del title
+        del outline_hint_lines
+        return "\n".join(prompt_parts) + source_block
+
     prompt_parts = [
         "Lis ce PDF comme un manuel scolaire de mathematiques.",
         "Retourne la liste hierarchique de tous les headlines pedagogiques visibles utiles pour enseigner.",
@@ -3936,8 +3969,6 @@ def _build_notebooklm_checklist_prompt(
         "- indentation de deux espaces par niveau",
         "- aucun commentaire avant ou apres la liste",
     ]
-    if unit_type == WorkflowUnitType.EXERCISE_SERIES:
-        prompt_parts.append("- Pour une serie d'exercices, garde les grandes rubriques et les sous-rubriques visibles.")
     source_block = ""
     trimmed_hint = str(source_hint or "").strip()
     if trimmed_hint:
@@ -3963,6 +3994,28 @@ def _build_notebooklm_checklist_review_prompt() -> str:
             "- Si une rubrique generique comme Activites, Contenu de la lecon, Exercices ou Evaluation ne sert qu'a regrouper des headlines plus precises, rattache ces headlines au concept exact.",
             "- Ne garde pas les paragraphes de contenu, les calculs detailles, les reponses, ni les sous-exemples A / B / C / D s'ils ne sont pas des headlines visibles.",
             "- Si une rubrique est coupee sur plusieurs pages, reconstruis seulement le titre visible complet.",
+            "Format attendu:",
+            "- une ligne par titre",
+            "- chaque ligne commence par -",
+            "- indentation de deux espaces par niveau",
+            "- aucun commentaire avant ou apres la liste",
+        ]
+    )
+
+
+def _build_notebooklm_checklist_review_prompt_for_exercise_series() -> str:
+    return "\n".join(
+        [
+            "Relis le meme PDF et corrige la liste precedente pour qu'elle reste minimale et fidele.",
+            "Je veux uniquement le titre de la serie comme racine puis les headlines explicites des exercices, dans l'ordre.",
+            "Regles:",
+            "- Garde le titre complet de la serie comme racine.",
+            "- Garde uniquement les headlines explicites des exercices visibles.",
+            "- Pour chaque exercice, garde seulement le headline minimal avec son numero visible, par exemple: Exercice 1.",
+            "- Ne garde pas de sous-noeud sous un exercice.",
+            "- Supprime les doublons.",
+            "- Exclue activites, definitions, remarques, exemples, consignes internes, sous-questions et paragraphes.",
+            "- N'ajoute aucun titre implicite et ne reformule pas les titres.",
             "Format attendu:",
             "- une ligne par titre",
             "- chaque ligne commence par -",
@@ -5734,6 +5787,9 @@ def _normalize_notebooklm_outline_items(
     unit_type: WorkflowUnitType,
     unit_title: str,
 ) -> list[dict[str, Any]]:
+    if unit_type == WorkflowUnitType.EXERCISE_SERIES:
+        return _normalize_exercise_series_notebooklm_outline_items(items, unit_title=unit_title)
+
     def walk(nodes: list[dict[str, Any]], ancestors: list[str] | None = None) -> list[dict[str, Any]]:
         ancestor_titles = list(ancestors or [])
         output: list[dict[str, Any]] = []
@@ -5781,6 +5837,60 @@ def _normalize_notebooklm_outline_items(
     return _ensure_notebooklm_chapter_root(normalized, unit_title=unit_title)
 
 
+def _normalize_exercise_series_notebooklm_outline_items(
+    items: list[dict[str, Any]],
+    *,
+    unit_title: str,
+) -> list[dict[str, Any]]:
+    flat_nodes = [node for node in _flatten_checklist_nodes(items) if isinstance(node, dict)]
+    root_title = _normalize_outline_title(unit_title) or "Serie d'exercices"
+
+    for node in flat_nodes:
+        candidate = _normalize_outline_title(node.get("title"))
+        if not candidate or _is_metadata_noise_line(candidate) or _is_trivial_outline_fragment(candidate):
+            continue
+        if _titles_equivalent(candidate, root_title):
+            root_title = candidate
+            break
+        if not _normalize_exercise_series_headline_title(candidate):
+            root_title = candidate
+            break
+
+    exercises: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for node in flat_nodes:
+        title = _normalize_outline_title(node.get("title"))
+        if not title or _titles_equivalent(title, root_title):
+            continue
+        normalized_exercise = _normalize_exercise_series_headline_title(title)
+        if not normalized_exercise:
+            continue
+        key = _title_key(normalized_exercise)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        exercise_node: dict[str, Any] = {
+            "title": normalized_exercise,
+            "kind": WorkflowChecklistItemKind.EXERCISE.value,
+            "children": [],
+        }
+        session_number = _normalize_session_number(node.get("session_number"))
+        if session_number is not None:
+            exercise_node["session_number"] = session_number
+        exercises.append(exercise_node)
+
+    if not exercises:
+        return []
+
+    return [
+        {
+            "title": root_title,
+            "kind": WorkflowChecklistItemKind.SECTION.value,
+            "children": exercises,
+        }
+    ]
+
+
 def _is_teacher_meta_outline_title(title: str) -> bool:
     normalized = _normalize_outline_title(title)
     if not normalized:
@@ -5810,6 +5920,19 @@ def _is_itemized_activity_or_exercise_outline_title(title: str) -> bool:
     if not raw:
         return False
     return bool(re.match(r"^\s*(activite|activité|exercice|exercise|application)\s+\d+\b", raw, re.IGNORECASE))
+
+
+def _normalize_exercise_series_headline_title(title: str) -> str:
+    raw = _normalize_outline_title(title)
+    if not raw:
+        return ""
+    match = re.match(r"^\s*(exercice|exercise|application)\s+(\d+)\b", raw, re.IGNORECASE)
+    if not match:
+        return ""
+    label = match.group(1).strip()
+    number = match.group(2).strip()
+    normalized_label = "Application" if _fold_text_key(label).startswith("application") else "Exercice"
+    return f"{normalized_label} {number}"
 
 
 def _is_explicit_topic_outline_title(title: str, kind: str) -> bool:
@@ -6449,7 +6572,7 @@ def _postprocess_checklist_items(
         unit_title=unit_title,
         ancestor_titles=[unit_title],
     )
-    return _collapse_redundant_root(normalized, unit_title=unit_title)
+    return _collapse_redundant_root(normalized, unit_title=unit_title, unit_type=unit_type)
 
 
 def _normalize_checklist_nodes(
@@ -6480,7 +6603,10 @@ def _normalize_checklist_nodes(
         )
 
         if children:
-            node_title = _compact_outline_segment(raw_title, default_kind=kind, ancestor_titles=ancestor_titles)
+            if unit_type == WorkflowUnitType.EXERCISE_SERIES and _titles_equivalent(raw_title, unit_title):
+                node_title = raw_title
+            else:
+                node_title = _compact_outline_segment(raw_title, default_kind=kind, ancestor_titles=ancestor_titles)
             if not node_title:
                 output.extend(children)
                 continue
@@ -6489,6 +6615,15 @@ def _normalize_checklist_nodes(
                 node["session_number"] = session_number
             output.append(node)
             continue
+
+        if unit_type == WorkflowUnitType.EXERCISE_SERIES:
+            normalized_exercise_title = _normalize_exercise_series_headline_title(raw_title)
+            if normalized_exercise_title:
+                node = {"title": normalized_exercise_title, "kind": WorkflowChecklistItemKind.EXERCISE.value, "children": []}
+                if session_number is not None:
+                    node["session_number"] = session_number
+                output.append(node)
+                continue
 
         verbose_nodes = _explode_verbose_leaf(
             raw_title,
@@ -6511,8 +6646,15 @@ def _normalize_checklist_nodes(
     return _dedupe_sibling_nodes(output)
 
 
-def _collapse_redundant_root(items: list[dict[str, Any]], *, unit_title: str) -> list[dict[str, Any]]:
+def _collapse_redundant_root(
+    items: list[dict[str, Any]],
+    *,
+    unit_title: str,
+    unit_type: WorkflowUnitType,
+) -> list[dict[str, Any]]:
     current = list(items)
+    if unit_type == WorkflowUnitType.EXERCISE_SERIES:
+        return current
     while len(current) == 1:
         root = current[0]
         children = root.get("children")
