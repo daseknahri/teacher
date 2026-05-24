@@ -86,3 +86,17 @@ export async function downloadWithAuth(path, filename) {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
+
+export async function fetchBlobWithAuth(path) {
+    const token = getToken();
+    const response = await fetch(`${BASE}${path}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (response.status === 401) {
+        clearAuth();
+        window.location.hash = '#login';
+        throw new Error('Session expired. Please log in again.');
+    }
+    if (!response.ok) throw new Error(`Download failed: HTTP ${response.status}`);
+    return response.blob();
+}

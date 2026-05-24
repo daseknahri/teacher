@@ -614,6 +614,16 @@ class WorkflowChecklistReorderIn(BaseModel):
     items: list[WorkflowChecklistReorderItemIn] = Field(default_factory=list, min_length=1)
 
 
+class WorkflowChecklistItemAttachmentOut(BaseModel):
+    id: int
+    item_id: int
+    file_name: str | None = None
+    file_content_type: str | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class WorkflowChecklistItemOut(BaseModel):
     id: int
     unit_id: int
@@ -625,6 +635,7 @@ class WorkflowChecklistItemOut(BaseModel):
     is_completed: bool
     completed_session_id: int | None
     completed_at: datetime | None
+    attachments: list[WorkflowChecklistItemAttachmentOut] = Field(default_factory=list)
     children: list["WorkflowChecklistItemOut"] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
@@ -1047,8 +1058,6 @@ class WorkflowPreparedSectionSummaryOut(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
-
-
 class WorkflowPreparedSectionOut(BaseModel):
     id: int
     unit_id: int

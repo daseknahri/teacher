@@ -349,6 +349,25 @@ class WorkflowChecklistItem(Base):
     parent: Mapped["WorkflowChecklistItem | None"] = relationship(remote_side=[id], back_populates="children")
     children: Mapped[list["WorkflowChecklistItem"]] = relationship(back_populates="parent", cascade="all, delete-orphan")
     actions: Mapped[list["WorkflowSessionChecklistAction"]] = relationship(back_populates="item", cascade="all, delete-orphan")
+    attachments: Mapped[list["WorkflowChecklistItemAttachment"]] = relationship(
+        back_populates="item",
+        cascade="all, delete-orphan",
+        order_by="WorkflowChecklistItemAttachment.created_at.desc()",
+    )
+
+
+class WorkflowChecklistItemAttachment(Base):
+    __tablename__ = "workflow_checklist_item_attachments"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("workflow_checklist_items.id", ondelete="CASCADE"), index=True)
+    file_path: Mapped[str] = mapped_column(String(600))
+    file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    file_content_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    item: Mapped["WorkflowChecklistItem"] = relationship(back_populates="attachments")
 
 
 class WorkflowSessionChecklistAction(Base):

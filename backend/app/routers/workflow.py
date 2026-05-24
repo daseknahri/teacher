@@ -37,6 +37,7 @@ from ..models import (
     ProgressItemType,
     SessionUpload,
     WorkflowChecklistItem,
+    WorkflowChecklistItemAttachment,
     WorkflowChecklistItemKind,
     WorkflowLeafContent,
     WorkflowPreparedSection,
@@ -82,6 +83,7 @@ from ..schemas import (
     WorkflowCalendarSlotActionOut,
     WorkflowCalendarEventOut,
     WorkflowChecklistItemCreateIn,
+    WorkflowChecklistItemAttachmentOut,
     WorkflowChecklistReorderIn,
     WorkflowChecklistReorderItemIn,
     WorkflowChecklistItemOut,
@@ -124,7 +126,13 @@ from ..schemas import (
 from ..security import ensure_class_access, ensure_class_writable, get_current_user, require_owner, require_teacher
 from ..services.audit import log_audit
 from ..services.rate_limit import enforce_rate_limit
-from ..services.upload_validation import ALLOWED_EXCEL_EXTENSIONS, ALLOWED_EXCEL_MIME_TYPES, read_validated_upload
+from ..services.upload_validation import (
+    ALLOWED_EXCEL_EXTENSIONS,
+    ALLOWED_EXCEL_MIME_TYPES,
+    ALLOWED_IMAGE_EXTENSIONS,
+    ALLOWED_IMAGE_MIME_TYPES,
+    read_validated_upload,
+)
 from ..services.holidays import (
     find_blocked_holiday,
     list_holidays_for_year,
@@ -917,6 +925,23 @@ def _serialize_checklist(items: list[WorkflowChecklistItem]) -> list[WorkflowChe
             is_completed=bool(row.is_completed),
             completed_session_id=_safe_optional_int(row.completed_session_id),
             completed_at=row.completed_at,
+            attachments=[
+                WorkflowChecklistItemAttachmentOut(
+                    id=_safe_int(attachment.id, default=0),
+                    item_id=_safe_int(attachment.item_id, default=0),
+                    file_name=str(attachment.file_name or "").strip() or None,
+                    file_content_type=str(attachment.file_content_type or "").strip() or None,
+                    created_at=attachment.created_at,
+                )
+                for attachment in sorted(
+                    list(getattr(row, "attachments", []) or []),
+                    key=lambda value: (
+                        getattr(value, "created_at", None) or datetime.min,
+                        _safe_int(getattr(value, "id", 0), default=0),
+                    ),
+                    reverse=True,
+                )
+            ],
             children=child_nodes,
         )
 
@@ -3600,6 +3625,105 @@ def create_linked_exam_workflow_unit(
     db.commit()
     db.refresh(unit)
     return WorkflowExamLinkedUnitCreateOut(created=True, reopened=False, unit=_serialize_unit(db, unit))
+
+
+def _serialize_checklist_attachment(row: WorkflowChecklistItemAttachment) -> WorkflowChecklistItemAttachmentOut:
+    return WorkflowChecklistItemAttachmentOut(
+        id=_safe_int(row.id, default=0),
+        item_id=_safe_int(row.item_id, default=0),
+        file_name=str(row.file_name or "").strip() or None,
+        file_content_type=str(row.file_content_type or "").strip() or None,
+        created_at=row.created_at,
+    )
+
+
+@router.post(
+    "/classes/{class_id}/units/{unit_id}/items/{item_id}/attachments",
+    response_model=WorkflowChecklistItemAttachmentOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_workflow_checklist_item_attachment(
+    class_id: int,
+    unit_id: int,
+    item_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkflowChecklistItemAttachmentOut:
+    _ = ensure_class_writable(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, unit_id)
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Unit not found.")
+    if unit.status != WorkflowUnitStatus.ACTIVE:
+        raise HTTPException(status_code=409, detail="Only active units can receive checklist screenshots.")
+    item = db.get(WorkflowChecklistItem, item_id)
+    if item is None or int(item.unit_id) != int(unit_id):
+        raise HTTPException(status_code=404, detail="Checklist item not found.")
+
+    enforce_rate_limit(
+        scope="upload",
+        user_id=current_user.id,
+        limit=20,
+        window_seconds=3600,
+        resource_id=int(item_id),
+    )
+    content, extension = read_validated_upload(
+        file,
+        max_bytes=MAX_SCREENSHOT_UPLOAD_BYTES,
+        allowed_extensions=ALLOWED_IMAGE_EXTENSIONS,
+        allowed_mime_types=ALLOWED_IMAGE_MIME_TYPES,
+        purpose="image",
+    )
+    target_dir = UPLOADS_DIR / "workflow-checklist" / str(class_id) / str(unit_id) / str(item_id)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_name = f"{uuid.uuid4().hex}{extension}"
+    target = target_dir / target_name
+    target.write_bytes(content)
+
+    attachment = WorkflowChecklistItemAttachment(
+        item_id=int(item_id),
+        file_path=str(target),
+        file_name=str(file.filename or target_name).strip() or target_name,
+        file_content_type=str(file.content_type or "").strip() or None,
+        created_by_user_id=current_user.id,
+    )
+    db.add(attachment)
+    db.flush()
+    log_audit(
+        db,
+        user=current_user,
+        action="workflow.item.attachment.upload",
+        entity_type="workflow_item_attachment",
+        entity_id=attachment.id,
+        class_id=class_id,
+        details={"unit_id": int(unit_id), "item_id": int(item_id), "file_name": attachment.file_name},
+    )
+    db.commit()
+    db.refresh(attachment)
+    return _serialize_checklist_attachment(attachment)
+
+
+@router.get("/classes/{class_id}/units/{unit_id}/items/{item_id}/attachments/{attachment_id}")
+def download_workflow_checklist_item_attachment(
+    class_id: int,
+    unit_id: int,
+    item_id: int,
+    attachment_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    _ = ensure_class_access(db, class_id, current_user)
+    item = db.get(WorkflowChecklistItem, item_id)
+    if item is None or int(item.unit_id) != int(unit_id):
+        raise HTTPException(status_code=404, detail="Checklist item not found.")
+    attachment = db.get(WorkflowChecklistItemAttachment, attachment_id)
+    if attachment is None or int(attachment.item_id) != int(item_id):
+        raise HTTPException(status_code=404, detail="Checklist attachment not found.")
+    path = Path(str(attachment.file_path or "").strip())
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail="Checklist attachment file not found.")
+    filename = str(attachment.file_name or path.name).strip() or path.name
+    return FileResponse(path=str(path), media_type=str(attachment.file_content_type or "application/octet-stream"), filename=filename)
 
 
 @router.post("/classes/{class_id}/units/{unit_id}/items", response_model=WorkflowChecklistItemOut, status_code=status.HTTP_201_CREATED)

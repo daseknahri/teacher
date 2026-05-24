@@ -12,7 +12,7 @@
  *   POST   /workflow/classes/{id}/sessions/{sid}/end     JSON: {session_date,start_time,end_time,absent_student_ids,note}
  *   POST   /workflow/classes/{id}/sessions/{sid}/items/{iid}/toggle   JSON: {checked:bool}
  */
-import { api, downloadWithAuth } from '../api/client.js';
+import { api, downloadWithAuth, fetchBlobWithAuth } from '../api/client.js';
 import {
   getActiveUnit, getActiveSession, getClosedUnits, getRecentSessions,
   setActiveUnit, setActiveSession, setCalendar, setWorkspace,
@@ -3487,6 +3487,7 @@ function _render(el, classId) {
   const isLinkedExamUnit = Boolean(unit?.exam_id);
   const isExamWorkflowUnit = unit?.unit_type === 'exam';
   const isExamCorrectionUnit = unit?.unit_type === 'exam_correction';
+  const showChecklistAttachments = isLinkedExamUnit;
   const examResultsCount = Number(unit?.exam_results_count || 0) || 0;
   const examResultsAverage = unit?.exam_results_average_score != null ? Number(unit.exam_results_average_score) : null;
   const examResultsPassed = Number(unit?.exam_results_passed_count || 0) || 0;
@@ -3728,6 +3729,7 @@ function _render(el, classId) {
     const depthPad = _checklistDepthPadding(item.depth);
     const previewMatch = previewSessionTitleKeys.has(String(item?.title || '').trim().toLowerCase());
     const previewResumeTarget = previewResumeTargetId != null && itemId === previewResumeTargetId;
+    const latestAttachment = Array.isArray(item.attachments) && item.attachments.length ? item.attachments[0] : null;
     return `
               <div class="todo-node group checklist-draggable-node ${isDone ? 'done' : ''} ${previewMatch ? '!bg-blue-50/70 !border-blue-200' : ''}"
                    data-item-id="${item.id}" data-dnd-target-id="${item.id}" ${previewMatch ? 'data-preview-match="1"' : ''} ${previewResumeTarget ? 'data-preview-scroll-target="1"' : ''}
@@ -3746,6 +3748,15 @@ function _render(el, classId) {
                 <span class="todo-title text-[13px] leading-snug flex-1">${item.title}</span>
                 ${previewResumeTarget ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 flex-shrink-0">Resume here</span>` : previewMatch ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 flex-shrink-0">Planned now</span>` : ''}
                 ${item.item_kind && item.item_kind !== 'other' ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500 flex-shrink-0">${item.item_kind}</span>` : ''}
+                ${showChecklistAttachments ? `
+                <div class="flex items-center gap-1 flex-wrap">
+                  ${latestAttachment ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex-shrink-0">Image ready</span>` : ''}
+                  <label class="btn btn-ghost btn-sm !text-indigo-600 !px-2 cursor-pointer" title="Attach screenshot to this checklist row">
+                    Attach image
+                    <input type="file" accept="image/png,image/jpeg,image/webp,image/bmp" class="hidden input-item-attachment" data-item-id="${item.id}" />
+                  </label>
+                  ${latestAttachment ? `<button class="btn btn-ghost btn-sm !text-emerald-700 !px-2 btn-view-item-attachment" data-item-id="${item.id}" data-attachment-id="${latestAttachment.id}" data-attachment-name="${_escapeHtmlAttr(latestAttachment.file_name || 'image')}">View</button>` : ''}
+                </div>` : ''}
                 <div class="row-hover-actions checklist-edit-actions flex items-center gap-1 ml-auto flex-wrap rounded-full border border-slate-200 bg-white/90 px-1.5 py-1 shadow-sm">
                   <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-up ${meta.canUp ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Move up">↑</button>
                   <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-down ${meta.canDown ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Move down">↓</button>
@@ -4117,6 +4128,7 @@ function _render(el, classId) {
       const isCollapsed = hasChildren && _collapsedChecklistIds.has(itemId);
       const depthPad = _checklistDepthPadding(item.depth);
       const isStructural = _isStructuralChecklistItem(item) || hasChildren;
+      const latestAttachment = Array.isArray(item.attachments) && item.attachments.length ? item.attachments[0] : null;
       return `
               <div class="todo-node group ${item.is_completed || item.done ? 'done' : ''} ${isStructural ? 'cursor-default' : ''}"
                    data-item-id="${item.id}" data-session-id="${session.id}" data-class-id="${classId}"
@@ -4133,6 +4145,15 @@ function _render(el, classId) {
                   ${item.is_completed || item.done ? 'Y' : (isStructural ? '·' : '')}
                 </div>
                 <span class="todo-title text-[12px] leading-snug flex-1">${item.title}</span>
+                ${showChecklistAttachments ? `
+                <div class="flex items-center gap-1 flex-wrap">
+                  ${latestAttachment ? `<span class="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700 flex-shrink-0">Image ready</span>` : ''}
+                  <label class="btn btn-ghost btn-sm !text-indigo-600 !px-2 cursor-pointer" title="Attach screenshot to this checklist row">
+                    Attach image
+                    <input type="file" accept="image/png,image/jpeg,image/webp,image/bmp" class="hidden input-item-attachment" data-item-id="${item.id}" />
+                  </label>
+                  ${latestAttachment ? `<button class="btn btn-ghost btn-sm !text-emerald-700 !px-2 btn-view-item-attachment" data-item-id="${item.id}" data-attachment-id="${latestAttachment.id}" data-attachment-name="${_escapeHtmlAttr(latestAttachment.file_name || 'image')}">View</button>` : ''}
+                </div>` : ''}
                 ${isStructural ? '<span class="text-[10px] text-slate-400 whitespace-nowrap">Auto-completes from child rows</span>' : ''}
                 ${hasChildren ? `<button class="btn btn-ghost btn-sm !text-sky-600 !px-2 btn-checklist-group-complete" data-item-id="${item.id}" title="Mark all unfinished lesson steps under this heading">Check group</button>` : ''}
               </div>`;
@@ -4174,6 +4195,41 @@ function _flatItems(item) {
   const result = [item];
   if (item.children) item.children.forEach(c => result.push(..._flatItems(c)));
   return result;
+}
+
+async function _openChecklistAttachmentPreview({ classId, unitId, itemId, attachment }) {
+  if (!attachment?.id) return;
+  showToast('Opening screenshot...', 'info');
+  const blob = await fetchBlobWithAuth(`/workflow/classes/${classId}/units/${unitId}/items/${itemId}/attachments/${attachment.id}`);
+  const objectUrl = URL.createObjectURL(blob);
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal max-w-5xl">
+      <div class="flex items-center justify-between gap-3 px-6 py-4 border-b border-slate-100">
+        <div>
+          <h2 class="text-[16px] font-bold text-slate-800">Checklist Screenshot</h2>
+          <p class="text-[12px] text-slate-400 mt-0.5">${_escapeHtml(attachment.file_name || 'Attached image')}</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btn-download-checklist-attachment" class="btn btn-secondary btn-sm">Download</button>
+          <button id="btn-close-checklist-attachment" class="btn btn-ghost btn-sm">Close</button>
+        </div>
+      </div>
+      <div class="px-6 py-5">
+        <img src="${objectUrl}" alt="${_escapeHtmlAttr(attachment.file_name || 'Checklist screenshot')}" class="max-h-[75vh] w-full object-contain rounded-2xl border border-slate-200 bg-slate-50" />
+      </div>
+    </div>`;
+  function cleanup() {
+    overlay.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+  }
+  overlay.addEventListener('click', e => { if (e.target === overlay) cleanup(); });
+  overlay.querySelector('#btn-close-checklist-attachment')?.addEventListener('click', cleanup);
+  overlay.querySelector('#btn-download-checklist-attachment')?.addEventListener('click', async () => {
+    await downloadWithAuth(`/workflow/classes/${classId}/units/${unitId}/items/${itemId}/attachments/${attachment.id}`, attachment.file_name || 'checklist-image');
+  });
+  document.body.appendChild(overlay);
 }
 /* also expose on unit */
 function _checklist(unit) {
@@ -5739,6 +5795,57 @@ function _bindWorkflowEvents(el, classId) {
           showToast(err.message, 'error');
         }
       });
+    });
+  });
+
+  el.querySelectorAll('.input-item-attachment').forEach(input => {
+    input.addEventListener('change', async e => {
+      const file = e.target?.files?.[0];
+      const itemId = Number(input.dataset.itemId);
+      const unit = getActiveUnit();
+      if (!file || !itemId || !unit?.id) return;
+      await _withActionLock(`workflow:item-attachment:${classId}:${itemId}`, async () => {
+        const form = new FormData();
+        form.append('file', file);
+        try {
+          await api(`/workflow/classes/${classId}/units/${unit.id}/items/${itemId}/attachments`, {
+            method: 'POST',
+            body: form,
+          });
+          const ws = await api(`/workflow/classes/${classId}`);
+          setWorkspace(ws);
+          _render(el, classId);
+          showToast('Checklist screenshot attached.', 'ok');
+        } catch (err) {
+          showToast(err.message, 'error');
+        } finally {
+          input.value = '';
+        }
+      });
+    });
+  });
+
+  el.querySelectorAll('.btn-view-item-attachment').forEach(btn => {
+    btn.addEventListener('click', async event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const itemId = Number(btn.dataset.itemId);
+      const attachmentId = Number(btn.dataset.attachmentId);
+      const unit = getActiveUnit();
+      if (!itemId || !attachmentId || !unit?.id) return;
+      try {
+        await _openChecklistAttachmentPreview({
+          classId,
+          unitId: Number(unit.id),
+          itemId,
+          attachment: {
+            id: attachmentId,
+            file_name: String(btn.dataset.attachmentName || '').trim() || 'image',
+          },
+        });
+      } catch (err) {
+        showToast(err.message || 'Failed to open screenshot.', 'error');
+      }
     });
   });
 

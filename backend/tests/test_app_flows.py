@@ -47,6 +47,14 @@ def _build_notescc_exam_file(rows: list[tuple[str, str, float]]) -> bytes:
     return output.getvalue()
 
 
+def _build_tiny_png() -> bytes:
+    return (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDAT\x08\xd7c\xf8\xcf"
+        b"\xc0\x00\x00\x03\x01\x01\x00\xc9\xfe\x92\xef\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+
+
 def _build_notescc_list_file(rows: list[tuple[str, str, str, str]]) -> bytes:
     workbook = Workbook()
     sheet = workbook.active
@@ -6487,6 +6495,60 @@ def test_linked_exam_correction_workflow_uses_exam_outline_when_no_exam_workflow
     assert "Corrige detaille" in child_titles
     assert "Erreurs frequentes" in child_titles
     assert "Remediation" in child_titles
+
+
+def test_linked_exam_workflow_checklist_item_accepts_image_attachment(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": f"Exam Attachment {uuid.uuid4().hex[:6]}"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    exam_resp = client.post(
+        f"/classes/{class_id}/exams",
+        headers=headers,
+        json={
+            "title": "CC9",
+            "exam_date": "2026-07-29",
+            "max_score": 20,
+            "weight": 1,
+            "paper_outline_text": "Exercice 1\nExercice 2",
+        },
+    )
+    assert exam_resp.status_code == 201
+    exam_id = int(exam_resp.json()["id"])
+
+    linked_resp = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam"},
+    )
+    assert linked_resp.status_code == 200
+    unit = linked_resp.json()["unit"]
+    exercise_1 = next(row for row in unit["checklist"][0]["children"] if row["title"] == "Exercice 1")
+
+    upload_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit['id']}/items/{exercise_1['id']}/attachments",
+        headers=headers,
+        files={"file": ("exercise-1.png", _build_tiny_png(), "image/png")},
+    )
+    assert upload_resp.status_code == 201
+    attachment = upload_resp.json()
+    assert attachment["item_id"] == exercise_1["id"]
+    assert attachment["file_content_type"] == "image/png"
+
+    workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_resp.status_code == 200
+    active_unit = workspace_resp.json()["active_unit"]
+    exercise_1_after = next(row for row in active_unit["checklist"][0]["children"] if row["title"] == "Exercice 1")
+    assert len(exercise_1_after["attachments"]) == 1
+    assert exercise_1_after["attachments"][0]["id"] == attachment["id"]
+
+    download_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit['id']}/items/{exercise_1['id']}/attachments/{attachment['id']}",
+        headers=headers,
+    )
+    assert download_resp.status_code == 200
+    assert download_resp.headers["content-type"].startswith("image/png")
 
 
 def test_import_students_from_notescc_list_format(client):
