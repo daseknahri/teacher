@@ -3835,6 +3835,7 @@ function _render(el, classId) {
                   </label>
                   ${latestAttachment ? `<button class="btn btn-ghost btn-sm !text-emerald-700 !px-2 btn-view-item-attachment" data-item-id="${item.id}">View</button>` : ''}
                   <button class="btn btn-ghost btn-sm !text-amber-700 !px-2 btn-item-note" data-item-id="${item.id}">${item.teacher_note ? 'Edit note' : 'Add note'}</button>
+                  ${savedGuidanceCount ? `<button class="btn btn-ghost btn-sm !text-sky-700 !px-2 btn-item-guidance" data-item-id="${item.id}">Guidance</button>` : ''}
                   ${canAskRowAssistant ? `<button class="btn btn-ghost btn-sm !text-sky-700 !px-2 btn-item-assistant" data-item-id="${item.id}">Ask</button>` : ''}
                 </div>` : ''}
                 <div class="row-hover-actions checklist-edit-actions flex items-center gap-1 ml-auto flex-wrap rounded-full border border-slate-200 bg-white/90 px-1.5 py-1 shadow-sm">
@@ -4237,6 +4238,7 @@ function _render(el, classId) {
                   </label>
                   ${latestAttachment ? `<button class="btn btn-ghost btn-sm !text-emerald-700 !px-2 btn-view-item-attachment" data-item-id="${item.id}">View</button>` : ''}
                   <button class="btn btn-ghost btn-sm !text-amber-700 !px-2 btn-item-note" data-item-id="${item.id}">${item.teacher_note ? 'Edit note' : 'Add note'}</button>
+                  ${savedGuidanceCount ? `<button class="btn btn-ghost btn-sm !text-sky-700 !px-2 btn-item-guidance" data-item-id="${item.id}">Guidance</button>` : ''}
                   ${canAskRowAssistant ? `<button class="btn btn-ghost btn-sm !text-sky-700 !px-2 btn-item-assistant" data-item-id="${item.id}">Ask</button>` : ''}
                 </div>` : ''}
                 ${isStructural ? '<span class="text-[10px] text-slate-400 whitespace-nowrap">Auto-completes from child rows</span>' : ''}
@@ -6044,6 +6046,50 @@ function _bindWorkflowEvents(el, classId) {
           });
         } catch (err) {
           showToast(String(err?.message || 'Failed to open row guidance.'), 'error');
+        }
+      });
+    });
+  });
+
+  el.querySelectorAll('.btn-item-guidance').forEach(btn => {
+    btn.addEventListener('click', async event => {
+      event.preventDefault();
+      event.stopPropagation();
+      const itemId = Number(btn.dataset.itemId);
+      const unit = getActiveUnit();
+      if (!itemId || !unit?.id) return;
+      const items = _checklist(unit);
+      const item = items.find(row => Number(row?.id) === itemId) || null;
+      if (!item) return;
+      await _withActionLock(`workflow:item-guidance:${classId}:${itemId}`, async () => {
+        try {
+          const state = await _loadUnitBlueprint(classId, unit.id, { force: false });
+          if (state?.error) {
+            showToast(state.error, 'error');
+            return;
+          }
+          if (!state?.item) {
+            showToast('No saved unit intelligence is available for this row yet.', 'warning');
+            return;
+          }
+          const rowPath = _buildChecklistItemPath(items, itemId);
+          const prefill = _buildAssistantPrefillFromChecklistRow(item, rowPath, String(unit?.unit_type || '').trim().toLowerCase());
+          _openUnitAssistantModal({
+            classId,
+            unit,
+            blueprint: state.item,
+            initial: {
+              ...prefill,
+              checklistItemId: itemId,
+            },
+            onArtifactChange: async () => {
+              const ws = await api(`/workflow/classes/${classId}`);
+              setWorkspace(ws);
+              _render(el, classId);
+            },
+          });
+        } catch (err) {
+          showToast(String(err?.message || 'Failed to open saved guidance.'), 'error');
         }
       });
     });
