@@ -3137,6 +3137,45 @@ function _buildAssistantPrefillFromPlaybook(entry, sectionPlan, fallbackTitle = 
   };
 }
 
+function _describeExtractionMethod(unit) {
+  const provider = String(unit?.extraction_source || '').trim().toLowerCase();
+  const structureSource = String(unit?.extraction_structure_source || '').trim().toLowerCase();
+  const notebookRole = String(unit?.extraction_notebook_role || '').trim();
+  if (!provider) {
+    return {
+      badgeClass: 'badge-gray',
+      badgeLabel: 'No extraction',
+      detail: notebookRole ? `Role: ${notebookRole}` : '',
+    };
+  }
+  if (provider === 'notebooklm') {
+    if (structureSource === 'pdf_layout_seed') {
+      return {
+        badgeClass: 'badge-blue',
+        badgeLabel: 'NotebookLM + PDF repair',
+        detail: notebookRole ? `Role: ${notebookRole}` : 'Recovered from PDF layout/OCR after NotebookLM.',
+      };
+    }
+    if (structureSource) {
+      return {
+        badgeClass: 'badge-green',
+        badgeLabel: 'NotebookLM',
+        detail: `Structure source: ${structureSource}${notebookRole ? ` • Role: ${notebookRole}` : ''}`,
+      };
+    }
+    return {
+      badgeClass: 'badge-green',
+      badgeLabel: 'NotebookLM',
+      detail: notebookRole ? `Role: ${notebookRole}` : '',
+    };
+  }
+  return {
+    badgeClass: provider === 'openai' ? 'badge-blue' : 'badge-amber',
+    badgeLabel: provider,
+    detail: structureSource ? `Structure source: ${structureSource}` : '',
+  };
+}
+
 function _buildAssistantPrefillFromChecklistRow(item, rowPath = [], unitType = '') {
   const title = String(item?.title || '').trim();
   const itemKind = String(item?.item_kind || 'other').trim().toLowerCase();
@@ -3556,6 +3595,7 @@ function _render(el, classId) {
   const extractionSource = String(unit?.extraction_source || '').trim().toLowerCase();
   const extractionStatus = String(unit?.extraction_status || '').trim().toLowerCase();
   const extractionError = String(unit?.extraction_error || '').trim();
+  const extractionStructureSource = String(unit?.extraction_structure_source || '').trim().toLowerCase();
   const extractionReviewed = unit ? unit.extraction_reviewed !== false : true;
   const extractionReviewPending = Boolean(unit?.extraction_source) && !extractionReviewed;
   const isLinkedExamUnit = Boolean(unit?.exam_id);
@@ -3575,6 +3615,7 @@ function _render(el, classId) {
         ? 'badge-amber'
         : 'badge-gray';
   const extractionLabel = extractionSource || 'unknown';
+  const extractionMethod = _describeExtractionMethod(unit);
   const unitFocusText = isExamWorkflowUnit
     ? examResultsCount
       ? `Use this checklist to organize the paper, expected correction, and supervision points. ${examResultsCount} result${examResultsCount === 1 ? '' : 's'} already imported for this exam.`
@@ -3583,6 +3624,8 @@ function _render(el, classId) {
       ? examResultsCount
         ? `Use this checklist to guide the correction, highlight common mistakes, and plan remediation from ${examResultsCount} imported result${examResultsCount === 1 ? '' : 's'}.`
         : 'Use this checklist to guide the correction, highlight common mistakes, and plan remediation. Import the exam results first if you want the correction flow grounded in real outcomes.'
+      : extractionStructureSource === 'pdf_layout_seed'
+        ? 'This checklist came from NotebookLM and was repaired from the PDF because the original extraction was incomplete. Test these rows first.'
       : extractionReviewPending
         ? 'Approve the extracted checklist once the structure looks right, then continue planning and teaching from it.'
         : 'The checklist is ready to drive planning and teaching. Keep building one reliable layer at a time.';
@@ -3667,10 +3710,12 @@ function _render(el, classId) {
                       ${isLinkedExamUnit
                         ? '<span class="badge badge-blue">Template checklist</span>'
                         : `<span class="badge ${extractionBadgeClass}">Extraction ${_escapeHtml(extractionLabel)}</span>`}
+                      ${!isLinkedExamUnit && extractionMethod?.badgeLabel ? `<span class="badge ${_escapeHtml(extractionMethod.badgeClass || 'badge-gray')}">${_escapeHtml(extractionMethod.badgeLabel)}</span>` : ''}
                       ${showExtractionControls
                         ? `<span class="badge ${extractionReviewPending ? 'badge-amber' : 'badge-green'}">${extractionReviewPending ? 'Review Pending' : 'Reviewed'}</span>`
                         : '<span class="badge badge-green">Reviewed</span>'}
                     </div>
+                    ${!isLinkedExamUnit && extractionMethod?.detail ? `<p class="text-[11px] text-slate-500 mt-2">${_escapeHtml(extractionMethod.detail)}</p>` : ''}
                   </div>
                   <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-2.5 lg:max-w-[320px]">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focus For Now</p>

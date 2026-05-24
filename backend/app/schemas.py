@@ -665,6 +665,8 @@ class WorkflowUnitOut(BaseModel):
     extraction_model: str | None = None
     extraction_status: str | None = None
     extraction_error: str | None = None
+    extraction_structure_source: str | None = None
+    extraction_notebook_role: str | None = None
     extraction_reviewed: bool = True
     extraction_reviewed_at: datetime | None = None
     checklist: list[WorkflowChecklistItemOut] = Field(default_factory=list)
