@@ -3141,6 +3141,16 @@ function _describeExtractionMethod(unit) {
   const provider = String(unit?.extraction_source || '').trim().toLowerCase();
   const structureSource = String(unit?.extraction_structure_source || '').trim().toLowerCase();
   const notebookRole = String(unit?.extraction_notebook_role || '').trim();
+  const layoutCount = Number(unit?.extraction_layout_heading_count ?? NaN);
+  const ocrCount = Number(unit?.extraction_ocr_heading_count ?? NaN);
+  const hasLayoutCount = Number.isFinite(layoutCount);
+  const hasOcrCount = Number.isFinite(ocrCount);
+  const diagnosticsText = hasLayoutCount || hasOcrCount
+    ? [
+      hasLayoutCount ? `layout ${layoutCount}` : '',
+      hasOcrCount ? `ocr ${ocrCount}` : '',
+    ].filter(Boolean).join(' • ')
+    : '';
   if (!provider) {
     return {
       badgeClass: 'badge-gray',
@@ -3153,7 +3163,10 @@ function _describeExtractionMethod(unit) {
       return {
         badgeClass: 'badge-blue',
         badgeLabel: 'NotebookLM + PDF repair',
-        detail: notebookRole ? `Role: ${notebookRole}` : 'Recovered from PDF layout/OCR after NotebookLM.',
+        detail: [
+          diagnosticsText || '',
+          notebookRole ? `Role: ${notebookRole}` : '',
+        ].filter(Boolean).join(' • ') || 'Recovered from PDF layout/OCR after NotebookLM.',
       };
     }
     if (structureSource) {

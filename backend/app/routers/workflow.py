@@ -1018,6 +1018,8 @@ def _safe_serialize_unit(db: Session, unit: WorkflowUnit, *, class_id: int) -> W
                 extraction_error=str(getattr(getattr(unit, "blueprint", None), "error_message", "") or "").strip() or None,
                 extraction_structure_source=None,
                 extraction_notebook_role=None,
+                extraction_layout_heading_count=None,
+                extraction_ocr_heading_count=None,
                 extraction_reviewed=bool(getattr(getattr(unit, "blueprint", None), "reviewed", True)),
                 extraction_reviewed_at=getattr(getattr(unit, "blueprint", None), "reviewed_at", None),
                 checklist=[],
@@ -1094,6 +1096,7 @@ def _serialize_unit(db: Session, unit: WorkflowUnit) -> WorkflowUnitOut:
     provider_context = blueprint_json.get("provider_context") if isinstance(blueprint_json.get("provider_context"), dict) else {}
     raw_provider_response = blueprint.raw_provider_response if blueprint is not None and isinstance(blueprint.raw_provider_response, dict) else {}
     nested_raw_provider_response = raw_provider_response.get("raw_provider_response") if isinstance(raw_provider_response.get("raw_provider_response"), dict) else {}
+    layout_diagnostics = raw_provider_response.get("pdf_layout_diagnostics") if isinstance(raw_provider_response.get("pdf_layout_diagnostics"), dict) else {}
     exam_results_count, exam_results_average_score, exam_results_passed_count = _serialize_exam_results_summary(
         db,
         getattr(unit, "exam", None),
@@ -1125,6 +1128,8 @@ def _serialize_unit(db: Session, unit: WorkflowUnit) -> WorkflowUnitOut:
             or ""
         ).strip() or None,
         extraction_notebook_role=str(provider_context.get("notebook_role") or "").strip() or None,
+        extraction_layout_heading_count=_safe_optional_int(layout_diagnostics.get("layout_heading_count")),
+        extraction_ocr_heading_count=_safe_optional_int(layout_diagnostics.get("ocr_heading_count")),
         extraction_reviewed=bool(getattr(blueprint, "reviewed", True)) if blueprint is not None else True,
         extraction_reviewed_at=getattr(blueprint, "reviewed_at", None) if blueprint is not None else None,
         checklist=_serialize_checklist(items),

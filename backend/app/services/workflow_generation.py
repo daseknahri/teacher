@@ -536,15 +536,26 @@ def generate_unit_checklist_package(
     outline_seed: list[dict[str, Any]] = []
     reference_outline: list[dict[str, Any]] = []
     outline_hint_lines: list[str] = []
+    layout_seed_diagnostics: dict[str, Any] = {}
     candidates: list[tuple[str, list[dict[str, Any]]]] = []
     openai_shadow_raw: dict[str, Any] | None = None
     openai_shadow_error: str | None = None
 
     def ensure_reference_outline_context() -> None:
-        nonlocal layout_seed, outline_seed, reference_outline, outline_hint_lines
+        nonlocal layout_seed, outline_seed, reference_outline, outline_hint_lines, layout_seed_diagnostics
         if reference_outline or outline_hint_lines or layout_seed or outline_seed:
             return
-        layout_seed = _build_pdf_layout_outline_seed(unit_type=unit_type, title=title, document_path=document_path)
+        layout_seed_result = _build_pdf_layout_outline_seed(
+            unit_type=unit_type,
+            title=title,
+            document_path=document_path,
+            return_diagnostics=True,
+        )
+        if isinstance(layout_seed_result, tuple):
+            layout_seed, layout_seed_diagnostics = layout_seed_result
+        else:
+            layout_seed = layout_seed_result
+            layout_seed_diagnostics = {}
         outline_seed = _build_outline_seed(unit_type=unit_type, title=title, source_text=source_text)
         reference_outline = _select_reference_outline_seed(
             layout_seed=layout_seed,
@@ -607,6 +618,8 @@ def generate_unit_checklist_package(
                 if isinstance(raw_provider_response, dict):
                     raw_provider_response["selected_structure_source"] = selected_structure_source
                     raw_provider_response["unit_map"] = unit_map
+                    if layout_seed_diagnostics:
+                        raw_provider_response["pdf_layout_diagnostics"] = _copy_jsonable(layout_seed_diagnostics)
                     raw_provider_response["content_blocks"] = _normalize_content_blocks_payload(
                         raw_provider_response.get("content_pack") if isinstance(raw_provider_response.get("content_pack"), dict) else None,
                         unit_map=unit_map,
@@ -655,7 +668,9 @@ def generate_unit_checklist_package(
                 if isinstance(raw_provider_response, dict):
                     raw_provider_response["selected_structure_source"] = selected_structure_source
                     raw_provider_response["unit_map"] = unit_map
-                repair_outline = _build_pdf_layout_outline_seed(unit_type=unit_type, title=title, document_path=document_path)
+                    if layout_seed_diagnostics:
+                        raw_provider_response["pdf_layout_diagnostics"] = _copy_jsonable(layout_seed_diagnostics)
+                repair_outline = layout_seed
                 if repair_outline and _candidate_needs_structural_repair(
                     selected_outline,
                     reference_outline=repair_outline,
@@ -1927,16 +1942,26 @@ def _build_pdf_layout_outline_seed(
     unit_type: WorkflowUnitType,
     title: str,
     document_path: str | None,
-) -> list[dict[str, Any]]:
+    return_diagnostics: bool = False,
+) -> list[dict[str, Any]] | tuple[list[dict[str, Any]], dict[str, Any]]:
     path_value = str(document_path or "").strip()
     if not path_value:
-        return []
+        empty = []
+        diagnostics = {"heading_count": 0, "layout_heading_count": 0, "ocr_heading_count": 0}
+        return (empty, diagnostics) if return_diagnostics else empty
     source = Path(path_value)
     if source.suffix.lower() != ".pdf" or not source.exists():
-        return []
-    candidate_lines = _extract_pdf_heading_candidate_lines(source, unit_type=unit_type)
+        empty = []
+        diagnostics = {"heading_count": 0, "layout_heading_count": 0, "ocr_heading_count": 0}
+        return (empty, diagnostics) if return_diagnostics else empty
+    candidate_lines, diagnostics = _extract_pdf_heading_candidate_lines(
+        source,
+        unit_type=unit_type,
+        return_diagnostics=True,
+    )
     if not candidate_lines:
-        return []
+        empty = []
+        return (empty, diagnostics) if return_diagnostics else empty
     if unit_type == WorkflowUnitType.EXERCISE_SERIES:
         normalized_titles: list[str] = []
         seen: set[str] = set()
@@ -1962,7 +1987,7 @@ def _build_pdf_layout_outline_seed(
         ]
         normalized_titles.sort(key=_exercise_series_sort_key)
         if normalized_titles:
-            return [
+            output = [
                 {
                     "title": _normalize_outline_title(title) or "Serie d'exercices",
                     "kind": WorkflowChecklistItemKind.SECTION.value,
@@ -1972,8 +1997,10 @@ def _build_pdf_layout_outline_seed(
                     ],
                 }
             ]
+            return (output, diagnostics) if return_diagnostics else output
     base_items = _fallback_generate_checklist(unit_type=unit_type, title=title, source_text="\n".join(candidate_lines))
-    return _postprocess_checklist_items(base_items, unit_type=unit_type, unit_title=title)
+    output = _postprocess_checklist_items(base_items, unit_type=unit_type, unit_title=title)
+    return (output, diagnostics) if return_diagnostics else output
 
 
 def _outline_hint_lines(items: list[dict[str, Any]]) -> list[str]:
@@ -7483,10 +7510,17 @@ def _fallback_generate_checklist(
     return [root_node]
 
 
-def _extract_pdf_heading_candidate_lines(source: Path, *, unit_type: WorkflowUnitType) -> list[str]:
+def _extract_pdf_heading_candidate_lines(
+    source: Path,
+    *,
+    unit_type: WorkflowUnitType,
+    return_diagnostics: bool = False,
+) -> list[str] | tuple[list[str], dict[str, Any]]:
     rows = _extract_pdf_layout_rows(source)
     output: list[str] = []
     seen: set[str] = set()
+    layout_added = 0
+    ocr_added = 0
     if rows:
         heading_rows = _select_pdf_heading_rows(rows, unit_type=unit_type)
         for row in heading_rows:
@@ -7498,6 +7532,7 @@ def _extract_pdf_heading_candidate_lines(source: Path, *, unit_type: WorkflowUni
                 continue
             seen.add(key)
             output.append(text)
+            layout_added += 1
     if unit_type == WorkflowUnitType.EXERCISE_SERIES:
         for text in _extract_pdf_ocr_heading_candidate_lines(source):
             key = _semantic_title_key(text) or _title_key(text)
@@ -7505,7 +7540,13 @@ def _extract_pdf_heading_candidate_lines(source: Path, *, unit_type: WorkflowUni
                 continue
             seen.add(key)
             output.append(text)
-    return output
+            ocr_added += 1
+    diagnostics = {
+        "heading_count": len(output),
+        "layout_heading_count": layout_added,
+        "ocr_heading_count": ocr_added,
+    }
+    return (output, diagnostics) if return_diagnostics else output
 
 
 def _extract_pdf_layout_rows(source: Path) -> list[dict[str, Any]]:
