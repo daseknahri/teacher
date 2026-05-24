@@ -4034,17 +4034,18 @@ def _build_notebooklm_checklist_prompt(
     if unit_type == WorkflowUnitType.EXERCISE_SERIES:
         prompt_parts = [
             "Lis ce PDF comme une serie d'exercices de mathematiques.",
-            "Retourne une liste MINIMALE des headlines utiles.",
+            "Retourne uniquement le titre de la serie comme racine puis les headlines explicites des exercices visibles.",
             "Regles:",
             "- Garde le titre complet de la serie comme racine.",
             "- Ensuite, garde uniquement les headlines explicites des exercices visibles dans le document.",
-            "- Pour chaque exercice, garde seulement le headline minimal avec son numero visible, par exemple: Exercice 1, Exercice 2, Exercice 3.",
+            "- Pour chaque exercice, preserve le headline visible exact, y compris le suffixe ou sous-titre s'il fait partie du titre affiche.",
             "- N'ajoute pas de sous-noeud sous un exercice.",
             "- N'inclus pas d'activites, definitions, remarques, exemples, consignes internes, calculs, corrections, sous-questions ou paragraphes.",
             "- N'inclus pas de doublons, meme si le meme titre apparait deux fois dans le document.",
             "- Garde l'ordre exact du document.",
             "- Si un titre est coupe sur deux lignes, reconstitue-le.",
             "- N'invente pas de nouveaux titres.",
+            "- Si le document montre des titres comme Exercice 2B.3 - POLYNESIE 2001, Exercice 2B.4 - AFRIQUE DU NORD 2001, garde ces titres exacts.",
             "Format attendu:",
             "- une ligne par titre",
             "- chaque ligne commence par -",
@@ -4124,11 +4125,12 @@ def _build_notebooklm_checklist_review_prompt_for_exercise_series() -> str:
             "Regles:",
             "- Garde le titre complet de la serie comme racine.",
             "- Garde uniquement les headlines explicites des exercices visibles.",
-            "- Pour chaque exercice, garde seulement le headline minimal avec son numero visible, par exemple: Exercice 1.",
+            "- Pour chaque exercice, preserve le headline visible exact, y compris tout suffixe, sous-code, lieu ou annee qui fait partie du titre affiche.",
             "- Ne garde pas de sous-noeud sous un exercice.",
             "- Supprime les doublons.",
             "- Exclue activites, definitions, remarques, exemples, consignes internes, sous-questions et paragraphes.",
             "- N'ajoute aucun titre implicite et ne reformule pas les titres.",
+            "- Si un exercice apparait comme Exercice 2B.3 - POLYNESIE 2001, ne le reduis pas a Exercice 2B.3.",
             "Format attendu:",
             "- une ligne par titre",
             "- chaque ligne commence par -",
@@ -5744,6 +5746,19 @@ def _select_best_notebooklm_outline_candidate(
         unit_title=unit_title,
     )
     for name, items in candidates[1:]:
+        if unit_type == WorkflowUnitType.EXERCISE_SERIES and _exercise_series_outline_has_richer_exact_titles(
+            items,
+            best_items,
+        ):
+            best_name = name
+            best_items = items
+            best_score = _score_notebooklm_outline_candidate(
+                best_items,
+                source_text=source_text,
+                unit_type=unit_type,
+                unit_title=unit_title,
+            )
+            continue
         score = _score_notebooklm_outline_candidate(
             items,
             source_text=source_text,

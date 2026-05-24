@@ -3074,7 +3074,7 @@ def test_normalize_exercise_series_headline_title_keeps_compound_exercise_names(
     ) == "Exercice 1"
 
 
-def test_notebooklm_prompt_for_exercise_series_is_minimal():
+def test_notebooklm_prompt_for_exercise_series_preserves_exact_visible_exercise_titles():
     from app.models import WorkflowUnitType
     from app.services import workflow_generation
 
@@ -3085,8 +3085,9 @@ def test_notebooklm_prompt_for_exercise_series_is_minimal():
         session_count=6,
     )
 
-    assert "Retourne une liste MINIMALE des headlines utiles." in prompt
+    assert "Retourne uniquement le titre de la serie comme racine puis les headlines explicites des exercices visibles." in prompt
     assert "garde uniquement les headlines explicites des exercices visibles" in prompt.lower()
+    assert "preserve le headline visible exact" in prompt.lower()
     assert "N'ajoute pas de sous-noeud sous un exercice." in prompt
     assert "N'inclus pas d'activites, definitions, remarques, exemples" in prompt
     assert "A l'interieur de chaque concept ou section" not in prompt
@@ -3525,6 +3526,49 @@ def test_generate_unit_checklist_package_repairs_weaker_exact_exercise_titles_wi
         "Exercice 2B.4 - AFRIQUE DU NORD 2001",
     ]
     assert package["raw_provider_response"]["selected_structure_source"] == "pdf_layout_seed"
+
+
+def test_select_best_notebooklm_outline_candidate_prefers_richer_exercise_titles():
+    from app.models import WorkflowUnitType
+    from app.services import workflow_generation
+
+    primary_items = [
+        {
+            "title": "Serie",
+            "kind": "section",
+            "children": [
+                {"title": "Exercice 1", "kind": "exercise", "children": []},
+                {"title": "Exercice 2", "kind": "exercise", "children": []},
+                {"title": "Exercice 2B.3", "kind": "exercise", "children": []},
+                {"title": "Exercice 2B.4", "kind": "exercise", "children": []},
+            ],
+        }
+    ]
+    review_items = [
+        {
+            "title": "Serie",
+            "kind": "section",
+            "children": [
+                {"title": "Exercice 1", "kind": "exercise", "children": []},
+                {"title": "Exercice 2", "kind": "exercise", "children": []},
+                {"title": "Exercice 2B.3 - POLYNESIE 2001", "kind": "exercise", "children": []},
+                {"title": "Exercice 2B.4 - AFRIQUE DU NORD 2001", "kind": "exercise", "children": []},
+            ],
+        }
+    ]
+
+    name, items = workflow_generation._select_best_notebooklm_outline_candidate(
+        [
+            ("primary", primary_items),
+            ("completeness_review", review_items),
+        ],
+        source_text="",
+        unit_type=WorkflowUnitType.EXERCISE_SERIES,
+        unit_title="Serie",
+    )
+
+    assert name == "completeness_review"
+    assert items == review_items
 
 
 def test_pdf_text_extraction_preserves_line_break_structure():
