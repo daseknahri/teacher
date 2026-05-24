@@ -3115,6 +3115,58 @@ function _buildAssistantPrefillFromPlaybook(entry, sectionPlan, fallbackTitle = 
   };
 }
 
+function _buildAssistantPrefillFromChecklistRow(item, rowPath = [], unitType = '') {
+  const title = String(item?.title || '').trim();
+  const itemKind = String(item?.item_kind || 'other').trim().toLowerCase();
+  const noteText = String(item?.teacher_note || '').trim();
+  const attachmentCount = Array.isArray(item?.attachments) ? item.attachments.length : 0;
+  const sectionPath = Array.isArray(rowPath) && rowPath.length ? rowPath : (title ? [title] : []);
+  const sectionTitle = sectionPath[sectionPath.length - 1] || title || 'Checklist row';
+
+  let assistantAction = 'explain_section';
+  let teacherRequest = `Help me prepare this checklist row: ${sectionTitle}.`;
+
+  if (itemKind === 'definition') {
+    assistantAction = 'simplify_explanation';
+    teacherRequest = `Explain this definition clearly for students, give one short example, and mention one common misunderstanding for ${sectionTitle}.`;
+  } else if (itemKind === 'property') {
+    assistantAction = 'explain_section';
+    teacherRequest = `Explain this rule or property, when to use it, and give one short worked example for ${sectionTitle}.`;
+  } else if (itemKind === 'example') {
+    assistantAction = 'generate_guided_examples';
+    teacherRequest = `Turn this example into a guided classroom explanation with the steps students should notice for ${sectionTitle}.`;
+  } else if (itemKind === 'exercise') {
+    assistantAction = unitType === 'exam_correction' ? 'generate_remediation' : 'generate_easier_practice';
+    teacherRequest = unitType === 'exam_correction'
+      ? `Help me correct this exam exercise, identify common mistakes, and suggest remediation for ${sectionTitle}.`
+      : `Help me scaffold this exercise, suggest hints, the expected method, and a slightly easier practice variant for ${sectionTitle}.`;
+  } else if (itemKind === 'correction') {
+    assistantAction = 'generate_remediation';
+    teacherRequest = `Prepare correction guidance, common mistakes, and remediation support for ${sectionTitle}.`;
+  } else if (itemKind === 'supervision') {
+    assistantAction = 'generate_teacher_notes';
+    teacherRequest = `Create short teacher supervision notes and points to watch for ${sectionTitle}.`;
+  } else if (itemKind === 'chapter' || itemKind === 'section' || itemKind === 'subsection') {
+    assistantAction = 'explain_section';
+    teacherRequest = `Help me explain this section clearly and choose the best progression to teach ${sectionTitle}.`;
+  }
+
+  const requestParts = [
+    teacherRequest,
+    sectionPath.length ? `Checklist path: ${sectionPath.join(' > ')}.` : '',
+    noteText ? `Teacher note: ${noteText}` : '',
+    attachmentCount ? `The row also has ${attachmentCount} attached screenshot${attachmentCount === 1 ? '' : 's'} that I am using while teaching.` : '',
+    'Keep the answer focused on this exact row and reuse the saved unit structure.',
+  ].filter(Boolean);
+
+  return {
+    sectionTitle,
+    sectionPath,
+    teacherRequest: requestParts.join(' '),
+    assistantAction,
+  };
+}
+
 function _renderPreviewNextFocusActions(sectionPlan, playbookEntry, fallbackTitle = '', { classId = null, unitId = null } = {}) {
   const sectionTitle = String(sectionPlan?.section_title || fallbackTitle || '').trim();
   if (!sectionTitle) return '';
@@ -5937,25 +5989,12 @@ function _bindWorkflowEvents(el, classId) {
             return;
           }
           const rowPath = _buildChecklistItemPath(items, itemId);
-          const noteText = String(item.teacher_note || '').trim();
-          const attachmentCount = Array.isArray(item.attachments) ? item.attachments.length : 0;
-          const requestParts = [
-            `Help me work on this checklist row: ${String(item.title || '').trim()}.`,
-            rowPath.length ? `Checklist path: ${rowPath.join(' > ')}.` : '',
-            noteText ? `Teacher note: ${noteText}` : '',
-            attachmentCount ? `The row also has ${attachmentCount} attached screenshot${attachmentCount === 1 ? '' : 's'} that I am using while teaching.` : '',
-            'Use the saved unit structure and keep the answer focused on this exact row.',
-          ].filter(Boolean);
+          const prefill = _buildAssistantPrefillFromChecklistRow(item, rowPath, String(unit?.unit_type || '').trim().toLowerCase());
           _openUnitAssistantModal({
             classId,
             unit,
             blueprint: state.item,
-            initial: {
-              sectionTitle: rowPath[rowPath.length - 1] || String(item.title || '').trim(),
-              sectionPath: rowPath,
-              teacherRequest: requestParts.join(' '),
-              assistantAction: 'explain_section',
-            },
+            initial: prefill,
           });
         } catch (err) {
           showToast(String(err?.message || 'Failed to open row guidance.'), 'error');
