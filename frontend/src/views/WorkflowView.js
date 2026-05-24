@@ -3487,7 +3487,7 @@ function _render(el, classId) {
   const isLinkedExamUnit = Boolean(unit?.exam_id);
   const isExamWorkflowUnit = unit?.unit_type === 'exam';
   const isExamCorrectionUnit = unit?.unit_type === 'exam_correction';
-  const showChecklistAttachments = isLinkedExamUnit;
+  const showChecklistAttachments = isLinkedExamUnit || unit?.unit_type === 'exercise_series';
   const examResultsCount = Number(unit?.exam_results_count || 0) || 0;
   const examResultsAverage = unit?.exam_results_average_score != null ? Number(unit.exam_results_average_score) : null;
   const examResultsPassed = Number(unit?.exam_results_passed_count || 0) || 0;

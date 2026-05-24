@@ -6564,6 +6564,73 @@ def test_linked_exam_workflow_checklist_item_accepts_image_attachment(client):
     assert exercise_1_after_delete["attachments"] == []
 
 
+def test_exercise_series_checklist_item_accepts_image_attachment(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": f"Exercise Attachment {uuid.uuid4().hex[:6]}"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={"unit_type": "exercise_series", "title": "Serie d'exercices", "source_text": "Exercice 1"},
+    )
+    assert unit_resp.status_code == 201
+    unit = unit_resp.json()
+
+    workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_resp.status_code == 200
+    active_unit = workspace_resp.json()["active_unit"]
+    root_id = int(active_unit["checklist"][0]["id"])
+
+    add_item_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit['id']}/items",
+        headers=headers,
+        json={"title": "Exercice 1", "item_kind": "exercise", "parent_item_id": root_id},
+    )
+    assert add_item_resp.status_code == 201
+    exercise_1_id = int(add_item_resp.json()["id"])
+
+    upload_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit['id']}/items/{exercise_1_id}/attachments",
+        headers=headers,
+        files={"file": ("exercise-1.png", _build_tiny_png(), "image/png")},
+    )
+    assert upload_resp.status_code == 201
+    attachment = upload_resp.json()
+    assert attachment["item_id"] == exercise_1_id
+    assert attachment["file_content_type"] == "image/png"
+
+    workspace_after_upload = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_after_upload.status_code == 200
+    exercise_1_after = next(
+        row for row in workspace_after_upload.json()["active_unit"]["checklist"][0]["children"] if row["title"] == "Exercice 1"
+    )
+    assert len(exercise_1_after["attachments"]) == 1
+    assert exercise_1_after["attachments"][0]["id"] == attachment["id"]
+
+    download_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit['id']}/items/{exercise_1_id}/attachments/{attachment['id']}",
+        headers=headers,
+    )
+    assert download_resp.status_code == 200
+    assert download_resp.headers["content-type"].startswith("image/png")
+
+    delete_resp = client.delete(
+        f"/workflow/classes/{class_id}/units/{unit['id']}/items/{exercise_1_id}/attachments/{attachment['id']}",
+        headers=headers,
+    )
+    assert delete_resp.status_code == 200
+    assert int(delete_resp.json()["deleted_attachment_id"]) == int(attachment["id"])
+
+    workspace_after_delete = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_after_delete.status_code == 200
+    exercise_1_after_delete = next(
+        row for row in workspace_after_delete.json()["active_unit"]["checklist"][0]["children"] if row["title"] == "Exercice 1"
+    )
+    assert exercise_1_after_delete["attachments"] == []
+
+
 def test_import_students_from_notescc_list_format(client):
     headers = _auth_headers(client)
     class_resp = client.post("/classes", json={"name": "NotesCC List Class"}, headers=headers)
