@@ -217,3 +217,4 @@ def ensure_schema_compatibility() -> None:
             conn.execute(text("UPDATE workflow_prepared_sections SET benchmark_status = 'pending' WHERE benchmark_status IS NULL"))
 
         _ensure_column("workflow_checklist_items", "teacher_note", "TEXT NULL")
+        _ensure_column("workflow_unit_assistant_artifacts", "checklist_item_id", "INTEGER NULL")

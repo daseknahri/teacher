@@ -798,6 +798,7 @@ class WorkflowUnitAssistantOut(BaseModel):
 
 class WorkflowUnitAssistantArtifactSaveIn(BaseModel):
     artifact_kind: str = Field(pattern="^(teacher_notes|guided_practice|quick_quiz_draft)$")
+    checklist_item_id: int | None = None
     provider: str = "notebooklm"
     model: str | None = None
     section_title: str | None = None
@@ -813,6 +814,7 @@ class WorkflowUnitAssistantArtifactSaveIn(BaseModel):
 class WorkflowUnitAssistantArtifactOut(BaseModel):
     id: int
     unit_id: int
+    checklist_item_id: int | None = None
     artifact_kind: str
     provider: str
     model: str | None = None

@@ -443,6 +443,11 @@ class WorkflowUnitAssistantArtifact(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     unit_id: Mapped[int] = mapped_column(ForeignKey("workflow_units.id", ondelete="CASCADE"), index=True)
+    checklist_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("workflow_checklist_items.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
     artifact_kind: Mapped[str] = mapped_column(String(64), index=True)
     provider: Mapped[str] = mapped_column(String(64), default="notebooklm")
     model: Mapped[str | None] = mapped_column(String(128), nullable=True)

@@ -3011,6 +3011,7 @@ def _serialize_unit_assistant_artifact(row: WorkflowUnitAssistantArtifact) -> Wo
     return WorkflowUnitAssistantArtifactOut(
         id=int(row.id),
         unit_id=int(row.unit_id),
+        checklist_item_id=int(row.checklist_item_id) if row.checklist_item_id is not None else None,
         artifact_kind=str(row.artifact_kind or "teacher_notes"),
         provider=str(row.provider or "notebooklm"),
         model=row.model,
@@ -7005,8 +7006,14 @@ def save_workflow_unit_assistant_artifact(
     unit = db.get(WorkflowUnit, int(unit_id))
     if unit is None or int(unit.class_id) != int(class_id):
         raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    checklist_item_id = int(payload.checklist_item_id) if payload.checklist_item_id is not None else None
+    if checklist_item_id is not None:
+        item = db.get(WorkflowChecklistItem, checklist_item_id)
+        if item is None or int(item.unit_id) != int(unit_id):
+            raise HTTPException(status_code=404, detail="Checklist item not found for this workflow unit.")
     artifact = WorkflowUnitAssistantArtifact(
         unit_id=int(unit_id),
+        checklist_item_id=checklist_item_id,
         artifact_kind=str(payload.artifact_kind or "teacher_notes").strip().lower(),
         provider=str(payload.provider or "notebooklm").strip() or "notebooklm",
         model=str(payload.model or "").strip() or None,
@@ -7038,6 +7045,7 @@ def save_workflow_unit_assistant_artifact(
         class_id=class_id,
         details={
             "artifact_kind": artifact.artifact_kind,
+            "checklist_item_id": artifact.checklist_item_id,
             "section_title": artifact.section_title,
             "action": artifact.action,
         },

@@ -6752,6 +6752,60 @@ def test_checklist_item_teacher_note_persists_and_updates(client):
     assert clear_resp.json()["teacher_note"] is None
 
 
+def test_unit_assistant_artifact_can_target_checklist_row(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": f"Artifact Row {uuid.uuid4().hex[:6]}"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={"unit_type": "chapter", "title": "Chapitre guidance", "source_text": "I- Produit"},
+    )
+    assert unit_resp.status_code == 201
+    unit = unit_resp.json()
+
+    workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_resp.status_code == 200
+    root_id = int(workspace_resp.json()["active_unit"]["checklist"][0]["id"])
+
+    add_item_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit['id']}/items",
+        headers=headers,
+        json={"title": "I- Produit", "item_kind": "section", "parent_item_id": root_id},
+    )
+    assert add_item_resp.status_code == 201
+    item_id = int(add_item_resp.json()["id"])
+
+    save_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit['id']}/assistant/artifacts",
+        headers=headers,
+        json={
+            "artifact_kind": "teacher_notes",
+            "checklist_item_id": item_id,
+            "provider": "notebooklm",
+            "section_title": "I- Produit",
+            "section_path": ["Chapitre guidance", "I- Produit"],
+            "action": "explain_section",
+            "title": "Guidance produit",
+            "answer_rows": ["Expliquer le sens du produit."],
+        },
+    )
+    assert save_resp.status_code == 200
+    artifact = save_resp.json()
+    assert int(artifact["checklist_item_id"]) == item_id
+
+    list_resp = client.get(
+        f"/workflow/classes/{class_id}/units/{unit['id']}/assistant/artifacts",
+        headers=headers,
+    )
+    assert list_resp.status_code == 200
+    rows = list_resp.json()
+    saved = next(row for row in rows if int(row["id"]) == int(artifact["id"]))
+    assert int(saved["checklist_item_id"]) == item_id
+
+
 def test_import_students_from_notescc_list_format(client):
     headers = _auth_headers(client)
     class_resp = client.post("/classes", json={"name": "NotesCC List Class"}, headers=headers)

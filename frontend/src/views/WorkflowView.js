@@ -1412,6 +1412,7 @@ function _openUnitAssistantModal({ classId, unit, blueprint, initial = {} }) {
   const normalizedInitialTitle = String(initial?.sectionTitle || '').trim().toLowerCase();
   const normalizedInitialAction = String(initial?.assistantAction || '').trim().toLowerCase();
   const initialTeacherRequest = String(initial?.teacherRequest || '').trim();
+  const initialChecklistItemId = Number(initial?.checklistItemId || 0) || null;
   const initialSection = sections.find(section => {
     const sectionTitle = String(section?.section_title || '').trim().toLowerCase();
     if (normalizedInitialTitle && sectionTitle === normalizedInitialTitle) return true;
@@ -1428,6 +1429,7 @@ function _openUnitAssistantModal({ classId, unit, blueprint, initial = {} }) {
     sectionKey: String(initialSection?.key || '__whole_unit__'),
     action: initialActions.includes(normalizedInitialAction) ? normalizedInitialAction : String(initialActions[0] || 'explain_section'),
     teacherRequest: initialTeacherRequest,
+    checklistItemId: initialChecklistItemId,
     loading: false,
     result: null,
     error: '',
@@ -1447,6 +1449,7 @@ function _openUnitAssistantModal({ classId, unit, blueprint, initial = {} }) {
             <p class="text-[12px] text-slate-500 mt-1">
               Use the saved NotebookLM unit brain to get practical help for teaching this topic.
             </p>
+            ${state.checklistItemId ? '<p class="text-[11px] text-sky-600 mt-1">This request is anchored to one checklist row.</p>' : ''}
           </div>
           <button id="unit-assistant-close-top" class="btn btn-ghost btn-sm">Close</button>
         </div>
@@ -1571,6 +1574,7 @@ function _openUnitAssistantModal({ classId, unit, blueprint, initial = {} }) {
       try {
         const payload = {
           artifact_kind: artifactKind,
+          checklist_item_id: state.checklistItemId,
           provider: String(result?.provider || 'notebooklm').trim() || 'notebooklm',
           model: String(result?.model || '').trim() || null,
           section_title: result?.section_title || null,
@@ -1603,19 +1607,22 @@ function _openUnitAssistantModal({ classId, unit, blueprint, initial = {} }) {
     const section = getSection();
     const sectionKey = String(section?.section_title || '').trim().toLowerCase();
     const filtered = state.savedArtifacts.filter(item => {
+      if (state.checklistItemId) {
+        return Number(item?.checklist_item_id || 0) === Number(state.checklistItemId);
+      }
       const itemSection = String(item?.section_title || '').trim().toLowerCase();
       if (sectionKey) return itemSection === sectionKey;
       return true;
     });
     if (!filtered.length) {
-      savedWrap.innerHTML = '<p class="text-[12px] text-slate-500">No saved guidance yet for this section. Save a good NotebookLM result here to start building your teaching library.</p>';
+      savedWrap.innerHTML = `<p class="text-[12px] text-slate-500">${state.checklistItemId ? 'No saved guidance yet for this checklist row. Save a good NotebookLM result here to reuse it later from the same row.' : 'No saved guidance yet for this section. Save a good NotebookLM result here to start building your teaching library.'}</p>`;
       return;
     }
     savedWrap.innerHTML = `
       <div class="flex items-center justify-between gap-3 mb-3">
         <div>
           <h3 class="text-[15px] font-semibold text-slate-800">Saved guidance</h3>
-          <p class="text-[12px] text-slate-500">Reusable section help you decided to keep.</p>
+          <p class="text-[12px] text-slate-500">${state.checklistItemId ? 'Reusable help saved for this exact checklist row.' : 'Reusable section help you decided to keep.'}</p>
         </div>
       </div>
       <div class="space-y-3">
@@ -5994,7 +6001,10 @@ function _bindWorkflowEvents(el, classId) {
             classId,
             unit,
             blueprint: state.item,
-            initial: prefill,
+            initial: {
+              ...prefill,
+              checklistItemId: itemId,
+            },
           });
         } catch (err) {
           showToast(String(err?.message || 'Failed to open row guidance.'), 'error');
