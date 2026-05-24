@@ -6403,6 +6403,92 @@ def test_linked_exam_workflow_exposes_exam_results_summary(client):
     assert unit["exam_results_passed_count"] == 2
 
 
+def test_linked_exam_workflow_uses_exam_paper_outline(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": f"Exam Outline {uuid.uuid4().hex[:6]}"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    outline = "\n".join([
+        "Exercice 1",
+        "  a) Calcul direct",
+        "  b) Justifier la methode",
+        "Exercice 2",
+        "Probleme",
+    ])
+    exam_resp = client.post(
+        f"/classes/{class_id}/exams",
+        headers=headers,
+        json={
+            "title": "CC7",
+            "exam_date": "2026-07-15",
+            "max_score": 20,
+            "weight": 1,
+            "paper_outline_text": outline,
+        },
+    )
+    assert exam_resp.status_code == 201
+    exam_id = int(exam_resp.json()["id"])
+
+    linked_resp = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam"},
+    )
+    assert linked_resp.status_code == 200
+    unit = linked_resp.json()["unit"]
+    assert unit["checklist"]
+    root = unit["checklist"][0]
+    assert root["title"] == "CC7"
+    child_titles = [row["title"] for row in root["children"]]
+    assert "Exercice 1" in child_titles
+    assert "Exercice 2" in child_titles
+    exercise_1 = next(row for row in root["children"] if row["title"] == "Exercice 1")
+    exercise_1_child_titles = [row["title"] for row in exercise_1["children"]]
+    assert "Calcul direct" in exercise_1_child_titles
+    assert "Justifier la methode" in exercise_1_child_titles
+
+
+def test_linked_exam_correction_workflow_uses_exam_outline_when_no_exam_workflow_exists(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": f"Exam Correction Outline {uuid.uuid4().hex[:6]}"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    outline = "\n".join([
+        "Exercice 1",
+        "Exercice 2",
+    ])
+    exam_resp = client.post(
+        f"/classes/{class_id}/exams",
+        headers=headers,
+        json={
+            "title": "CC8",
+            "exam_date": "2026-07-22",
+            "max_score": 20,
+            "weight": 1,
+            "paper_outline_text": outline,
+        },
+    )
+    assert exam_resp.status_code == 201
+    exam_id = int(exam_resp.json()["id"])
+
+    correction_resp = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam_correction"},
+    )
+    assert correction_resp.status_code == 200
+    unit = correction_resp.json()["unit"]
+    root = unit["checklist"][0]
+    child_titles = [row["title"] for row in root["children"]]
+    assert "Exercice 1" in child_titles
+    assert "Exercice 2" in child_titles
+    assert "Corrige detaille" in child_titles
+    assert "Erreurs frequentes" in child_titles
+    assert "Remediation" in child_titles
+
+
 def test_import_students_from_notescc_list_format(client):
     headers = _auth_headers(client)
     class_resp = client.post("/classes", json={"name": "NotesCC List Class"}, headers=headers)

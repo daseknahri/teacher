@@ -83,6 +83,7 @@ def ensure_schema_compatibility() -> None:
         _ensure_column("workflow_units", "created_by_user_id", "INTEGER NULL")
         _ensure_column("workflow_units", "closed_at", f"{datetime_type} NULL")
         _ensure_column("workflow_units", "exam_id", "INTEGER NULL")
+        _ensure_column("exams", "paper_outline_text", "TEXT NULL")
         if "workflow_units" in table_names:
             conn.execute(text("UPDATE workflow_units SET order_index = 0 WHERE order_index IS NULL"))
 

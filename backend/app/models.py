@@ -477,6 +477,7 @@ class Exam(Base):
     exam_date: Mapped[date] = mapped_column(Date)
     max_score: Mapped[float] = mapped_column(Float)
     weight: Mapped[float] = mapped_column(Float, default=1.0)
+    paper_outline_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     classroom: Mapped["Classroom"] = relationship(back_populates="exams")
