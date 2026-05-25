@@ -193,6 +193,10 @@ NUMBERED_ROW_START_PATTERN = re.compile(r"(?<!\S)\d+(?:\.\d+)+(?:[)\].:-])?(?:\s
 SLUG_LIKE_TITLE_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+){2,}$", re.IGNORECASE)
 OUTLINE_BULLET_PREFIX_PATTERN = re.compile(r"^(?:[-*•]\s+|[a-zA-Z]\)\s+|\d+[.)]\s+|[ivxlcdmIVXLCDM]+[.)]\s+)")
 logger = logging.getLogger("teacher_progress.workflow")
+EXAM_TITLE_KEYWORD_PATTERN = re.compile(
+    r"\b(examen|exam|devoir(?:\s+surveille)?|devoir\s+surveillé|controle|contr[oô]le|evaluation|évaluation|ds)\b",
+    re.IGNORECASE,
+)
 
 
 def _utc_now_naive() -> datetime:
@@ -1654,6 +1658,64 @@ def _split_session_content_rows(text: str) -> list[str]:
 def _title_looks_like_slug(value: str | None) -> bool:
     text = str(value or "").strip()
     return bool(text and SLUG_LIKE_TITLE_PATTERN.match(text))
+
+
+def _normalize_exam_title_candidate(value: str | None) -> str:
+    text = " ".join(str(value or "").replace("_", " ").split()).strip(" :.-")
+    if not text:
+        return ""
+    return re.sub(r"\s+", " ", text).strip()[:255]
+
+
+def _title_needs_exam_inference(value: str | None, *, file_name: str | None = None) -> bool:
+    text = _normalize_exam_title_candidate(value)
+    if not text:
+        return True
+    lowered = text.lower()
+    if _title_looks_like_slug(text):
+        return True
+    if lowered in {"exam", "examen", "devoir", "controle", "contrôle", "evaluation", "évaluation", "ds", "supervision d'examen"}:
+        return True
+    file_stem = Path(str(file_name or "")).stem.strip()
+    if file_stem and _normalize_exam_title_candidate(file_stem).lower() == lowered:
+        return True
+    return False
+
+
+def _infer_exam_title_from_source_text(
+    extracted_text: str | None,
+    *,
+    fallback_title: str | None = None,
+    file_name: str | None = None,
+) -> str | None:
+    lines = [
+        _normalize_exam_title_candidate(row)
+        for row in str(extracted_text or "").splitlines()
+        if _normalize_exam_title_candidate(row)
+    ]
+    lines = [row for row in lines if len(row) >= 3][:20]
+    if not lines:
+        return None
+
+    for index, line in enumerate(lines):
+        if not EXAM_TITLE_KEYWORD_PATTERN.search(line):
+            continue
+        candidate = line
+        if len(candidate) <= 18 and index + 1 < len(lines):
+            next_line = lines[index + 1]
+            if next_line and len(next_line) <= 80 and not EXAM_TITLE_KEYWORD_PATTERN.search(next_line):
+                candidate = f"{candidate} - {next_line}"
+        candidate = _normalize_exam_title_candidate(candidate)
+        if candidate:
+            return candidate
+
+    fallback = _normalize_exam_title_candidate(fallback_title)
+    if fallback and not _title_needs_exam_inference(fallback, file_name=file_name):
+        return fallback
+    file_stem = _normalize_exam_title_candidate(Path(str(file_name or "")).stem if file_name else "")
+    if EXAM_TITLE_KEYWORD_PATTERN.search(file_stem):
+        return file_stem
+    return None
 
 
 def _first_meaningful_generated_title(nodes: list[dict] | None) -> str | None:
@@ -3382,6 +3444,14 @@ def _create_unit_with_generated_checklist(
             extracted_text = extract_text_from_document(str(target), source_text)
             if not document_hash:
                 document_hash = build_document_hash(extracted_text)
+            if unit_type == WorkflowUnitType.EXAM and _title_needs_exam_inference(unit.title, file_name=file.filename):
+                inferred_exam_title = _infer_exam_title_from_source_text(
+                    extracted_text,
+                    fallback_title=unit.title,
+                    file_name=file.filename,
+                )
+                if inferred_exam_title:
+                    unit.title = inferred_exam_title[:255]
 
         generated = generate_unit_checklist(
             unit_type=unit_type,

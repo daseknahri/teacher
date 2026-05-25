@@ -5974,6 +5974,53 @@ def test_workflow_start_unit_from_pdf_generates_todo_tree(client, monkeypatch):
     assert any(int(node.get("depth", 0)) > 0 for node in flat)
 
 
+def test_infer_exam_title_from_source_text_prefers_visible_exam_heading():
+    from app.routers import workflow as workflow_router
+
+    extracted_text = "\n".join(
+        [
+            "Devoir surveille N 2 : Fractions",
+            "Classe : 3AC",
+            "Exercice 1",
+        ]
+    )
+
+    title = workflow_router._infer_exam_title_from_source_text(
+        extracted_text,
+        fallback_title="exam-fractions-2026",
+        file_name="exam-fractions-2026.pdf",
+    )
+
+    assert title == "Devoir surveille N 2 : Fractions"
+
+
+def test_workflow_start_exam_unit_from_pdf_infers_better_title(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Workflow Exam Title", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    pdf_bytes = _build_pdf_file(
+        [
+            "Devoir surveille N 2 : Fractions",
+            "Classe : 3AC",
+            "Exercice 1",
+            "Exercice 2",
+        ]
+    )
+    start_unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={"unit_type": "exam", "title": "exam-fractions-2026"},
+        files={"file": ("exam-fractions-2026.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert start_unit_resp.status_code == 201
+    unit = start_unit_resp.json()
+    assert unit["unit_type"] == "exam"
+    assert unit["title"] == "Devoir surveille N 2 : Fractions"
+    assert unit["checklist"]
+
+
 def test_workflow_start_unit_rejects_non_pdf_document(client):
     headers = _auth_headers(client)
     class_resp = client.post("/classes", json={"name": "Workflow PDF Strict", "subject": "Math"}, headers=headers)
