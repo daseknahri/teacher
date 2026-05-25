@@ -1257,7 +1257,7 @@ def _build_linked_exam_generated_payload(
         ]
 
     return {
-        "source": "paper_outline" if str(getattr(exam, "paper_outline_text", "") or "").strip() else "template",
+        "source": "template",
         "status": "ready",
         "items": nodes,
         "provider_context": {

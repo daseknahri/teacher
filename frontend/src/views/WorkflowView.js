@@ -3723,8 +3723,12 @@ function _render(el, classId) {
                       ${unit.exam_id ? `<span class="badge badge-gray">Linked exam: ${_escapeHtml(unit.exam_title || `#${unit.exam_id}`)}</span>` : ''}
                       ${unit.exam_id ? `<span class="badge ${examResultsCount ? 'badge-green' : 'badge-amber'}">${examResultsCount ? `${examResultsCount} result${examResultsCount === 1 ? '' : 's'} imported` : 'No results imported yet'}</span>` : ''}
                       ${unit.exam_id && examResultsAverage != null ? `<span class="badge badge-gray">Avg ${_escapeHtml(fmtScore(examResultsAverage))}${Number.isFinite(examResultsPassed) ? ` • ${examResultsPassed} passed` : ''}</span>` : ''}
-                      ${isAnyExamUnit || isLinkedExamUnit
-                        ? '<span class="badge badge-blue">Template checklist</span>'
+                      ${isExamWorkflowUnit
+                        ? '<span class="badge badge-blue">Supervision checklist</span>'
+                        : isExamCorrectionUnit
+                          ? '<span class="badge badge-blue">Correction checklist</span>'
+                          : isLinkedExamUnit
+                            ? '<span class="badge badge-blue">Template checklist</span>'
                         : `<span class="badge ${extractionBadgeClass}">Extraction ${_escapeHtml(extractionLabel)}</span>`}
                       ${notebooklmReady ? '<span class="badge badge-green">NotebookLM ready</span>' : ''}
                       ${!isAnyExamUnit && !isLinkedExamUnit && extractionMethod?.badgeLabel ? `<span class="badge ${_escapeHtml(extractionMethod.badgeClass || 'badge-gray')}">${_escapeHtml(extractionMethod.badgeLabel)}</span>` : ''}
