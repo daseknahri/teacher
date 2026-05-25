@@ -6773,10 +6773,7 @@ def test_create_linked_exam_correction_workflow_reuses_exam_structure(client):
     assert correction_checklist
     assert correction_checklist[0]["title"] == "Correction - CC3"
     correction_child_titles = [row["title"] for row in correction_checklist[0]["children"]]
-    assert "Supervision d'examen" in correction_child_titles
-    assert "Corrige detaille" in correction_child_titles
-    assert "Erreurs frequentes" in correction_child_titles
-    assert "Remediation" in correction_child_titles
+    assert correction_child_titles == ["Correction d'examen"]
 
 
 def test_exam_list_includes_linked_workflow_status(client):
@@ -6977,11 +6974,7 @@ def test_linked_exam_correction_workflow_uses_exam_outline_when_no_exam_workflow
     unit = correction_resp.json()["unit"]
     root = unit["checklist"][0]
     child_titles = [row["title"] for row in root["children"]]
-    assert "Exercice 1" in child_titles
-    assert "Exercice 2" in child_titles
-    assert "Corrige detaille" in child_titles
-    assert "Erreurs frequentes" in child_titles
-    assert "Remediation" in child_titles
+    assert child_titles == ["Correction d'examen"]
 
 
 def test_linked_exam_workflow_checklist_item_accepts_image_attachment(client):

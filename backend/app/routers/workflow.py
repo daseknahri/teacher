@@ -1242,73 +1242,19 @@ def _build_linked_exam_generated_payload(
             }
         ]
     else:
-        source_exam_unit = db.scalar(
-            select(WorkflowUnit)
-            .where(
-                WorkflowUnit.class_id == class_id,
-                WorkflowUnit.exam_id == exam.id,
-                WorkflowUnit.unit_type == WorkflowUnitType.EXAM,
-            )
-            .order_by(
-                case((WorkflowUnit.status == WorkflowUnitStatus.ACTIVE, 0), else_=1),
-                WorkflowUnit.created_at.desc(),
-                WorkflowUnit.id.desc(),
-            )
-        )
-        if source_exam_unit is not None:
-            source_items = db.scalars(
-                select(WorkflowChecklistItem)
-                .where(WorkflowChecklistItem.unit_id == source_exam_unit.id)
-                .order_by(WorkflowChecklistItem.position.asc())
-            ).all()
-            nodes = _workflow_nodes_from_checklist_rows(source_items, root_title=title)
-            if not nodes:
-                nodes = [{"title": title, "kind": WorkflowChecklistItemKind.CHAPTER.value, "children": []}]
-            root_node = nodes[0]
-            root_children = root_node.get("children") if isinstance(root_node.get("children"), list) else []
-            existing_titles = {
-                str(child.get("title") or "").strip().lower()
-                for child in root_children
-                if isinstance(child, dict)
-            }
-            for section_title in ["Corrige detaille", "Erreurs frequentes", "Remediation"]:
-                if section_title.lower() not in existing_titles:
-                    root_children.append({
-                        "title": section_title,
-                        "kind": WorkflowChecklistItemKind.SECTION.value,
-                        "children": [],
-                    })
-            root_node["children"] = root_children
-        else:
-            nodes = _build_exam_outline_nodes(root_title=title, outline_text=getattr(exam, "paper_outline_text", None))
-            if nodes:
-                root_node = nodes[0]
-                root_children = root_node.get("children") if isinstance(root_node.get("children"), list) else []
-                existing_titles = {
-                    str(child.get("title") or "").strip().lower()
-                    for child in root_children
-                    if isinstance(child, dict)
-                }
-                for section_title in ["Corrige detaille", "Erreurs frequentes", "Remediation"]:
-                    if section_title.lower() not in existing_titles:
-                        root_children.append({
-                            "title": section_title,
-                            "kind": WorkflowChecklistItemKind.SECTION.value,
-                            "children": [],
-                        })
-                root_node["children"] = root_children
-            else:
-                nodes = [
+        nodes = [
+            {
+                "title": title,
+                "kind": WorkflowChecklistItemKind.CHAPTER.value,
+                "children": [
                     {
-                        "title": title,
-                        "kind": WorkflowChecklistItemKind.CHAPTER.value,
-                        "children": [
-                            {"title": "Corrige detaille", "kind": WorkflowChecklistItemKind.SECTION.value, "children": []},
-                            {"title": "Erreurs frequentes", "kind": WorkflowChecklistItemKind.SECTION.value, "children": []},
-                            {"title": "Remediation", "kind": WorkflowChecklistItemKind.SECTION.value, "children": []},
-                        ],
+                        "title": "Correction d'examen",
+                        "kind": WorkflowChecklistItemKind.CORRECTION.value,
+                        "children": [],
                     }
-                ]
+                ],
+            }
+        ]
 
     return {
         "source": "paper_outline" if str(getattr(exam, "paper_outline_text", "") or "").strip() else "template",
