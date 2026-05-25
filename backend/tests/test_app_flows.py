@@ -6693,7 +6693,7 @@ def test_exam_excel_flow_and_exports(client):
 
 
 def test_create_linked_exam_workflow_unit_from_exam(client):
-    headers = _auth_headers(client)
+    headers = _unique_owner_headers(client)
     class_resp = client.post("/classes", json={"name": f"Exam WF {uuid.uuid4().hex[:6]}"}, headers=headers)
     assert class_resp.status_code == 201
     class_id = int(class_resp.json()["id"])
@@ -6720,10 +6720,7 @@ def test_create_linked_exam_workflow_unit_from_exam(client):
     assert body["unit"]["checklist"]
     assert body["unit"]["checklist"][0]["title"] == "CC2"
     exam_child_titles = [row["title"] for row in body["unit"]["checklist"][0]["children"]]
-    assert "Preparation du sujet" in exam_child_titles
-    assert "Sujet complet" in exam_child_titles
-    assert "Bareme et consignes" in exam_child_titles
-    assert "Corrige attendu" in exam_child_titles
+    assert exam_child_titles == ["Supervision d'examen"]
 
     linked_again = client.post(
         f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
@@ -6737,7 +6734,7 @@ def test_create_linked_exam_workflow_unit_from_exam(client):
 
 
 def test_create_linked_exam_correction_workflow_reuses_exam_structure(client):
-    headers = _auth_headers(client)
+    headers = _unique_owner_headers(client)
     class_resp = client.post("/classes", json={"name": f"Exam Correction {uuid.uuid4().hex[:6]}"}, headers=headers)
     assert class_resp.status_code == 201
     class_id = int(class_resp.json()["id"])
@@ -6776,8 +6773,7 @@ def test_create_linked_exam_correction_workflow_reuses_exam_structure(client):
     assert correction_checklist
     assert correction_checklist[0]["title"] == "Correction - CC3"
     correction_child_titles = [row["title"] for row in correction_checklist[0]["children"]]
-    assert "Sujet complet" in correction_child_titles
-    assert "Bareme et consignes" in correction_child_titles
+    assert "Supervision d'examen" in correction_child_titles
     assert "Corrige detaille" in correction_child_titles
     assert "Erreurs frequentes" in correction_child_titles
     assert "Remediation" in correction_child_titles
@@ -6814,7 +6810,7 @@ def test_exam_list_includes_linked_workflow_status(client):
 
 
 def test_create_linked_exam_workflow_reopens_closed_linked_unit(client):
-    headers = _auth_headers(client)
+    headers = _unique_owner_headers(client)
     class_resp = client.post("/classes", json={"name": f"Exam Reopen {uuid.uuid4().hex[:6]}"}, headers=headers)
     assert class_resp.status_code == 201
     class_id = int(class_resp.json()["id"])
@@ -6859,7 +6855,7 @@ def test_create_linked_exam_workflow_reopens_closed_linked_unit(client):
 
 
 def test_linked_exam_workflow_exposes_exam_results_summary(client):
-    headers = _auth_headers(client)
+    headers = _unique_owner_headers(client)
     class_resp = client.post("/classes", json={"name": f"Exam Results Link {uuid.uuid4().hex[:6]}"}, headers=headers)
     assert class_resp.status_code == 201
     class_id = int(class_resp.json()["id"])
@@ -6908,7 +6904,7 @@ def test_linked_exam_workflow_exposes_exam_results_summary(client):
 
 
 def test_linked_exam_workflow_uses_exam_paper_outline(client):
-    headers = _auth_headers(client)
+    headers = _unique_owner_headers(client)
     class_resp = client.post("/classes", json={"name": f"Exam Outline {uuid.uuid4().hex[:6]}"}, headers=headers)
     assert class_resp.status_code == 201
     class_id = int(class_resp.json()["id"])
@@ -6945,16 +6941,11 @@ def test_linked_exam_workflow_uses_exam_paper_outline(client):
     root = unit["checklist"][0]
     assert root["title"] == "CC7"
     child_titles = [row["title"] for row in root["children"]]
-    assert "Exercice 1" in child_titles
-    assert "Exercice 2" in child_titles
-    exercise_1 = next(row for row in root["children"] if row["title"] == "Exercice 1")
-    exercise_1_child_titles = [row["title"] for row in exercise_1["children"]]
-    assert "Calcul direct" in exercise_1_child_titles
-    assert "Justifier la methode" in exercise_1_child_titles
+    assert child_titles == ["Supervision d'examen"]
 
 
 def test_linked_exam_correction_workflow_uses_exam_outline_when_no_exam_workflow_exists(client):
-    headers = _auth_headers(client)
+    headers = _unique_owner_headers(client)
     class_resp = client.post("/classes", json={"name": f"Exam Correction Outline {uuid.uuid4().hex[:6]}"}, headers=headers)
     assert class_resp.status_code == 201
     class_id = int(class_resp.json()["id"])
@@ -6994,7 +6985,7 @@ def test_linked_exam_correction_workflow_uses_exam_outline_when_no_exam_workflow
 
 
 def test_linked_exam_workflow_checklist_item_accepts_image_attachment(client):
-    headers = _auth_headers(client)
+    headers = _unique_owner_headers(client)
     class_resp = client.post("/classes", json={"name": f"Exam Attachment {uuid.uuid4().hex[:6]}"}, headers=headers)
     assert class_resp.status_code == 201
     class_id = int(class_resp.json()["id"])
@@ -7020,34 +7011,36 @@ def test_linked_exam_workflow_checklist_item_accepts_image_attachment(client):
     )
     assert linked_resp.status_code == 200
     unit = linked_resp.json()["unit"]
-    exercise_1 = next(row for row in unit["checklist"][0]["children"] if row["title"] == "Exercice 1")
+    supervision_row = next(row for row in unit["checklist"][0]["children"] if row["title"] == "Supervision d'examen")
 
     upload_resp = client.post(
-        f"/workflow/classes/{class_id}/units/{unit['id']}/items/{exercise_1['id']}/attachments",
+        f"/workflow/classes/{class_id}/units/{unit['id']}/items/{supervision_row['id']}/attachments",
         headers=headers,
         files={"file": ("exercise-1.png", _build_tiny_png(), "image/png")},
     )
     assert upload_resp.status_code == 201
     attachment = upload_resp.json()
-    assert attachment["item_id"] == exercise_1["id"]
+    assert attachment["item_id"] == supervision_row["id"]
     assert attachment["file_content_type"] == "image/png"
 
     workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
     assert workspace_resp.status_code == 200
     active_unit = workspace_resp.json()["active_unit"]
-    exercise_1_after = next(row for row in active_unit["checklist"][0]["children"] if row["title"] == "Exercice 1")
-    assert len(exercise_1_after["attachments"]) == 1
-    assert exercise_1_after["attachments"][0]["id"] == attachment["id"]
+    supervision_row_after = next(
+        row for row in active_unit["checklist"][0]["children"] if row["title"] == "Supervision d'examen"
+    )
+    assert len(supervision_row_after["attachments"]) == 1
+    assert supervision_row_after["attachments"][0]["id"] == attachment["id"]
 
     download_resp = client.get(
-        f"/workflow/classes/{class_id}/units/{unit['id']}/items/{exercise_1['id']}/attachments/{attachment['id']}",
+        f"/workflow/classes/{class_id}/units/{unit['id']}/items/{supervision_row['id']}/attachments/{attachment['id']}",
         headers=headers,
     )
     assert download_resp.status_code == 200
     assert download_resp.headers["content-type"].startswith("image/png")
 
     delete_resp = client.delete(
-        f"/workflow/classes/{class_id}/units/{unit['id']}/items/{exercise_1['id']}/attachments/{attachment['id']}",
+        f"/workflow/classes/{class_id}/units/{unit['id']}/items/{supervision_row['id']}/attachments/{attachment['id']}",
         headers=headers,
     )
     assert delete_resp.status_code == 200
@@ -7056,8 +7049,10 @@ def test_linked_exam_workflow_checklist_item_accepts_image_attachment(client):
     workspace_after_delete = client.get(f"/workflow/classes/{class_id}", headers=headers)
     assert workspace_after_delete.status_code == 200
     active_unit_after_delete = workspace_after_delete.json()["active_unit"]
-    exercise_1_after_delete = next(row for row in active_unit_after_delete["checklist"][0]["children"] if row["title"] == "Exercice 1")
-    assert exercise_1_after_delete["attachments"] == []
+    supervision_row_after_delete = next(
+        row for row in active_unit_after_delete["checklist"][0]["children"] if row["title"] == "Supervision d'examen"
+    )
+    assert supervision_row_after_delete["attachments"] == []
 
 
 def test_exercise_series_checklist_item_accepts_image_attachment(client):

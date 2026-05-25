@@ -1228,21 +1228,19 @@ def _build_linked_exam_generated_payload(
     title: str,
 ) -> dict[str, object]:
     if unit_type == WorkflowUnitType.EXAM:
-        nodes = _build_exam_outline_nodes(root_title=title, outline_text=getattr(exam, "paper_outline_text", None))
-        if not nodes:
-            nodes = [
-                {
-                    "title": title,
-                    "kind": WorkflowChecklistItemKind.CHAPTER.value,
-                    "children": [
-                        {"title": "Preparation du sujet", "kind": WorkflowChecklistItemKind.SECTION.value, "children": []},
-                        {"title": "Sujet complet", "kind": WorkflowChecklistItemKind.SECTION.value, "children": []},
-                        {"title": "Bareme et consignes", "kind": WorkflowChecklistItemKind.SECTION.value, "children": []},
-                        {"title": "Corrige attendu", "kind": WorkflowChecklistItemKind.SECTION.value, "children": []},
-                        {"title": "Points de surveillance", "kind": WorkflowChecklistItemKind.SECTION.value, "children": []},
-                    ],
-                }
-            ]
+        nodes = [
+            {
+                "title": title,
+                "kind": WorkflowChecklistItemKind.CHAPTER.value,
+                "children": [
+                    {
+                        "title": "Supervision d'examen",
+                        "kind": WorkflowChecklistItemKind.SUPERVISION.value,
+                        "children": [],
+                    }
+                ],
+            }
+        ]
     else:
         source_exam_unit = db.scalar(
             select(WorkflowUnit)
