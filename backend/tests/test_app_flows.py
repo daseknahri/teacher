@@ -5994,8 +5994,31 @@ def test_infer_exam_title_from_source_text_prefers_visible_exam_heading():
     assert title == "Devoir surveille N 2 : Fractions"
 
 
+def _unique_owner_headers(client) -> dict[str, str]:
+    from app.database import SessionLocal
+    from app.models import User, UserRole
+    from app.services.auth import create_access_token, hash_password
+
+    db = SessionLocal()
+    try:
+        user = User(
+            email=f"owner_{uuid.uuid4().hex[:8]}@app.local",
+            full_name="Owner",
+            password_hash=hash_password("OwnerPass123"),
+            role=UserRole.OWNER,
+            is_active=True,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        token = create_access_token(db, user)
+        return {"Authorization": f"Bearer {token.token}"}
+    finally:
+        db.close()
+
+
 def test_workflow_start_exam_unit_from_pdf_infers_better_title(client):
-    headers = _auth_headers(client)
+    headers = _unique_owner_headers(client)
     class_resp = client.post("/classes", json={"name": "Workflow Exam Title", "subject": "Math"}, headers=headers)
     assert class_resp.status_code == 201
     class_id = class_resp.json()["id"]
@@ -6019,6 +6042,62 @@ def test_workflow_start_exam_unit_from_pdf_infers_better_title(client):
     assert unit["unit_type"] == "exam"
     assert unit["title"] == "Devoir surveille N 2 : Fractions"
     assert unit["checklist"]
+
+
+def test_workflow_start_notebooklm_for_exam_unit_stores_provider_context(client, monkeypatch):
+    from app.services import workflow_generation
+
+    monkeypatch.setattr(
+        workflow_generation,
+        "initialize_unit_notebooklm_context",
+        lambda **kwargs: (
+            {
+                "provider": "notebooklm",
+                "notebook_id": "nb-exam-1",
+                "source_ids": ["src-exam-1"],
+                "notebook_title": "Teacher Progress - Devoir surveille N 2 : Fractions",
+                "notebook_role": "exam_outline",
+            },
+            {
+                "provider": "notebooklm",
+                "action": "initialize_context",
+                "notebook_id": "nb-exam-1",
+                "source_ids": ["src-exam-1"],
+                "notebook_role": "exam_outline",
+            },
+        ),
+    )
+
+    headers = _unique_owner_headers(client)
+    class_resp = client.post("/classes", json={"name": "Workflow Exam NotebookLM", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    pdf_bytes = _build_pdf_file(
+        [
+            "Devoir surveille N 2 : Fractions",
+            "Exercice 1",
+            "Exercice 2",
+        ]
+    )
+    start_unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={"unit_type": "exam", "title": "exam-fractions-2026"},
+        files={"file": ("exam-fractions-2026.pdf", pdf_bytes, "application/pdf")},
+    )
+    assert start_unit_resp.status_code == 201
+    unit_id = start_unit_resp.json()["id"]
+
+    notebook_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{unit_id}/notebooklm/start",
+        headers=headers,
+    )
+    assert notebook_resp.status_code == 200
+    payload = notebook_resp.json()
+    assert payload["id"] == unit_id
+    assert payload["extraction_source"] == "template"
+    assert payload["extraction_notebook_role"] == "exam_outline"
 
 
 def test_workflow_start_unit_rejects_non_pdf_document(client):

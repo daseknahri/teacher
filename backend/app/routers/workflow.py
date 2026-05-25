@@ -163,6 +163,7 @@ from ..services.workflow_generation import (
     build_source_section_lesson_package,
     delete_provider_unit_context,
     generate_leaf_content_package,
+    initialize_unit_notebooklm_context,
     generate_unit_assistant_package,
     generate_unit_material_package,
     render_section_latex_source,
@@ -7576,6 +7577,79 @@ def reopen_workflow_unit(
         class_id=class_id,
         unit=unit,
         current_user=current_user,
+    )
+    db.commit()
+    db.refresh(unit)
+    return _serialize_unit(db, unit)
+
+
+@router.post("/classes/{class_id}/units/{unit_id}/notebooklm/start", response_model=WorkflowUnitOut)
+def start_notebooklm_for_workflow_unit(
+    class_id: int,
+    unit_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> WorkflowUnitOut:
+    _ = ensure_class_writable(db, class_id, current_user)
+    unit = db.get(WorkflowUnit, int(unit_id))
+    if unit is None or int(unit.class_id) != int(class_id):
+        raise HTTPException(status_code=404, detail="Workflow unit not found.")
+    if unit.unit_type not in {WorkflowUnitType.EXAM, WorkflowUnitType.EXAM_CORRECTION}:
+        raise HTTPException(status_code=400, detail="NotebookLM manual start is only available for exam units right now.")
+
+    blueprint = unit.blueprint
+    if blueprint is None:
+        raise HTTPException(status_code=400, detail="No unit blueprint is available for this unit.")
+    blueprint_json = blueprint.blueprint_json if isinstance(blueprint.blueprint_json, dict) else {}
+    existing_provider_context = blueprint_json.get("provider_context") if isinstance(blueprint_json.get("provider_context"), dict) else {}
+    existing_notebook_id = str(existing_provider_context.get("notebook_id") or "").strip()
+    if existing_notebook_id:
+        return _serialize_unit(db, unit)
+
+    source_text = ""
+    if unit.document_path and Path(str(unit.document_path)).exists():
+        source_text = extract_text_from_document(str(unit.document_path), None)
+    elif blueprint.source_text_excerpt:
+        source_text = str(blueprint.source_text_excerpt or "").strip()
+
+    if not source_text.strip() and not (unit.document_path and Path(str(unit.document_path)).exists()):
+        raise HTTPException(status_code=400, detail="No exam PDF or source text is available to start NotebookLM.")
+
+    try:
+        provider_context, raw_context_response = initialize_unit_notebooklm_context(
+            unit_type=unit.unit_type,
+            title=unit.title,
+            source_text=source_text,
+            document_path=unit.document_path,
+        )
+    except NotebookLMGenerationUnavailableError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"NotebookLM start failed for this unit ({exc.__class__.__name__}: {exc}).",
+        ) from exc
+
+    updated_blueprint_json = {
+        **blueprint_json,
+        "provider_context": provider_context,
+    }
+    raw_provider_response = blueprint.raw_provider_response if isinstance(blueprint.raw_provider_response, dict) else {}
+    blueprint.blueprint_json = updated_blueprint_json
+    blueprint.raw_provider_response = {
+        **raw_provider_response,
+        "notebooklm_context_init": raw_context_response,
+    }
+    blueprint.updated_at = _utc_now_naive()
+
+    log_audit(
+        db,
+        user=current_user,
+        action="workflow.unit.start_notebooklm",
+        entity_type="workflow_unit",
+        entity_id=unit.id,
+        class_id=class_id,
+        details={"unit_type": unit.unit_type.value, "title": unit.title},
     )
     db.commit()
     db.refresh(unit)

@@ -4028,6 +4028,84 @@ def _build_notebooklm_provider_context(
     }
 
 
+def initialize_unit_notebooklm_context(
+    *,
+    unit_type: WorkflowUnitType,
+    title: str,
+    source_text: str,
+    document_path: str | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    ensure_notebooklm_generation_ready(action_label="starting NotebookLM for this unit")
+    try:
+        return asyncio.run(
+            _initialize_unit_notebooklm_context_async(
+                unit_type=unit_type,
+                title=title,
+                source_text=source_text,
+                document_path=document_path,
+            )
+        )
+    except NotebookLMGenerationUnavailableError:
+        raise
+    except Exception as exc:
+        _record_notebooklm_health(
+            source="init_unit_context",
+            ok=False,
+            error_message=f"notebooklm_runtime_error:{exc.__class__.__name__}:{exc}",
+            refresh_required=_looks_like_notebooklm_auth_error_message(str(exc)),
+        )
+        raise
+
+
+async def _initialize_unit_notebooklm_context_async(
+    *,
+    unit_type: WorkflowUnitType,
+    title: str,
+    source_text: str,
+    document_path: str | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    client = await _create_notebooklm_client()
+    if client is None:
+        raise NotebookLMGenerationUnavailableError(
+            "NotebookLM is not available for this unit yet. Refresh NotebookLM from the Owner Panel and try again."
+        )
+
+    notebook_title = f"{app_config.NOTEBOOKLM_NOTEBOOK_PREFIX}{title or 'Unit'}".strip()
+    async with client as opened:
+        notebook = await opened.notebooks.create(notebook_title)
+        notebook_id = str(getattr(notebook, "id", "") or "").strip()
+        if not notebook_id:
+            raise RuntimeError("notebooklm_missing_notebook_id")
+        source_ids = await _notebooklm_attach_source(
+            client=opened,
+            notebook_id=notebook_id,
+            unit_title=title,
+            source_text=source_text,
+            document_path=document_path,
+        )
+    provider_context = _build_notebooklm_provider_context(
+        notebook_id=notebook_id,
+        source_ids=source_ids,
+        notebook_title=notebook_title,
+        notebook_role=_notebooklm_role_for_unit_type(unit_type),
+    )
+    raw_response = {
+        "provider": "notebooklm",
+        "action": "initialize_context",
+        "notebook_id": notebook_id,
+        "source_ids": source_ids,
+        "notebook_title": notebook_title,
+        "notebook_role": provider_context.get("notebook_role"),
+    }
+    _record_notebooklm_health(
+        source="init_unit_context",
+        ok=True,
+        error_message=None,
+        refresh_required=False,
+    )
+    return provider_context, raw_response
+
+
 def _build_notebooklm_checklist_prompt(
     *,
     unit_type: WorkflowUnitType,

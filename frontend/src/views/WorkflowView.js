@@ -3614,12 +3614,14 @@ function _render(el, classId) {
   const isLinkedExamUnit = Boolean(unit?.exam_id);
   const isExamWorkflowUnit = unit?.unit_type === 'exam';
   const isExamCorrectionUnit = unit?.unit_type === 'exam_correction';
+  const notebooklmReady = Boolean(String(unit?.extraction_notebook_role || '').trim());
   const showChecklistAttachments = isLinkedExamUnit || ['exercise_series', 'chapter'].includes(unit?.unit_type);
-  const canAskRowAssistant = Boolean(unit?.extraction_source);
+  const canAskRowAssistant = Boolean(unit?.extraction_source || notebooklmReady);
   const examResultsCount = Number(unit?.exam_results_count || 0) || 0;
   const examResultsAverage = unit?.exam_results_average_score != null ? Number(unit.exam_results_average_score) : null;
   const examResultsPassed = Number(unit?.exam_results_passed_count || 0) || 0;
   const showExtractionControls = !isLinkedExamUnit;
+  const showStartNotebooklmButton = Boolean(unit?.document_name) && (isExamWorkflowUnit || isExamCorrectionUnit) && !notebooklmReady;
   const extractionBadgeClass = extractionSource === 'notebooklm'
     ? 'badge-green'
     : extractionSource === 'openai'
@@ -3723,6 +3725,7 @@ function _render(el, classId) {
                       ${isLinkedExamUnit
                         ? '<span class="badge badge-blue">Template checklist</span>'
                         : `<span class="badge ${extractionBadgeClass}">Extraction ${_escapeHtml(extractionLabel)}</span>`}
+                      ${notebooklmReady ? '<span class="badge badge-green">NotebookLM ready</span>' : ''}
                       ${!isLinkedExamUnit && extractionMethod?.badgeLabel ? `<span class="badge ${_escapeHtml(extractionMethod.badgeClass || 'badge-gray')}">${_escapeHtml(extractionMethod.badgeLabel)}</span>` : ''}
                       ${showExtractionControls
                         ? `<span class="badge ${extractionReviewPending ? 'badge-amber' : 'badge-green'}">${extractionReviewPending ? 'Review Pending' : 'Reviewed'}</span>`
@@ -3743,6 +3746,7 @@ function _render(el, classId) {
                     <div class="mt-2.5 flex gap-2 flex-wrap">
                       ${!session ? `<button id="btn-start-session" class="btn btn-success">Start Session</button>` : ''}
                       ${unit.document_name ? `<button id="btn-download-unit-doc" class="btn btn-secondary btn-sm">Unit PDF</button>` : ''}
+                      ${showStartNotebooklmButton ? `<button id="btn-start-unit-notebooklm" class="btn btn-secondary btn-sm">Start NotebookLM</button>` : ''}
                       ${unit.exam_id ? `<button id="btn-open-linked-exam" class="btn btn-secondary btn-sm">Open Exam Record</button>` : ''}
                       ${showExtractionControls ? `<button id="btn-toggle-extraction-review" class="btn ${extractionReviewPending ? 'btn-primary' : 'btn-secondary'} btn-sm">${extractionReviewPending ? 'Approve Extraction' : 'Mark Needs Review'}</button>` : ''}
                       ${showExtractionControls ? '<button id="btn-rerun-ai-extraction" class="btn btn-secondary btn-sm">Re-run AI</button>' : ''}
@@ -7019,6 +7023,34 @@ function _bindWorkflowEvents(el, classId) {
     }
     setSelectedExamId(examId);
     navigate('exams');
+  });
+
+  el.querySelector('#btn-start-unit-notebooklm')?.addEventListener('click', async function () {
+    const button = this;
+    await _withActionLock(`workflow:start-unit-notebooklm:${classId}`, async () => {
+      const unit = getActiveUnit();
+      if (!unit?.id) {
+        showToast('No active unit found.', 'warning');
+        return;
+      }
+      _setBusy(button, true);
+      try {
+        const updated = await api(`/workflow/classes/${classId}/units/${unit.id}/notebooklm/start`, {
+          method: 'POST',
+        });
+        const ws = await api(`/workflow/classes/${classId}`).catch(() => null);
+        if (ws) {
+          setWorkspace(ws);
+        } else if (updated) {
+          setActiveUnit(updated);
+        }
+        _render(el, classId);
+        showToast('NotebookLM is ready for this exam PDF.', 'ok');
+      } catch (err) {
+        _setBusy(button, false);
+        showToast(String(err?.message || 'Failed to start NotebookLM for this unit.'), 'error');
+      }
+    });
   });
 
   el.querySelectorAll('.btn-open-unit-exam').forEach(button => {
