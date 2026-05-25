@@ -3614,13 +3614,14 @@ function _render(el, classId) {
   const isLinkedExamUnit = Boolean(unit?.exam_id);
   const isExamWorkflowUnit = unit?.unit_type === 'exam';
   const isExamCorrectionUnit = unit?.unit_type === 'exam_correction';
+  const isAnyExamUnit = isExamWorkflowUnit || isExamCorrectionUnit;
   const notebooklmReady = Boolean(String(unit?.extraction_notebook_role || '').trim());
-  const showChecklistAttachments = isLinkedExamUnit || ['exercise_series', 'chapter'].includes(unit?.unit_type);
+  const showChecklistAttachments = isAnyExamUnit || isLinkedExamUnit || ['exercise_series', 'chapter'].includes(unit?.unit_type);
   const canAskRowAssistant = Boolean(unit?.extraction_source || notebooklmReady);
   const examResultsCount = Number(unit?.exam_results_count || 0) || 0;
   const examResultsAverage = unit?.exam_results_average_score != null ? Number(unit.exam_results_average_score) : null;
   const examResultsPassed = Number(unit?.exam_results_passed_count || 0) || 0;
-  const showExtractionControls = !isLinkedExamUnit;
+  const showExtractionControls = !isAnyExamUnit && !isLinkedExamUnit;
   const showStartNotebooklmButton = Boolean(unit?.document_name) && (isExamWorkflowUnit || isExamCorrectionUnit) && !notebooklmReady;
   const extractionBadgeClass = extractionSource === 'notebooklm'
     ? 'badge-green'
@@ -3633,12 +3634,12 @@ function _render(el, classId) {
   const extractionMethod = _describeExtractionMethod(unit);
   const unitFocusText = isExamWorkflowUnit
     ? examResultsCount
-      ? `Use this checklist to organize the paper, expected correction, and supervision points. ${examResultsCount} result${examResultsCount === 1 ? '' : 's'} already imported for this exam.`
-      : 'Use this checklist to organize the exam paper, expected correction, and supervision points. Import results later from the exam record when they are ready.'
+      ? `Use this checklist to supervise the exam session. ${examResultsCount} result${examResultsCount === 1 ? '' : 's'} already imported for this exam.`
+      : "Use this checklist to supervise the exam session. Import results later from the exam record when they are ready."
     : isExamCorrectionUnit
       ? examResultsCount
-        ? `Use this checklist to guide the correction, highlight common mistakes, and plan remediation from ${examResultsCount} imported result${examResultsCount === 1 ? '' : 's'}.`
-        : 'Use this checklist to guide the correction, highlight common mistakes, and plan remediation. Import the exam results first if you want the correction flow grounded in real outcomes.'
+        ? `Use this checklist to guide the correction session from ${examResultsCount} imported result${examResultsCount === 1 ? '' : 's'}.`
+        : "Use this checklist to guide the correction session. Import exam results later if you want to ground this work in real outcomes."
       : extractionStructureSource === 'pdf_layout_seed'
         ? 'This checklist came from NotebookLM and was repaired from the PDF because the original extraction was incomplete. Test these rows first.'
       : extractionReviewPending
@@ -3722,16 +3723,16 @@ function _render(el, classId) {
                       ${unit.exam_id ? `<span class="badge badge-gray">Linked exam: ${_escapeHtml(unit.exam_title || `#${unit.exam_id}`)}</span>` : ''}
                       ${unit.exam_id ? `<span class="badge ${examResultsCount ? 'badge-green' : 'badge-amber'}">${examResultsCount ? `${examResultsCount} result${examResultsCount === 1 ? '' : 's'} imported` : 'No results imported yet'}</span>` : ''}
                       ${unit.exam_id && examResultsAverage != null ? `<span class="badge badge-gray">Avg ${_escapeHtml(fmtScore(examResultsAverage))}${Number.isFinite(examResultsPassed) ? ` • ${examResultsPassed} passed` : ''}</span>` : ''}
-                      ${isLinkedExamUnit
+                      ${isAnyExamUnit || isLinkedExamUnit
                         ? '<span class="badge badge-blue">Template checklist</span>'
                         : `<span class="badge ${extractionBadgeClass}">Extraction ${_escapeHtml(extractionLabel)}</span>`}
                       ${notebooklmReady ? '<span class="badge badge-green">NotebookLM ready</span>' : ''}
-                      ${!isLinkedExamUnit && extractionMethod?.badgeLabel ? `<span class="badge ${_escapeHtml(extractionMethod.badgeClass || 'badge-gray')}">${_escapeHtml(extractionMethod.badgeLabel)}</span>` : ''}
+                      ${!isAnyExamUnit && !isLinkedExamUnit && extractionMethod?.badgeLabel ? `<span class="badge ${_escapeHtml(extractionMethod.badgeClass || 'badge-gray')}">${_escapeHtml(extractionMethod.badgeLabel)}</span>` : ''}
                       ${showExtractionControls
                         ? `<span class="badge ${extractionReviewPending ? 'badge-amber' : 'badge-green'}">${extractionReviewPending ? 'Review Pending' : 'Reviewed'}</span>`
                         : '<span class="badge badge-green">Reviewed</span>'}
                     </div>
-                    ${!isLinkedExamUnit && extractionMethod?.detail ? `<p class="text-[11px] text-slate-500 mt-2">${_escapeHtml(extractionMethod.detail)}</p>` : ''}
+                    ${!isAnyExamUnit && !isLinkedExamUnit && extractionMethod?.detail ? `<p class="text-[11px] text-slate-500 mt-2">${_escapeHtml(extractionMethod.detail)}</p>` : ''}
                   </div>
                   <div class="rounded-2xl border border-slate-200 bg-slate-50/80 px-4 py-2.5 lg:max-w-[320px]">
                     <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focus For Now</p>
