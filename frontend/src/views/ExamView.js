@@ -71,10 +71,10 @@ function _renderExam(el, classId) {
   const examWorkflowActive = exam?.linked_exam_workflow_status === 'active';
   const correctionWorkflowActive = exam?.linked_correction_workflow_status === 'active';
   const examWorkflowLabel = examWorkflowActive
-    ? 'Open Exam Workflow'
+    ? 'Open Supervision Workflow'
     : exam?.linked_exam_workflow_unit_id
-      ? 'Reopen Exam Workflow'
-      : 'Exam Workflow';
+      ? 'Reopen Supervision Workflow'
+      : 'Supervision Workflow';
   const correctionWorkflowLabel = correctionWorkflowActive
     ? 'Open Correction Workflow'
     : exam?.linked_correction_workflow_unit_id
@@ -116,8 +116,7 @@ function _renderExam(el, classId) {
           ${exam ? `<p class="text-[13px] text-slate-400 mt-0.5">${fmtDate(exam.exam_date)} | Max ${exam.max_score ?? 20} pts</p>` : ''}
           ${exam ? `
             <div class="mt-2 flex flex-wrap gap-2">
-              ${exam.paper_outline_text ? `<span class="badge badge-blue">Paper outline ready</span>` : ''}
-              ${exam.linked_exam_workflow_unit_id ? `<span class="badge ${examWorkflowActive ? 'badge-green' : 'badge-gray'}">${_escapeHtml(examWorkflowActive ? 'Exam workflow active' : 'Exam workflow linked')}</span>` : ''}
+              ${exam.linked_exam_workflow_unit_id ? `<span class="badge ${examWorkflowActive ? 'badge-green' : 'badge-gray'}">${_escapeHtml(examWorkflowActive ? 'Supervision workflow active' : 'Supervision workflow linked')}</span>` : ''}
               ${exam.linked_correction_workflow_unit_id ? `<span class="badge ${correctionWorkflowActive ? 'badge-green' : 'badge-gray'}">${_escapeHtml(correctionWorkflowActive ? 'Correction workflow active' : 'Correction workflow linked')}</span>` : ''}
             </div>` : ''}
         </div>
@@ -127,7 +126,7 @@ function _renderExam(el, classId) {
             <button id="btn-import-results" class="btn btn-secondary"> Import</button>
             <button id="btn-export-results" class="btn btn-secondary"> Export</button>
             ${exam && !exam.is_archived ? `
-              <button id="btn-create-exam-workflow" class="btn btn-ghost btn-sm" title="Create, reopen, or open the workflow unit for this exam">${examWorkflowLabel}</button>
+              <button id="btn-create-exam-workflow" class="btn btn-ghost btn-sm" title="Create, reopen, or open the supervision workflow for this exam">${examWorkflowLabel}</button>
               <button id="btn-create-correction-workflow" class="btn btn-ghost btn-sm" title="Create, reopen, or open the workflow unit for this exam correction">${correctionWorkflowLabel}</button>
             ` : ''}
           ` : ''}
@@ -264,16 +263,6 @@ function _renderExam(el, classId) {
               <input id="new-exam-max" type="number" min="1" placeholder="20" value="20" class="shadow-sm" />
             </div>
           </div>
-          <div class="flex flex-col gap-1.5 mt-4">
-            <label class="text-[11px] font-bold text-slate-400 uppercase tracking-widest">Paper outline</label>
-            <textarea id="new-exam-outline" rows="6" class="shadow-sm" placeholder="One heading per line. Example:
-Exercice 1
-  a) Calcul direct
-  b) Justifier la methode
-Exercice 2
-Probleme"></textarea>
-            <p class="text-[11px] text-slate-400">Optional. If you add the paper structure here, Exam Workflow and Correction Workflow will reuse it.</p>
-          </div>
           <button id="btn-create-exam" class="btn btn-primary mt-4">Create Exam</button>
         </div>
       </div>
@@ -370,7 +359,6 @@ function _bindExamEvents(el, classId) {
     const name = document.getElementById('new-exam-name')?.value?.trim();
     const dateVal = document.getElementById('new-exam-date')?.value || new Date().toISOString().split('T')[0];
     const max = Number(document.getElementById('new-exam-max')?.value) || 20;
-    const paperOutlineText = document.getElementById('new-exam-outline')?.value?.trim() || '';
     if (!name) { showToast('Enter an exam name.', 'warning'); return; }
     btn.classList.add('btn-busy'); btn.disabled = true;
     try {
@@ -381,7 +369,6 @@ function _bindExamEvents(el, classId) {
           title: name,
           exam_date: dateVal,
           max_score: max,
-          paper_outline_text: paperOutlineText || null,
         }),
       });
       const exams = await api(`/classes/${classId}/exams`);
@@ -617,11 +604,6 @@ function _editExamModal(exam) {
               <input id="edit-exam-max" type="number" min="1" value="${exam.max_score ?? 20}" />
             </div>
           </div>
-          <div class="flex flex-col gap-1.5">
-            <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Paper Outline</label>
-            <textarea id="edit-exam-outline" rows="7" placeholder="One heading per line. Add indentation for sub-items.">${_escapeHtml(exam.paper_outline_text || '')}</textarea>
-            <p class="text-[11px] text-slate-400">Used first when building Exam Workflow and Correction Workflow.</p>
-          </div>
           <p id="edit-exam-error" class="text-[12px] text-red-600 hidden"></p>
         </div>
         <div class="px-6 pb-5 flex gap-3 justify-end border-t border-slate-100 pt-3">
@@ -641,8 +623,7 @@ function _editExamModal(exam) {
       }
       const dateInput = overlay.querySelector('#edit-exam-date')?.value || null;
       const maxScore = Number(overlay.querySelector('#edit-exam-max')?.value) || 20;
-      const paperOutlineText = overlay.querySelector('#edit-exam-outline')?.value?.trim() || null;
-      cleanup({ title, exam_date: dateInput || undefined, max_score: maxScore, paper_outline_text: paperOutlineText });
+      cleanup({ title, exam_date: dateInput || undefined, max_score: maxScore });
     });
     document.body.appendChild(overlay);
     overlay.querySelector('#edit-exam-title')?.focus();
