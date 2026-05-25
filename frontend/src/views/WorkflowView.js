@@ -3622,7 +3622,7 @@ function _render(el, classId) {
   const examResultsAverage = unit?.exam_results_average_score != null ? Number(unit.exam_results_average_score) : null;
   const examResultsPassed = Number(unit?.exam_results_passed_count || 0) || 0;
   const showExtractionControls = !isAnyExamUnit && !isLinkedExamUnit;
-  const showStartNotebooklmButton = Boolean(unit?.document_name) && (isExamWorkflowUnit || isExamCorrectionUnit) && !notebooklmReady;
+  const showStartNotebooklmButton = Boolean(unit?.document_name) && isExamWorkflowUnit && !notebooklmReady;
   const extractionBadgeClass = extractionSource === 'notebooklm'
     ? 'badge-green'
     : extractionSource === 'openai'
