@@ -667,15 +667,24 @@ function _bindOwnerEvents(el) {
       const cid = Number(btn.dataset.classId);
       const select = el.querySelector(`.class-teacher-select[data-class-id="${cid}"]`);
       const teacherId = select?.value ? Number(select.value) : null;
+      const previousTeacherId = Number(_classTeachers[cid] || 0) || null;
       btn.classList.add('btn-busy'); btn.disabled = true;
       try {
-        await api(`/classes/${cid}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ teacher_user_id: teacherId }),
-        });
+        if (previousTeacherId && previousTeacherId !== teacherId) {
+          await api(`/classes/${cid}/assign-teacher/${previousTeacherId}`, {
+            method: 'DELETE',
+          });
+        }
+        if (teacherId && teacherId !== previousTeacherId) {
+          await api(`/classes/${cid}/assign-teacher/${teacherId}`, {
+            method: 'POST',
+          });
+        }
         if (teacherId) _classTeachers[cid] = teacherId;
         else delete _classTeachers[cid];
+        const refreshed = await api('/classes');
+        _allClasses = (refreshed || []).filter(c => !c.is_archived);
+        setClasses(_allClasses);
         const tName = teacherId ? (_teachers.find(t => t.id === teacherId)?.full_name || '') : 'none';
         showToast(`Assigned: ${tName || 'unassigned'}.`, 'ok');
       } catch (err) {
