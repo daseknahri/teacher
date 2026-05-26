@@ -703,6 +703,14 @@ function _showStudentModal(p) {
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
 }
 
+function _escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;');
+}
+
 function _showChrome() {
   const topbar = document.getElementById('topbar');
   const sidebar = document.getElementById('sidebar');
