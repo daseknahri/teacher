@@ -6171,6 +6171,36 @@ def test_workflow_start_notebooklm_for_exam_unit_stores_provider_context(client,
     assert payload["extraction_notebook_role"] == "exam_outline"
 
 
+def test_workflow_start_notebooklm_rejects_correction_unit(client):
+    headers = _unique_owner_headers(client)
+    class_resp = client.post("/classes", json={"name": "Workflow Correction NotebookLM Guard", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    exam_resp = client.post(
+        f"/classes/{class_id}/exams",
+        headers=headers,
+        json={"title": "CC6", "exam_date": "2026-07-08", "max_score": 20, "weight": 1},
+    )
+    assert exam_resp.status_code == 201
+    exam_id = int(exam_resp.json()["id"])
+
+    correction_resp = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam_correction"},
+    )
+    assert correction_resp.status_code == 200
+    correction_unit_id = int(correction_resp.json()["unit"]["id"])
+
+    start_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{correction_unit_id}/notebooklm/start",
+        headers=headers,
+    )
+    assert start_resp.status_code == 400
+    assert "NotebookLM manual start is only available on exam supervision units." in str(start_resp.json().get("detail", ""))
+
+
 def test_workflow_start_unit_rejects_non_pdf_document(client):
     headers = _auth_headers(client)
     class_resp = client.post("/classes", json={"name": "Workflow PDF Strict", "subject": "Math"}, headers=headers)

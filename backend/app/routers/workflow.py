@@ -7614,8 +7614,8 @@ def start_notebooklm_for_workflow_unit(
     unit = db.get(WorkflowUnit, int(unit_id))
     if unit is None or int(unit.class_id) != int(class_id):
         raise HTTPException(status_code=404, detail="Workflow unit not found.")
-    if unit.unit_type not in {WorkflowUnitType.EXAM, WorkflowUnitType.EXAM_CORRECTION}:
-        raise HTTPException(status_code=400, detail="NotebookLM manual start is only available for exam units right now.")
+    if unit.unit_type != WorkflowUnitType.EXAM:
+        raise HTTPException(status_code=400, detail="NotebookLM manual start is only available on exam supervision units.")
 
     blueprint = unit.blueprint
     if blueprint is None:
