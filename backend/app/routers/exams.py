@@ -15,7 +15,7 @@ from ..config import MAX_EXCEL_UPLOAD_BYTES
 from ..database import get_db
 from ..models import Exam, ExamArchiveState, ExamResult, Student, User, WorkflowUnit, WorkflowUnitStatus, WorkflowUnitType
 from ..security import ensure_class_access, ensure_class_writable, get_current_user, is_class_archived, require_teacher
-from ..schemas import ExamCreate, ExamOut, ExamResultOut, ExamUpdate
+from ..schemas import ExamCreate, ExamOut, ExamResultOut, ExamResultUpdate, ExamUpdate
 from ..services.audit import log_audit
 from ..services.excel import build_exam_template, build_exam_template_notescc, parse_exam_results_excel
 from ..services.rate_limit import enforce_rate_limit
@@ -93,6 +93,7 @@ def _is_exam_archived(db: Session, exam_id: int) -> bool:
 def _exam_results_rows(db: Session, exam_id: int):
     return db.execute(
         select(
+            ExamResult.id,
             ExamResult.student_id,
             Student.student_code,
             Student.full_name,
@@ -404,6 +405,7 @@ def list_exam_results(exam_id: int, db: Session = Depends(get_db), current_user:
     rows = _exam_results_rows(db, exam_id)
     return [
         ExamResultOut(
+            id=getattr(row, "id", None),
             student_id=row.student_id,
             student_code=row.student_code,
             full_name=row.full_name,
@@ -413,6 +415,60 @@ def list_exam_results(exam_id: int, db: Session = Depends(get_db), current_user:
         )
         for row in rows
     ]
+
+
+@router.put("/exams/{exam_id}/results/{student_id}", response_model=ExamResultOut)
+def update_exam_result(
+    exam_id: int,
+    student_id: int,
+    payload: ExamResultUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> ExamResultOut:
+    exam = _ensure_exam(db, exam_id)
+    _ = ensure_class_access(db, exam.class_id, current_user)
+    if is_class_archived(db, exam.class_id):
+        raise HTTPException(status_code=409, detail="Class is archived and cannot be modified.")
+    if _is_exam_archived(db, exam_id):
+        raise HTTPException(status_code=409, detail="Exam is archived and cannot be modified.")
+
+    student = db.get(Student, student_id)
+    if student is None or student.class_id != exam.class_id:
+        raise HTTPException(status_code=404, detail="Student not found in this class.")
+
+    result = db.scalar(select(ExamResult).where(ExamResult.exam_id == exam_id, ExamResult.student_id == student_id))
+    if result is None:
+        raise HTTPException(status_code=404, detail="Exam result not found.")
+
+    if payload.score is not None:
+        if payload.score < 0 or payload.score > exam.max_score:
+            raise HTTPException(status_code=400, detail=f"Score must be within [0, {exam.max_score}].")
+        result.score = payload.score
+    if "note" in payload.model_fields_set:
+        result.note = payload.note
+    if "teacher_comment" in payload.model_fields_set:
+        result.teacher_comment = payload.teacher_comment
+
+    log_audit(
+        db,
+        user=current_user,
+        action="exam.update_result",
+        entity_type="exam_result",
+        entity_id=result.id,
+        class_id=exam.class_id,
+        details={"exam_id": exam_id, "student_id": student_id},
+    )
+    db.commit()
+    db.refresh(result)
+    return ExamResultOut(
+        id=result.id,
+        student_id=student.id,
+        student_code=student.student_code,
+        full_name=student.full_name,
+        score=result.score,
+        note=result.note,
+        teacher_comment=result.teacher_comment,
+    )
 
 
 @router.get("/exams/{exam_id}/results.csv")

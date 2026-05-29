@@ -203,12 +203,19 @@ class ExamUpdate(BaseModel):
 
 
 class ExamResultOut(BaseModel):
+    id: int | None = None
     student_id: int
     student_code: str
     full_name: str
     score: float
     note: str | None
     teacher_comment: str | None
+
+
+class ExamResultUpdate(BaseModel):
+    score: float | None = None
+    note: str | None = None
+    teacher_comment: str | None = None
 
 
 class OwnerBootstrapIn(BaseModel):

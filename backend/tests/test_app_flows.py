@@ -8044,6 +8044,65 @@ def test_owner_can_patch_class_teacher_assignment(client):
     assert teacher_forbidden_resp.status_code == 403
 
 
+def test_teacher_can_update_exam_result(client):
+    headers = _auth_headers(client)
+
+    class_resp = client.post("/classes", headers=headers, json={"name": "Exam Class"})
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    student_import = client.post(
+        f"/classes/{class_id}/students/import",
+        headers=headers,
+        files={
+            "file": (
+                "students.xlsx",
+                _build_roster_file([("S1", "Student One")]),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert student_import.status_code == 200
+
+    exam_resp = client.post(
+        f"/classes/{class_id}/exams",
+        headers=headers,
+        json={"title": "Exam 1", "exam_date": "2026-05-29", "max_score": 20},
+    )
+    assert exam_resp.status_code == 201
+    exam_id = exam_resp.json()["id"]
+
+    import_resp = client.post(
+        f"/exams/{exam_id}/results/import",
+        headers=headers,
+        files={
+            "file": (
+                "results.xlsx",
+                _build_exam_file([("S1", "Student One", 12, "Initial", "Needs review")]),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert import_resp.status_code == 200
+
+    results_resp = client.get(f"/exams/{exam_id}/results", headers=headers)
+    assert results_resp.status_code == 200
+    result_row = results_resp.json()[0]
+    assert result_row["score"] == 12
+
+    update_resp = client.put(
+        f"/exams/{exam_id}/results/{result_row['student_id']}",
+        headers=headers,
+        json={"score": 15.5, "note": "Updated", "teacher_comment": "Better now"},
+    )
+    assert update_resp.status_code == 200
+    updated = update_resp.json()
+    assert updated["score"] == 15.5
+    assert updated["note"] == "Updated"
+    assert updated["teacher_comment"] == "Better now"
+    assert updated["id"] is not None
+
+
 def test_owner_teacher_status_reset_and_password_change(client):
     owner_headers = _auth_headers(client)
     owner_me = client.get("/auth/me", headers=owner_headers)
