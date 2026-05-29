@@ -26,6 +26,22 @@ export const hasStudents = () => _state.students.length > 0;
 // ---- Setters ----
 export function setClasses(classes) {
     _state.classes = Array.isArray(classes) ? classes : [];
+    if (_state.classes.length === 0) {
+        _state.selectedId = null;
+        _state.selectedName = '';
+        localStorage.removeItem(CLASS_KEY);
+        return;
+    }
+    const selected = _state.classes.find(c => c.id === _state.selectedId);
+    if (selected) {
+        _state.selectedName = selected.name || '';
+        return;
+    }
+    const first = _state.classes[0];
+    _state.selectedId = first?.id || null;
+    _state.selectedName = first?.name || '';
+    if (_state.selectedId) localStorage.setItem(CLASS_KEY, String(_state.selectedId));
+    else localStorage.removeItem(CLASS_KEY);
 }
 
 export function setSelectedClass(id, name) {
