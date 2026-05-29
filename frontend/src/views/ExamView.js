@@ -125,7 +125,7 @@ function _renderExam(el, classId) {
         <div class="flex gap-2 flex-wrap">
           ${examId ? `
             <button id="btn-download-template" class="btn btn-ghost btn-sm" title="Download student mark template"> Template</button>
-            <button id="btn-import-results" class="btn btn-secondary"> Import</button>
+            ${exam && !exam.is_archived ? `<button id="btn-import-results" class="btn btn-secondary"> Import</button>` : ''}
             <button id="btn-export-results" class="btn btn-secondary"> Export</button>
             ${exam && !exam.is_archived ? `
               <button id="btn-create-exam-workflow" class="btn btn-ghost btn-sm" title="Create, reopen, or open the supervision workflow for this exam">${examWorkflowLabel}</button>
@@ -223,10 +223,10 @@ function _renderExam(el, classId) {
                     <td class="text-slate-500 text-[12px] max-w-[140px] truncate" title="${r.note || ''}">${r.note || 'N/A'}</td>
                     <td>
                       <div class="row-hover-actions flex gap-1.5 flex-wrap">
-                        <button class="btn btn-ghost btn-sm btn-icon btn-edit-result bg-slate-100/50 hover:bg-slate-200"
+                        ${exam && !exam.is_archived ? `<button class="btn btn-ghost btn-sm btn-icon btn-edit-result bg-slate-100/50 hover:bg-slate-200"
                                     data-student-id="${r.student_id}" data-result-id="${r.id ?? ''}" onclick="event.stopPropagation()" title="Edit result">
                           Edit
-                        </button>
+                        </button>` : ''}
                         <button class="btn btn-ghost btn-sm !text-blue-600 btn-detail"
                                     data-student-id="${r.student_id}" onclick="event.stopPropagation()">
                              View
