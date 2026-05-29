@@ -7605,6 +7605,12 @@ def test_exam_update_archive_restore(client):
     )
     assert archived_linked_unit_resp.status_code == 409
 
+    archived_reopen_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{correction_unit_id}/reopen",
+        headers=headers,
+    )
+    assert archived_reopen_resp.status_code == 409
+
     results_file = _build_exam_file(
         [
             ("STD300", "Rita", 18, "A", ""),

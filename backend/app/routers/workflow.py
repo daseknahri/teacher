@@ -1075,6 +1075,14 @@ def _serialize_exam_archive_flag(db: Session, exam: Exam | None) -> bool:
     return bool(state)
 
 
+def _is_exam_id_archived(db: Session, exam_id: int | None) -> bool:
+    safe_exam_id = _safe_optional_int(exam_id)
+    if safe_exam_id is None:
+        return False
+    state = db.scalar(select(ExamArchiveState.is_archived).where(ExamArchiveState.exam_id == safe_exam_id))
+    return bool(state)
+
+
 def _safe_serialize_session(db: Session, session: ClassSession, *, class_id: int) -> WorkflowSessionOut | None:
     try:
         return _serialize_session(db, session)
@@ -1355,6 +1363,9 @@ def _reopen_workflow_unit_record(
     unit: WorkflowUnit,
     current_user: User,
 ) -> WorkflowUnit:
+    if unit.exam_id is not None and _is_exam_id_archived(db, unit.exam_id):
+        raise HTTPException(status_code=409, detail="Archived exam workflows cannot be reopened until the exam is restored.")
+
     active_unit = db.scalar(
         select(WorkflowUnit).where(
             WorkflowUnit.class_id == class_id,
