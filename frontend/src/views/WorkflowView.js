@@ -30,6 +30,7 @@ let _activeTab = 0;
 let _recentWindow = 'month';
 let _selectedUnitType = 'chapter';
 let _checklistCollapseUnitId = null;
+let _workflowViewClassId = null;
 const WORKFLOW_VIEW_INTENT_KEY = 'workflow_view_intent';
 const CALENDAR_VIEW_INTENT_KEY = 'calendar_view_intent';
 let _workflowEntryContext = null;
@@ -157,6 +158,27 @@ function _clearWorkflowEntryContext({ clearStoredIntent = true } = {}) {
   if (clearStoredIntent) {
     try { sessionStorage.removeItem(WORKFLOW_VIEW_INTENT_KEY); } catch {}
   }
+}
+
+function _resetWorkflowViewStateForClassChange() {
+  _activeTab = 0;
+  _selectedUnitType = 'chapter';
+  _checklistCollapseUnitId = null;
+  _workflowPreviewScrollKey = null;
+  _clearWorkflowEntryContext();
+  _sessionGuidanceHideImported = false;
+  _sessionGuidanceKindFilter = 'all';
+  _sessionGuidanceCollapseImported = false;
+  _sessionGuidanceStateSessionId = null;
+  _workflowCollapsePlannedRoute = false;
+  _workflowCollapseSessionProgress = false;
+  _workflowCollapseSessionWriteup = false;
+  _collapsedChecklistIds.clear();
+  _sessionProgressCache.clear();
+  _sessionWriteupCache.clear();
+  _unitSessionTimelineCache.clear();
+  _unitBlueprintCache.clear();
+  _unitAssistantArtifactCache.clear();
 }
 
 const UNIT_ASSISTANT_ACTION_LABELS = {
@@ -2446,6 +2468,10 @@ export async function renderWorkflowView() {
   _showChrome();
   const el = document.getElementById('app-content');
   const classId = getSelectedId();
+  if (Number(_workflowViewClassId || 0) !== Number(classId || 0)) {
+    _resetWorkflowViewStateForClassChange();
+    _workflowViewClassId = Number(classId || 0) || null;
+  }
   const pendingWorkflowIntent = _peekWorkflowViewIntent();
 
   if (!classId) {

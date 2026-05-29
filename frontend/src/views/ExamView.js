@@ -18,6 +18,12 @@ let _sortKey = 'full_name';
 let _sortAsc = true;
 let _filterQ = '';
 let _showArchived = false;
+let _examViewClassId = null;
+
+function _resetExamViewStateForClassChange() {
+  _filterQ = '';
+  _showArchived = false;
+}
 
 async function _reloadExamCollection(classId, { preferredExamId = null, keepResultsForSelected = false } = {}) {
   const exams = await api(`/classes/${classId}/exams?include_archived=true`);
@@ -49,6 +55,10 @@ export async function renderExamView() {
   _showChrome();
   const el = document.getElementById('app-content');
   const classId = getSelectedId();
+  if (Number(_examViewClassId || 0) !== Number(classId || 0)) {
+    _resetExamViewStateForClassChange();
+    _examViewClassId = Number(classId || 0) || null;
+  }
 
   if (!classId) {
     el.innerHTML = `<div class="view-container">

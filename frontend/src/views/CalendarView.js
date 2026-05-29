@@ -17,6 +17,7 @@ let _selectedSessionId = null;
 let _selectedSessionLoading = false;
 let _selectedSessionError = null;
 let _mutationInFlight = false;
+let _calendarViewClassId = null;
 let _calendarPlannedHideDone = false;
 let _calendarSessionGuidanceHideImported = false;
 let _calendarSessionGuidanceKindFilter = 'all';
@@ -34,6 +35,26 @@ const CALENDAR_VIEW_INTENT_KEY = 'calendar_view_intent';
 const _sessionDetailCache = new Map();
 const _calendarUnitBlueprintCache = new Map();
 const _calendarAssistantArtifactCache = new Map();
+
+function _resetCalendarViewStateForClassChange() {
+  _weekStart = _startOfWeek(new Date());
+  _selectedSessionId = null;
+  _selectedSessionLoading = false;
+  _selectedSessionError = null;
+  _mutationInFlight = false;
+  _calendarPlannedHideDone = false;
+  _calendarSessionGuidanceHideImported = false;
+  _calendarSessionGuidanceKindFilter = 'all';
+  _calendarSessionGuidanceCollapseImported = false;
+  _calendarSessionGuidanceStateSessionId = null;
+  _calendarCollapsePlannedFlow = false;
+  _calendarCollapseTeacherPrep = false;
+  _calendarCollapseWriteup = false;
+  _holidayByDate = new Map();
+  _sessionDetailCache.clear();
+  _calendarUnitBlueprintCache.clear();
+  _calendarAssistantArtifactCache.clear();
+}
 
 const WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const TIME_SLOTS = [
@@ -3589,6 +3610,10 @@ export async function renderCalendarView() {
   _showChrome();
   const el = document.getElementById('app-content');
   const classId = getSelectedId();
+  if (Number(_calendarViewClassId || 0) !== Number(classId || 0)) {
+    _resetCalendarViewStateForClassChange();
+    _calendarViewClassId = Number(classId || 0) || null;
+  }
   const pendingCalendarIntent = _consumeCalendarViewIntent();
   if (pendingCalendarIntent?.session_date) {
     const restoreDate = _dateFromKey(pendingCalendarIntent.session_date) || new Date(`${pendingCalendarIntent.session_date}T00:00:00`);
