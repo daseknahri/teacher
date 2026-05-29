@@ -6082,7 +6082,16 @@ def test_workflow_start_exam_unit_from_pdf_infers_better_title(client):
     unit = start_unit_resp.json()
     assert unit["unit_type"] == "exam"
     assert unit["title"] == "Devoir surveille N 2 : Fractions"
+    assert unit["exam_id"] is not None
+    assert unit["exam_title"] == "Devoir surveille N 2 : Fractions"
     assert unit["checklist"]
+
+    exams_resp = client.get(f"/classes/{class_id}/exams", headers=headers)
+    assert exams_resp.status_code == 200
+    exams = exams_resp.json()
+    assert len(exams) == 1
+    assert exams[0]["title"] == "Devoir surveille N 2 : Fractions"
+    assert float(exams[0]["max_score"]) == 20.0
 
 
 def test_workflow_start_notebooklm_for_exam_unit_stores_provider_context(client, monkeypatch):

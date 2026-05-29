@@ -3501,6 +3501,17 @@ def _create_unit_with_generated_checklist(
         checklist_session_count=checklist_session_count,
         checklist_session_hint_out=checklist_session_hint_out,
     )
+    if unit.unit_type == WorkflowUnitType.EXAM and unit.exam_id is None:
+        linked_exam = Exam(
+            class_id=int(class_id),
+            title=_normalize_workflow_title(unit.title, fallback="Exam"),
+            exam_date=date.today(),
+            max_score=20.0,
+            weight=1.0,
+        )
+        db.add(linked_exam)
+        db.flush()
+        unit.exam_id = int(linked_exam.id)
 
     log_audit(
         db,
@@ -3514,6 +3525,7 @@ def _create_unit_with_generated_checklist(
             "title": unit.title,
             "planned_hours": planned_hours,
             "generation_source": generated.get("source"),
+            "exam_id": unit.exam_id,
         },
     )
     return unit
