@@ -50,15 +50,33 @@ def _archive_flags_for_classes(db: Session, class_ids: list[int]) -> dict[int, b
     return {row.class_id: bool(row.is_archived) for row in rows}
 
 
+def _teacher_ids_for_classes(db: Session, class_ids: list[int]) -> dict[int, int | None]:
+    if not class_ids:
+        return {}
+    rows = db.execute(
+        select(ClassAccess.class_id, ClassAccess.user_id)
+        .where(ClassAccess.class_id.in_(class_ids))
+        .order_by(ClassAccess.class_id.asc(), ClassAccess.user_id.asc())
+    ).all()
+    teacher_map: dict[int, int | None] = {class_id: None for class_id in class_ids}
+    for row in rows:
+        if teacher_map.get(row.class_id) is None:
+            teacher_map[row.class_id] = row.user_id
+    return teacher_map
+
+
 def _attach_archive_flags(db: Session, classes: list[Classroom]) -> list[Classroom]:
     archive_flags = _archive_flags_for_classes(db, [item.id for item in classes])
+    teacher_ids = _teacher_ids_for_classes(db, [item.id for item in classes])
     for item in classes:
         setattr(item, "is_archived", archive_flags.get(item.id, False))
+        setattr(item, "teacher_user_id", teacher_ids.get(item.id))
     return classes
 
 
 def _attach_archive_flag(db: Session, classroom: Classroom) -> Classroom:
     setattr(classroom, "is_archived", _archive_flags_for_classes(db, [classroom.id]).get(classroom.id, False))
+    setattr(classroom, "teacher_user_id", _teacher_ids_for_classes(db, [classroom.id]).get(classroom.id))
     return classroom
 
 
@@ -211,21 +229,23 @@ def assign_teacher_to_class(
     teacher = db.get(User, teacher_user_id)
     if teacher is None or teacher.role != UserRole.TEACHER:
         raise HTTPException(status_code=400, detail="Teacher not found.")
-    existing = db.scalar(
-        select(ClassAccess).where(ClassAccess.class_id == class_id, ClassAccess.user_id == teacher_user_id)
-    )
-    if existing is None:
+    existing_links = db.scalars(select(ClassAccess).where(ClassAccess.class_id == class_id)).all()
+    existing_teacher_ids = {link.user_id for link in existing_links}
+    for link in existing_links:
+        if link.user_id != teacher_user_id:
+            db.delete(link)
+    if teacher_user_id not in existing_teacher_ids:
         db.add(ClassAccess(class_id=class_id, user_id=teacher_user_id))
-        log_audit(
-            db,
-            user=_,
-            action="class.assign_teacher",
-            entity_type="class_access",
-            entity_id=class_id,
-            class_id=class_id,
-            details={"teacher_user_id": teacher_user_id},
-        )
-        db.commit()
+    log_audit(
+        db,
+        user=_,
+        action="class.assign_teacher",
+        entity_type="class_access",
+        entity_id=class_id,
+        class_id=class_id,
+        details={"teacher_user_id": teacher_user_id, "replaced_teacher_ids": sorted(existing_teacher_ids - {teacher_user_id})},
+    )
+    db.commit()
 
 
 @router.get("/{class_id}/teachers", response_model=list[UserOut])

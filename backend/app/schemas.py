@@ -25,6 +25,7 @@ class ClassroomOut(BaseModel):
     name: str
     subject: str | None
     level: str | None
+    teacher_user_id: int | None = None
     is_archived: bool = False
 
     model_config = {"from_attributes": True}

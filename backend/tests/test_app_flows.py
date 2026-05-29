@@ -7941,6 +7941,45 @@ def test_teacher_class_isolation_and_assignment(client):
     assert teacher_get_after_unassign.status_code == 403
 
 
+def test_class_assignment_replaces_previous_teacher_and_exposes_teacher_user_id(client):
+    owner_headers = _auth_headers(client)
+    teacher_one_id, teacher_one_headers = _create_teacher_and_login(client, owner_headers)
+    teacher_two_id, teacher_two_headers = _create_teacher_and_login(client, owner_headers)
+
+    create_resp = client.post(
+        "/classes",
+        headers=owner_headers,
+        json={"name": "Replacement Class", "teacher_user_id": teacher_one_id},
+    )
+    assert create_resp.status_code == 201
+    class_payload = create_resp.json()
+    class_id = class_payload["id"]
+    assert class_payload["teacher_user_id"] == teacher_one_id
+
+    list_resp = client.get("/classes", headers=owner_headers)
+    assert list_resp.status_code == 200
+    listed_row = next(row for row in list_resp.json() if row["id"] == class_id)
+    assert listed_row["teacher_user_id"] == teacher_one_id
+
+    replace_resp = client.post(f"/classes/{class_id}/assign-teacher/{teacher_two_id}", headers=owner_headers)
+    assert replace_resp.status_code == 204
+
+    detail_resp = client.get(f"/classes/{class_id}", headers=owner_headers)
+    assert detail_resp.status_code == 200
+    assert detail_resp.json()["teacher_user_id"] == teacher_two_id
+
+    teachers_resp = client.get(f"/classes/{class_id}/teachers", headers=owner_headers)
+    assert teachers_resp.status_code == 200
+    teacher_ids = {row["id"] for row in teachers_resp.json()}
+    assert teacher_ids == {teacher_two_id}
+
+    stale_access_resp = client.get(f"/classes/{class_id}", headers=teacher_one_headers)
+    assert stale_access_resp.status_code == 403
+
+    current_access_resp = client.get(f"/classes/{class_id}", headers=teacher_two_headers)
+    assert current_access_resp.status_code == 200
+
+
 def test_owner_teacher_status_reset_and_password_change(client):
     owner_headers = _auth_headers(client)
     owner_me = client.get("/auth/me", headers=owner_headers)
