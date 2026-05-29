@@ -37,12 +37,13 @@ export async function renderExamView() {
   el.innerHTML = `<div class="view-container"><div class="skeleton h-96 rounded-2xl animate-pulse"></div></div>`;
 
   try {
-    const exams = await api(`/classes/${classId}/exams`);
+    const exams = await api(`/classes/${classId}/exams?include_archived=true`);
     setExams(exams || []);
     const selectedId = getSelectedExamId();
     const selectedExists = selectedId && (exams || []).some(e => e.id === selectedId);
     if (!selectedExists) {
-      setSelectedExamId(exams?.[0]?.id || null);
+      const visibleDefault = (exams || []).find(e => !e?.is_archived) || exams?.[0] || null;
+      setSelectedExamId(visibleDefault?.id || null);
     }
     const examId = getSelectedExamId();
     if (examId) {
