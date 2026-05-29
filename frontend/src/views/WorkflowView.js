@@ -65,7 +65,7 @@ const UNIT_TYPES = [
   { key: 'chapter', icon: 'CH', label: 'Chapter' },
   { key: 'exercise_series', icon: 'EX', label: 'Exercises' },
   { key: 'exam', icon: 'TE', label: 'Exam' },
-  { key: 'exam_correction', icon: 'CR', label: 'Correction' },
+  { key: 'exam_correction', icon: 'CR', label: 'Correction', disabledReason: 'Create from Exams' },
 ];
 
 function _consumeWorkflowViewIntent(expectedUnitId) {
@@ -3976,9 +3976,14 @@ function _render(el, classId) {
                     <p class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Unit Type</p>
                     <div class="unit-type-selector">
                       ${UNIT_TYPES.map(t => `
-                      <button class="unit-type-btn ${_selectedUnitType === t.key ? 'selected' : ''} ${unit ? 'cursor-not-allowed' : ''}" data-unit-type="${t.key}" ${unit ? 'disabled' : ''}>
+                      <button
+                        class="unit-type-btn ${_selectedUnitType === t.key && !t.disabledReason ? 'selected' : ''} ${(unit || t.disabledReason) ? 'cursor-not-allowed' : ''}"
+                        data-unit-type="${t.key}"
+                        ${(unit || t.disabledReason) ? 'disabled' : ''}
+                        ${t.disabledReason ? `title="${_escapeHtml(t.disabledReason)}"` : ''}>
                         <span class="unit-type-icon">${t.icon}</span>
                         ${t.label}
+                        ${t.disabledReason ? `<span class="block text-[10px] text-slate-400 mt-0.5">${_escapeHtml(t.disabledReason)}</span>` : ''}
                       </button>`).join('')}
                     </div>
                   </div>

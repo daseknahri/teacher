@@ -61,7 +61,6 @@ const UNIT_TYPE_OPTIONS = [
   { value: 'chapter', label: 'Chapter' },
   { value: 'exercise_series', label: 'Exercise Series' },
   { value: 'exam', label: 'Exam' },
-  { value: 'exam_correction', label: 'Exam Correction' },
 ];
 
 const CHIP_CLICK_SUPPRESS_MS = 250;
