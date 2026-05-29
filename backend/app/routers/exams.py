@@ -13,7 +13,7 @@ from openpyxl import Workbook
 from .. import config as app_config
 from ..config import MAX_EXCEL_UPLOAD_BYTES
 from ..database import get_db
-from ..models import Exam, ExamArchiveState, ExamResult, Student, User, WorkflowUnit, WorkflowUnitStatus, WorkflowUnitType
+from ..models import ClassSession, Exam, ExamArchiveState, ExamResult, Student, User, WorkflowUnit, WorkflowUnitStatus, WorkflowUnitType
 from ..security import ensure_class_access, ensure_class_writable, get_current_user, is_class_archived, require_teacher
 from ..schemas import ExamCreate, ExamOut, ExamResultOut, ExamResultUpdate, ExamUpdate
 from ..services.audit import log_audit
@@ -124,6 +124,40 @@ def _attach_linked_workflow_flags(db: Session, exams: list[Exam]) -> list[Exam]:
 def _is_exam_archived(db: Session, exam_id: int) -> bool:
     state = db.scalar(select(ExamArchiveState).where(ExamArchiveState.exam_id == exam_id))
     return bool(state and state.is_archived)
+
+
+def _close_active_linked_workflow_units_for_exam(db: Session, exam: Exam) -> list[int]:
+    active_units = db.scalars(
+        select(WorkflowUnit)
+        .where(
+            WorkflowUnit.exam_id == int(exam.id),
+            WorkflowUnit.status == WorkflowUnitStatus.ACTIVE,
+        )
+        .order_by(WorkflowUnit.created_at.desc(), WorkflowUnit.id.desc())
+    ).all()
+    if not active_units:
+        return []
+
+    active_unit_ids = [int(unit.id) for unit in active_units]
+    open_session = db.scalar(
+        select(ClassSession)
+        .where(
+            ClassSession.unit_id.in_(active_unit_ids),
+            ClassSession.end_time.is_(None),
+        )
+        .limit(1)
+    )
+    if open_session is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Linked workflow session #{int(open_session.id)} is still open. End it before archiving this exam.",
+        )
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    for unit in active_units:
+        unit.status = WorkflowUnitStatus.CLOSED
+        unit.closed_at = now
+    return active_unit_ids
 
 
 def _exam_results_rows(db: Session, exam_id: int):
@@ -247,6 +281,7 @@ def archive_exam(
     _ = ensure_class_access(db, exam.class_id, current_user)
     if is_class_archived(db, exam.class_id):
         raise HTTPException(status_code=409, detail="Class is archived and cannot be modified.")
+    closed_linked_unit_ids = _close_active_linked_workflow_units_for_exam(db, exam)
     now = datetime.now(UTC).replace(tzinfo=None)
     clean_reason = reason.strip() if isinstance(reason, str) and reason.strip() else None
     state = db.scalar(select(ExamArchiveState).where(ExamArchiveState.exam_id == exam_id))
@@ -271,7 +306,7 @@ def archive_exam(
         entity_type="exam",
         entity_id=exam.id,
         class_id=exam.class_id,
-        details={"reason": clean_reason},
+        details={"reason": clean_reason, "closed_linked_unit_ids": closed_linked_unit_ids},
     )
     db.commit()
     db.refresh(state)
@@ -281,6 +316,7 @@ def archive_exam(
         "is_archived": state.is_archived,
         "archived_at": state.archived_at.isoformat() if state.archived_at else None,
         "reason": state.reason,
+        "closed_linked_unit_ids": closed_linked_unit_ids,
     }
 
 

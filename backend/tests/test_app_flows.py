@@ -7524,7 +7524,7 @@ def test_exam_import_from_id_name_birthdate_notes_layout(client):
 
 
 def test_exam_update_archive_restore(client):
-    headers = _auth_headers(client)
+    headers = _unique_owner_headers(client)
     class_resp = client.post("/classes", json={"name": "Exam Archive Class"}, headers=headers)
     assert class_resp.status_code == 201
     class_id = class_resp.json()["id"]
@@ -7545,6 +7545,27 @@ def test_exam_update_archive_restore(client):
     assert exam_resp.status_code == 201
     exam_id = exam_resp.json()["id"]
 
+    exam_workflow_resp = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam"},
+    )
+    assert exam_workflow_resp.status_code == 200
+    exam_unit_id = int(exam_workflow_resp.json()["unit"]["id"])
+    close_exam_workflow_resp = client.post(
+        f"/workflow/classes/{class_id}/units/{exam_unit_id}/close",
+        headers=headers,
+    )
+    assert close_exam_workflow_resp.status_code == 200
+
+    correction_workflow_resp = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam_correction"},
+    )
+    assert correction_workflow_resp.status_code == 200
+    correction_unit_id = int(correction_workflow_resp.json()["unit"]["id"])
+
     update_resp = client.put(
         f"/exams/{exam_id}",
         headers=headers,
@@ -7558,6 +7579,7 @@ def test_exam_update_archive_restore(client):
     archive_resp = client.post(f"/exams/{exam_id}/archive", headers=headers)
     assert archive_resp.status_code == 200
     assert archive_resp.json()["is_archived"] is True
+    assert correction_unit_id in archive_resp.json()["closed_linked_unit_ids"]
 
     list_default = client.get(f"/classes/{class_id}/exams", headers=headers)
     assert list_default.status_code == 200
@@ -7567,6 +7589,15 @@ def test_exam_update_archive_restore(client):
     assert list_all.status_code == 200
     archived_row = next(exam for exam in list_all.json() if exam["id"] == exam_id)
     assert archived_row["is_archived"] is True
+    assert archived_row["linked_exam_workflow_status"] == "closed"
+    assert archived_row["linked_correction_workflow_status"] == "closed"
+
+    archived_linked_unit_resp = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam_correction"},
+    )
+    assert archived_linked_unit_resp.status_code == 409
 
     results_file = _build_exam_file(
         [
@@ -7584,6 +7615,16 @@ def test_exam_update_archive_restore(client):
     restore_resp = client.post(f"/exams/{exam_id}/restore", headers=headers)
     assert restore_resp.status_code == 200
     assert restore_resp.json()["is_archived"] is False
+
+    reopened_correction_resp = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam_correction"},
+    )
+    assert reopened_correction_resp.status_code == 200
+    assert reopened_correction_resp.json()["created"] is False
+    assert reopened_correction_resp.json()["reopened"] is True
+    assert int(reopened_correction_resp.json()["unit"]["id"]) == correction_unit_id
 
     import_ok_resp = client.post(
         f"/exams/{exam_id}/results/import",

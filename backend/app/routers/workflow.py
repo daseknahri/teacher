@@ -30,6 +30,7 @@ from ..models import (
     TimetableRuleException,
     TimetableClassAlias,
     Exam,
+    ExamArchiveState,
     ExamResult,
     Student,
     User,
@@ -3669,6 +3670,9 @@ def create_linked_exam_workflow_unit(
     exam = db.get(Exam, exam_id)
     if exam is None or int(exam.class_id) != int(class_id):
         raise HTTPException(status_code=404, detail="Exam not found.")
+    archived_state = db.scalar(select(ExamArchiveState).where(ExamArchiveState.exam_id == int(exam_id)))
+    if archived_state is not None and bool(archived_state.is_archived):
+        raise HTTPException(status_code=409, detail="Archived exams cannot open supervision or correction workflows.")
     requested_type = payload.unit_type
     if requested_type not in {WorkflowUnitType.EXAM, WorkflowUnitType.EXAM_CORRECTION}:
         raise HTTPException(status_code=400, detail="Only exam or exam_correction workflow units can be linked to an exam.")
