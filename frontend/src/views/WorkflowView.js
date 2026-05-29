@@ -3618,11 +3618,12 @@ function _render(el, classId) {
   const notebooklmReady = Boolean(String(unit?.extraction_notebook_role || '').trim());
   const showChecklistAttachments = isAnyExamUnit || isLinkedExamUnit || ['exercise_series', 'chapter'].includes(unit?.unit_type);
   const canAskRowAssistant = Boolean(unit?.extraction_source || notebooklmReady);
+  const linkedExamArchived = Boolean(unit?.exam_is_archived);
   const examResultsCount = Number(unit?.exam_results_count || 0) || 0;
   const examResultsAverage = unit?.exam_results_average_score != null ? Number(unit.exam_results_average_score) : null;
   const examResultsPassed = Number(unit?.exam_results_passed_count || 0) || 0;
   const showExtractionControls = !isAnyExamUnit && !isLinkedExamUnit;
-  const showStartNotebooklmButton = Boolean(unit?.document_name) && isExamWorkflowUnit && !notebooklmReady;
+  const showStartNotebooklmButton = Boolean(unit?.document_name) && isExamWorkflowUnit && !notebooklmReady && !linkedExamArchived;
   const extractionBadgeClass = extractionSource === 'notebooklm'
     ? 'badge-green'
     : extractionSource === 'openai'
@@ -3721,6 +3722,7 @@ function _render(el, classId) {
                     <div class="flex items-center gap-2 flex-wrap mt-2.5">
                       ${unit.unit_type ? `<span class="badge badge-blue">${unit.unit_type}</span>` : ''}
                       ${unit.exam_id ? `<span class="badge badge-gray">Linked exam: ${_escapeHtml(unit.exam_title || `#${unit.exam_id}`)}</span>` : ''}
+                      ${linkedExamArchived ? '<span class="badge badge-amber">Exam archived</span>' : ''}
                       ${unit.exam_id ? `<span class="badge ${examResultsCount ? 'badge-green' : 'badge-amber'}">${examResultsCount ? `${examResultsCount} result${examResultsCount === 1 ? '' : 's'} imported` : 'No results imported yet'}</span>` : ''}
                       ${unit.exam_id && examResultsAverage != null ? `<span class="badge badge-gray">Avg ${_escapeHtml(fmtScore(examResultsAverage))}${Number.isFinite(examResultsPassed) ? ` • ${examResultsPassed} passed` : ''}</span>` : ''}
                       ${isExamWorkflowUnit
@@ -4134,11 +4136,12 @@ function _render(el, classId) {
                   <div class="mt-1 flex items-center gap-1.5 flex-wrap">
                     ${u.unit_type ? `<span class="badge badge-gray" style="font-size:10px">${u.unit_type.replace('_', ' ')}</span>` : ''}
                     ${u.exam_id ? `<span class="badge badge-gray" style="font-size:10px">Exam: ${_escapeHtml(u.exam_title || `#${u.exam_id}`)}</span>` : ''}
+                    ${u.exam_is_archived ? `<span class="badge badge-amber" style="font-size:10px">Exam archived</span>` : ''}
                     <span class="badge badge-gray opacity-50">Archived</span>
                   </div>
                 </div>
                 <div class="flex items-center gap-1.5 flex-wrap sm:justify-end">
-                  ${!unit && index === 0
+                  ${!unit && index === 0 && !u.exam_is_archived
           ? `<button class="btn btn-secondary btn-sm btn-reopen-unit" data-unit-id="${u.id}">Re-open</button>`
           : ''}
                   ${u.exam_id ? `<button class="btn btn-ghost btn-sm btn-open-unit-exam" data-exam-id="${u.exam_id}">Exam</button>` : ''}

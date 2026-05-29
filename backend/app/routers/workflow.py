@@ -1012,6 +1012,7 @@ def _safe_serialize_unit(db: Session, unit: WorkflowUnit, *, class_id: int) -> W
                 class_id=_safe_int(getattr(unit, "class_id", class_id), default=int(class_id)),
                 exam_id=_safe_optional_int(getattr(unit, "exam_id", None)),
                 exam_title=str(getattr(getattr(unit, "exam", None), "title", "") or "").strip() or None,
+                exam_is_archived=False,
                 exam_results_count=0,
                 exam_results_average_score=None,
                 exam_results_passed_count=0,
@@ -1066,6 +1067,14 @@ def _serialize_exam_results_summary(db: Session, exam: Exam | None) -> tuple[int
     return count, average, passed
 
 
+def _serialize_exam_archive_flag(db: Session, exam: Exam | None) -> bool:
+    exam_id = _safe_optional_int(getattr(exam, "id", None))
+    if exam_id is None:
+        return False
+    state = db.scalar(select(ExamArchiveState.is_archived).where(ExamArchiveState.exam_id == exam_id))
+    return bool(state)
+
+
 def _safe_serialize_session(db: Session, session: ClassSession, *, class_id: int) -> WorkflowSessionOut | None:
     try:
         return _serialize_session(db, session)
@@ -1113,11 +1122,13 @@ def _serialize_unit(db: Session, unit: WorkflowUnit) -> WorkflowUnitOut:
         db,
         getattr(unit, "exam", None),
     )
+    exam_is_archived = _serialize_exam_archive_flag(db, getattr(unit, "exam", None))
     return WorkflowUnitOut(
         id=unit.id,
         class_id=unit.class_id,
         exam_id=unit.exam_id,
         exam_title=str(getattr(getattr(unit, "exam", None), "title", "") or "").strip() or None,
+        exam_is_archived=exam_is_archived,
         exam_results_count=exam_results_count,
         exam_results_average_score=exam_results_average_score,
         exam_results_passed_count=exam_results_passed_count,

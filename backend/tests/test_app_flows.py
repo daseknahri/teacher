@@ -7592,6 +7592,12 @@ def test_exam_update_archive_restore(client):
     assert archived_row["linked_exam_workflow_status"] == "closed"
     assert archived_row["linked_correction_workflow_status"] == "closed"
 
+    workspace_archived_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_archived_resp.status_code == 200
+    archived_exam_units = [row for row in workspace_archived_resp.json().get("closed_units", []) if int(row.get("exam_id") or 0) == int(exam_id)]
+    assert archived_exam_units
+    assert all(row["exam_is_archived"] is True for row in archived_exam_units)
+
     archived_linked_unit_resp = client.post(
         f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
         headers=headers,
@@ -7625,6 +7631,7 @@ def test_exam_update_archive_restore(client):
     assert reopened_correction_resp.json()["created"] is False
     assert reopened_correction_resp.json()["reopened"] is True
     assert int(reopened_correction_resp.json()["unit"]["id"]) == correction_unit_id
+    assert reopened_correction_resp.json()["unit"]["exam_is_archived"] is False
 
     import_ok_resp = client.post(
         f"/exams/{exam_id}/results/import",

@@ -664,6 +664,7 @@ class WorkflowUnitOut(BaseModel):
     class_id: int
     exam_id: int | None = None
     exam_title: str | None = None
+    exam_is_archived: bool = False
     exam_results_count: int = 0
     exam_results_average_score: float | None = None
     exam_results_passed_count: int = 0
