@@ -458,7 +458,7 @@ function _bindEvents(el, classId) {
 
   el.querySelector('#btn-import-students')?.addEventListener('click', () => {
     const inp = document.createElement('input');
-    inp.type = 'file'; inp.accept = '.xlsx,.xls';
+    inp.type = 'file'; inp.accept = '.xlsx,.xlsm';
     inp.onchange = async () => {
       const file = inp.files[0]; if (!file) return;
       const form = new FormData(); form.append('file', file);
@@ -468,7 +468,7 @@ function _bindEvents(el, classId) {
         const students = await api(`/classes/${classId}/students`);
         setStudents(students || []);
         renderClassView();
-      } catch (err) { showToast(err.message, 'error'); }
+      } catch (err) { showToast(err.message || 'Student import failed. Use .xlsx or .xlsm.', 'error'); }
     };
     inp.click();
   });

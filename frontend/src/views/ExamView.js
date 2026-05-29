@@ -386,7 +386,7 @@ function _bindExamEvents(el, classId) {
   // Import results
   el.querySelector('#btn-import-results')?.addEventListener('click', () => {
     const inp = document.createElement('input');
-    inp.type = 'file'; inp.accept = '.xlsx,.xls';
+    inp.type = 'file'; inp.accept = '.xlsx,.xlsm';
     inp.onchange = async () => {
       const file = inp.files[0]; if (!file) return;
       const form = new FormData(); form.append('file', file);
@@ -401,7 +401,7 @@ function _bindExamEvents(el, classId) {
         const results = await api(`/exams/${examId}/results`);
         setResults(results || []);
         _renderExam(el, classId);
-      } catch (err) { showToast(err.message, 'error'); }
+      } catch (err) { showToast(err.message || 'Results import failed. Use .xlsx or .xlsm.', 'error'); }
     };
     inp.click();
   });
