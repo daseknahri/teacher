@@ -7863,6 +7863,7 @@ def _build_calendar_events(db: Session, class_id: int) -> list[WorkflowCalendarE
         )
         outline_rows = build_session_outline_rows(checked_item_contexts)
         unit = unit_by_id.get(session.unit_id)
+        unit_exam_is_archived = _serialize_exam_archive_flag(db, getattr(unit, "exam", None)) if unit is not None else False
         events.append(
             WorkflowCalendarEventOut(
                 session_id=session.id,
@@ -7871,6 +7872,8 @@ def _build_calendar_events(db: Session, class_id: int) -> list[WorkflowCalendarE
                 unit_session_number=int(session.unit_session_number) if session.unit_session_number is not None else derived_numbers.get(int(session.id)),
                 unit_title=unit.title if unit else None,
                 unit_type=unit.unit_type if unit else None,
+                unit_status=unit.status if unit else None,
+                unit_exam_is_archived=unit_exam_is_archived,
                 session_date=session.session_date,
                 start_time=session.start_time,
                 end_time=session.end_time,

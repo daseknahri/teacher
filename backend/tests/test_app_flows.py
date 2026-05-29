@@ -7566,6 +7566,24 @@ def test_exam_update_archive_restore(client):
     assert correction_workflow_resp.status_code == 200
     correction_unit_id = int(correction_workflow_resp.json()["unit"]["id"])
 
+    correction_session_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/start",
+        headers=headers,
+        json={"absent_student_ids": []},
+    )
+    assert correction_session_resp.status_code == 201
+    correction_session_id = int(correction_session_resp.json()["id"])
+    correction_end_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/{correction_session_id}/end",
+        headers=headers,
+        json={
+            "session_date": correction_session_resp.json()["session_date"],
+            "start_time": correction_session_resp.json()["start_time"],
+            "end_time": correction_session_resp.json()["start_time"],
+        },
+    )
+    assert correction_end_resp.status_code == 200
+
     update_resp = client.put(
         f"/exams/{exam_id}",
         headers=headers,
@@ -7597,6 +7615,13 @@ def test_exam_update_archive_restore(client):
     archived_exam_units = [row for row in workspace_archived_resp.json().get("closed_units", []) if int(row.get("exam_id") or 0) == int(exam_id)]
     assert archived_exam_units
     assert all(row["exam_is_archived"] is True for row in archived_exam_units)
+
+    calendar_archived_resp = client.get(f"/workflow/classes/{class_id}/calendar", headers=headers)
+    assert calendar_archived_resp.status_code == 200
+    archived_exam_events = [row for row in calendar_archived_resp.json() if int(row.get("unit_id") or 0) == correction_unit_id]
+    assert archived_exam_events
+    assert all(row["unit_exam_is_archived"] is True for row in archived_exam_events)
+    assert all(row["unit_status"] == "closed" for row in archived_exam_events)
 
     archived_linked_unit_resp = client.post(
         f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",

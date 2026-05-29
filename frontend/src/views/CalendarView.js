@@ -1716,6 +1716,8 @@ function _coerceCalendarEvent(row) {
     unit_session_number: unitSessionNumber,
     unit_title: row?.unit_title ? String(row.unit_title) : null,
     unit_type: row?.unit_type ?? null,
+    unit_status: row?.unit_status ?? null,
+    unit_exam_is_archived: Boolean(row?.unit_exam_is_archived),
     session_date: _dateKey(row?.session_date || row?.date || ''),
     start_time: row?.start_time || null,
     end_time: row?.end_time || null,
@@ -3690,7 +3692,13 @@ function _renderCalendar(el, classId) {
   const selectedSessionId = Number(selectedEvent?.session_id || 0) || null;
   const selectedMatchesActiveWorkflow = Boolean(activeWorkflowSessionId && selectedSessionId && activeWorkflowSessionId === selectedSessionId);
   const hasOtherActiveWorkflowSession = Boolean(activeWorkflowSessionId && selectedSessionId && activeWorkflowSessionId !== selectedSessionId);
-  const canShortcutToWorkflowTools = selectedEvent?.unit_id != null;
+  const selectedEventExamArchived = Boolean(selectedEvent?.unit_exam_is_archived);
+  const selectedEventWorkflowUnavailable = Boolean(
+    selectedEvent?.unit_id != null
+    && selectedEventExamArchived
+    && (selectedEvent?.unit_type === 'exam' || selectedEvent?.unit_type === 'exam_correction')
+  );
+  const canShortcutToWorkflowTools = selectedEvent?.unit_id != null && !selectedEventWorkflowUnavailable;
   const selectedBlueprintTree = selectedBlueprint?.blueprint_json && typeof selectedBlueprint.blueprint_json === 'object' && Array.isArray(selectedBlueprint.blueprint_json.items)
     ? selectedBlueprint.blueprint_json.items
     : [];
@@ -4129,7 +4137,7 @@ function _renderCalendar(el, classId) {
               <button id="btn-edit-selected-session" class="btn btn-ghost btn-sm w-full sm:w-auto" ${selectedCanEdit ? '' : 'disabled'} title="${_escapeHtml(selectedEditTitle)}">Edit</button>
               ${selectedMatchesActiveWorkflow
                 ? '<button id="btn-open-selected-workflow" class="btn btn-ghost btn-sm w-full sm:w-auto">Resume Live Session</button>'
-                : selectedEvent.unit_id != null
+                : selectedEvent.unit_id != null && !selectedEventWorkflowUnavailable
                   ? '<button id="btn-open-selected-workflow" class="btn btn-ghost btn-sm w-full sm:w-auto">Open Workflow</button>'
                   : ''}
               <button id="btn-close-selected-session" class="btn btn-ghost btn-sm text-slate-400 w-full sm:w-auto">Close</button>
@@ -4151,13 +4159,14 @@ function _renderCalendar(el, classId) {
                   <div class="mt-2 flex gap-2 flex-wrap">
                     <span class="badge ${selectedSessionStateClass}">${_escapeHtml(selectedSessionStateLabel)}</span>
                     ${selectedMatchesActiveWorkflow ? '<span class="badge badge-amber">Live in Workflow</span>' : ''}
+                    ${selectedEventWorkflowUnavailable ? '<span class="badge badge-amber">Exam archived</span>' : ''}
                     <span class="badge badge-gray">${selectedHeadlineCount} headlines</span>
                   </div>
                 </div>
                 <div class="rounded-2xl border border-white/80 bg-white/90 px-3.5 py-3 shadow-sm">
                   <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Focus For Now</p>
                   <p class="mt-1 text-[12px] leading-relaxed text-slate-700">Keep only the classroom record here: attendance, checklist structure, and teacher note.</p>
-                  <p class="mt-1 text-[11px] text-slate-500">We can add extra tools back later.</p>
+                  <p class="mt-1 text-[11px] text-slate-500">${selectedEventWorkflowUnavailable ? 'Restore the linked exam if you want to reopen its workflow.' : 'We can add extra tools back later.'}</p>
                 </div>
               </div>
               ${hasOtherActiveWorkflowSession ? `

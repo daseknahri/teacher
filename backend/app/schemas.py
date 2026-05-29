@@ -894,6 +894,8 @@ class WorkflowCalendarEventOut(BaseModel):
     unit_session_number: int | None = None
     unit_title: str | None
     unit_type: WorkflowUnitType | None
+    unit_status: WorkflowUnitStatus | None = None
+    unit_exam_is_archived: bool = False
     session_date: date
     start_time: time | None
     end_time: time | None
