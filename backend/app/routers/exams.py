@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import csv
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from io import BytesIO, StringIO
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import StreamingResponse
@@ -13,7 +14,7 @@ from openpyxl import Workbook
 from .. import config as app_config
 from ..config import MAX_EXCEL_UPLOAD_BYTES
 from ..database import get_db
-from ..models import ClassSession, Exam, ExamArchiveState, ExamResult, Student, User, WorkflowUnit, WorkflowUnitStatus, WorkflowUnitType
+from ..models import ClassSession, Exam, ExamArchiveState, ExamResult, SessionUpload, Student, User, WorkflowUnit, WorkflowUnitStatus, WorkflowUnitType
 from ..security import ensure_class_access, ensure_class_writable, get_current_user, is_class_archived, require_teacher
 from ..schemas import ExamCreate, ExamOut, ExamResultOut, ExamResultUpdate, ExamUpdate
 from ..services.audit import log_audit
@@ -160,6 +161,44 @@ def _close_active_linked_workflow_units_for_exam(db: Session, exam: Exam) -> lis
     return active_unit_ids
 
 
+def _safe_unlink(path: str | None) -> bool:
+    raw = str(path or "").strip()
+    if not raw:
+        return False
+    try:
+        file_path = Path(raw)
+        if not file_path.exists():
+            return False
+        file_path.unlink()
+        return True
+    except OSError:
+        return False
+
+
+def _delete_future_linked_sessions_for_exam(db: Session, exam: Exam) -> tuple[list[int], int]:
+    today_value = date.today()
+    sessions = db.scalars(
+        select(ClassSession)
+        .join(WorkflowUnit, WorkflowUnit.id == ClassSession.unit_id)
+        .where(
+            WorkflowUnit.exam_id == int(exam.id),
+            ClassSession.session_date > today_value,
+        )
+        .order_by(ClassSession.session_date.asc(), ClassSession.id.asc())
+    ).all()
+    if not sessions:
+        return [], 0
+
+    session_ids = [int(session.id) for session in sessions]
+    upload_paths = db.scalars(
+        select(SessionUpload.file_path).where(SessionUpload.session_id.in_(session_ids))
+    ).all()
+    for session in sessions:
+        db.delete(session)
+    deleted_upload_files_count = sum(1 for path in upload_paths if _safe_unlink(path))
+    return session_ids, deleted_upload_files_count
+
+
 def _exam_results_rows(db: Session, exam_id: int):
     return db.execute(
         select(
@@ -282,6 +321,7 @@ def archive_exam(
     if is_class_archived(db, exam.class_id):
         raise HTTPException(status_code=409, detail="Class is archived and cannot be modified.")
     closed_linked_unit_ids = _close_active_linked_workflow_units_for_exam(db, exam)
+    deleted_future_session_ids, deleted_future_upload_files_count = _delete_future_linked_sessions_for_exam(db, exam)
     now = datetime.now(UTC).replace(tzinfo=None)
     clean_reason = reason.strip() if isinstance(reason, str) and reason.strip() else None
     state = db.scalar(select(ExamArchiveState).where(ExamArchiveState.exam_id == exam_id))
@@ -306,7 +346,12 @@ def archive_exam(
         entity_type="exam",
         entity_id=exam.id,
         class_id=exam.class_id,
-        details={"reason": clean_reason, "closed_linked_unit_ids": closed_linked_unit_ids},
+        details={
+            "reason": clean_reason,
+            "closed_linked_unit_ids": closed_linked_unit_ids,
+            "deleted_future_session_ids": deleted_future_session_ids,
+            "deleted_future_upload_files_count": deleted_future_upload_files_count,
+        },
     )
     db.commit()
     db.refresh(state)
@@ -317,6 +362,8 @@ def archive_exam(
         "archived_at": state.archived_at.isoformat() if state.archived_at else None,
         "reason": state.reason,
         "closed_linked_unit_ids": closed_linked_unit_ids,
+        "deleted_future_session_ids": deleted_future_session_ids,
+        "deleted_future_upload_files_count": deleted_future_upload_files_count,
     }
 
 

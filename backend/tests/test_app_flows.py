@@ -1,5 +1,5 @@
 from io import BytesIO
-from datetime import date
+from datetime import date, timedelta
 import json
 import os
 import sys
@@ -7577,12 +7577,30 @@ def test_exam_update_archive_restore(client):
         f"/workflow/classes/{class_id}/sessions/{correction_session_id}/end",
         headers=headers,
         json={
-            "session_date": correction_session_resp.json()["session_date"],
+            "session_date": date.today().isoformat(),
             "start_time": correction_session_resp.json()["start_time"],
             "end_time": correction_session_resp.json()["start_time"],
         },
     )
     assert correction_end_resp.status_code == 200
+
+    future_correction_session_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/start",
+        headers=headers,
+        json={"absent_student_ids": []},
+    )
+    assert future_correction_session_resp.status_code == 201
+    future_correction_session_id = int(future_correction_session_resp.json()["id"])
+    future_correction_end_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/{future_correction_session_id}/end",
+        headers=headers,
+        json={
+            "session_date": (date.today() + timedelta(days=10)).isoformat(),
+            "start_time": future_correction_session_resp.json()["start_time"],
+            "end_time": future_correction_session_resp.json()["start_time"],
+        },
+    )
+    assert future_correction_end_resp.status_code == 200
 
     update_resp = client.put(
         f"/exams/{exam_id}",
@@ -7598,6 +7616,7 @@ def test_exam_update_archive_restore(client):
     assert archive_resp.status_code == 200
     assert archive_resp.json()["is_archived"] is True
     assert correction_unit_id in archive_resp.json()["closed_linked_unit_ids"]
+    assert future_correction_session_id in archive_resp.json()["deleted_future_session_ids"]
 
     list_default = client.get(f"/classes/{class_id}/exams", headers=headers)
     assert list_default.status_code == 200
@@ -7622,6 +7641,7 @@ def test_exam_update_archive_restore(client):
     assert archived_exam_events
     assert all(row["unit_exam_is_archived"] is True for row in archived_exam_events)
     assert all(row["unit_status"] == "closed" for row in archived_exam_events)
+    assert all(int(row["session_id"]) != future_correction_session_id for row in archived_exam_events)
 
     archived_linked_unit_resp = client.post(
         f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
