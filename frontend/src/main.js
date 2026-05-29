@@ -17,7 +17,8 @@ import { api } from './api/client.js';
 
 import { renderShell, syncNav, onClassChange, updateClassSelector, refreshShell } from './components/AppShell.js';
 import { setStudents, setDashboard, getSelectedId, setSelectedClass } from './state/class.js';
-import { setWorkspace } from './state/workflow.js';
+import { setWorkspace, clearWorkflowState } from './state/workflow.js';
+import { clearExamState } from './state/exam.js';
 import { showToast } from './utils/toast.js';
 
 // ---- Views ----
@@ -124,15 +125,16 @@ async function boot() {
 
     // Reload class data when user switches class
     onClassChange(async (classId) => {
+        setStudents([]);
+        setDashboard(null);
+        clearWorkflowState();
+        clearExamState();
+
         if (isOwner()) {
-            setStudents([]);
-            setDashboard(null);
             setWorkspace({ active_unit: null, closed_units: [], active_session: null, recent_sessions: [] });
             return;
         }
         if (!classId) {
-            setStudents([]);
-            setDashboard(null);
             setWorkspace({ active_unit: null, closed_units: [], active_session: null, recent_sessions: [] });
         } else {
             try {
