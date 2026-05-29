@@ -6418,6 +6418,74 @@ def test_workflow_reopen_closed_unit_flow(client):
     assert "active unit already exists" in str(reopen_blocked_resp.json().get("detail", "")).lower()
 
 
+def test_closing_unit_deletes_future_planned_sessions(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Workflow Close Cleanup", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Close Cleanup Unit",
+            "source_text": "chapter seed",
+        },
+    )
+    assert unit_resp.status_code == 201
+    unit_id = int(unit_resp.json()["id"])
+
+    past_session_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions",
+        headers=headers,
+        json={
+            "session_date": "2026-05-26",
+            "start_time": "08:00:00",
+            "end_time": "09:00:00",
+            "unit_id": unit_id,
+            "note": "Past recorded session",
+            "allow_on_holiday": True,
+        },
+    )
+    assert past_session_resp.status_code == 201
+    past_session_id = int(past_session_resp.json()["id"])
+
+    future_session_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions",
+        headers=headers,
+        json={
+            "session_date": "2026-06-10",
+            "start_time": "08:00:00",
+            "end_time": "09:00:00",
+            "unit_id": unit_id,
+            "note": "Future planned session",
+            "allow_on_holiday": True,
+        },
+    )
+    assert future_session_resp.status_code == 201
+    future_session_id = int(future_session_resp.json()["id"])
+
+    close_resp = client.post(f"/workflow/classes/{class_id}/units/{unit_id}/close", headers=headers)
+    assert close_resp.status_code == 200
+    assert close_resp.json()["status"] == "closed"
+
+    unit_sessions_resp = client.get(f"/workflow/units/{unit_id}/sessions", headers=headers)
+    assert unit_sessions_resp.status_code == 200
+    session_ids = {int(row["id"]) for row in unit_sessions_resp.json()}
+    assert past_session_id in session_ids
+    assert future_session_id not in session_ids
+
+    future_session_detail = client.get(f"/sessions/{future_session_id}", headers=headers)
+    assert future_session_detail.status_code == 404
+
+    calendar_resp = client.get(f"/workflow/classes/{class_id}/calendar", headers=headers)
+    assert calendar_resp.status_code == 200
+    calendar_session_ids = {int(row["session_id"]) for row in calendar_resp.json()}
+    assert past_session_id in calendar_session_ids
+    assert future_session_id not in calendar_session_ids
+
+
 def test_workflow_delete_unit_deletes_linked_sessions(client):
     headers = _auth_headers(client)
     class_resp = client.post("/classes", json={"name": "Workflow Delete Unit", "subject": "Math"}, headers=headers)

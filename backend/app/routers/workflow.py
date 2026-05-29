@@ -7660,6 +7660,27 @@ def close_workflow_unit(
     )
     if open_session is not None:
         raise HTTPException(status_code=409, detail=f"Session #{open_session.id} is still open. End it first.")
+
+    today = date.today()
+    future_sessions = db.scalars(
+        select(ClassSession).where(
+            ClassSession.class_id == int(class_id),
+            ClassSession.unit_id == int(unit.id),
+            ClassSession.end_time.is_not(None),
+            ClassSession.session_date > today,
+        )
+    ).all()
+    future_session_ids = [int(row.id) for row in future_sessions]
+    future_upload_paths: list[str] = []
+    if future_session_ids:
+        future_upload_paths = list(
+            db.scalars(
+                select(SessionUpload.file_path).where(SessionUpload.session_id.in_(future_session_ids))
+            ).all()
+        )
+        for row in future_sessions:
+            db.delete(row)
+
     unit.status = WorkflowUnitStatus.CLOSED
     unit.closed_at = _utc_now_naive()
 
@@ -7670,9 +7691,15 @@ def close_workflow_unit(
         entity_type="workflow_unit",
         entity_id=unit.id,
         class_id=class_id,
-        details={"title": unit.title, "unit_type": unit.unit_type.value},
+        details={
+            "title": unit.title,
+            "unit_type": unit.unit_type.value,
+            "deleted_future_session_ids": future_session_ids,
+        },
     )
     db.commit()
+    for path in sorted({str(path).strip() for path in future_upload_paths if str(path).strip()}):
+        _safe_unlink(path)
     db.refresh(unit)
     return _serialize_unit(db, unit)
 
