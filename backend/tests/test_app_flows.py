@@ -7080,7 +7080,6 @@ def test_linked_exam_workflow_uses_exam_paper_outline(client):
             "exam_date": "2026-07-15",
             "max_score": 20,
             "weight": 1,
-            "paper_outline_text": outline,
         },
     )
     assert exam_resp.status_code == 201
@@ -7118,7 +7117,6 @@ def test_linked_exam_correction_workflow_uses_exam_outline_when_no_exam_workflow
             "exam_date": "2026-07-22",
             "max_score": 20,
             "weight": 1,
-            "paper_outline_text": outline,
         },
     )
     assert exam_resp.status_code == 201
@@ -7150,7 +7148,6 @@ def test_linked_exam_workflow_checklist_item_accepts_image_attachment(client):
             "exam_date": "2026-07-29",
             "max_score": 20,
             "weight": 1,
-            "paper_outline_text": "Exercice 1\nExercice 2",
         },
     )
     assert exam_resp.status_code == 201

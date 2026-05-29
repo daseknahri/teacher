@@ -172,7 +172,6 @@ class ExamCreate(BaseModel):
     exam_date: date
     max_score: float = Field(gt=0)
     weight: float = Field(default=1.0, gt=0)
-    paper_outline_text: str | None = None
 
 
 class ExamOut(BaseModel):
@@ -182,7 +181,6 @@ class ExamOut(BaseModel):
     exam_date: date
     max_score: float
     weight: float
-    paper_outline_text: str | None = None
     is_archived: bool = False
     linked_exam_workflow_unit_id: int | None = None
     linked_exam_workflow_status: str | None = None
@@ -199,7 +197,6 @@ class ExamUpdate(BaseModel):
     exam_date: date | None = None
     max_score: float | None = Field(default=None, gt=0)
     weight: float | None = Field(default=None, gt=0)
-    paper_outline_text: str | None = None
 
 
 class ExamResultOut(BaseModel):

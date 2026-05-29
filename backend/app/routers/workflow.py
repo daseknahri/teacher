@@ -194,7 +194,6 @@ router = APIRouter(prefix="/workflow", tags=["workflow"], dependencies=[Depends(
 NON_WORKING_WEEKDAYS: set[int] = {7}  # Sunday
 NUMBERED_ROW_START_PATTERN = re.compile(r"(?<!\S)\d+(?:\.\d+)+(?:[)\].:-])?(?:\s+|$)")
 SLUG_LIKE_TITLE_PATTERN = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+){2,}$", re.IGNORECASE)
-OUTLINE_BULLET_PREFIX_PATTERN = re.compile(r"^(?:[-*•]\s+|[a-zA-Z]\)\s+|\d+[.)]\s+|[ivxlcdmIVXLCDM]+[.)]\s+)")
 logger = logging.getLogger("teacher_progress.workflow")
 EXAM_TITLE_KEYWORD_PATTERN = re.compile(
     r"\b(examen|exam|devoir(?:\s+surveille)?|devoir\s+surveillé|controle|contr[oô]le|evaluation|évaluation|ds)\b",
@@ -1199,61 +1198,6 @@ def _workflow_nodes_from_checklist_rows(items: list[WorkflowChecklistItem], *, r
             else:
                 nodes = [{"title": clean_root, "kind": WorkflowChecklistItemKind.CHAPTER.value, "children": []}]
     return nodes
-
-
-def _kind_for_exam_outline_title(title: str, *, depth: int) -> str:
-    lowered = str(title or "").strip().lower()
-    if not lowered:
-        return WorkflowChecklistItemKind.OTHER.value
-    if "exercice" in lowered or "exercise" in lowered or "probleme" in lowered or "problem" in lowered:
-        return WorkflowChecklistItemKind.EXERCISE.value
-    if "exemple" in lowered or "example" in lowered:
-        return WorkflowChecklistItemKind.EXAMPLE.value
-    if "règle" in lowered or "regle" in lowered or "propriété" in lowered or "propriete" in lowered or "property" in lowered:
-        return WorkflowChecklistItemKind.PROPERTY.value
-    if "définition" in lowered or "definition" in lowered:
-        return WorkflowChecklistItemKind.DEFINITION.value
-    if "corrig" in lowered:
-        return WorkflowChecklistItemKind.CORRECTION.value
-    if "consigne" in lowered or "barème" in lowered or "bareme" in lowered or "surveillance" in lowered:
-        return WorkflowChecklistItemKind.SUPERVISION.value
-    if depth <= 0:
-        return WorkflowChecklistItemKind.SECTION.value
-    return WorkflowChecklistItemKind.SUBSECTION.value
-
-
-def _build_exam_outline_nodes(*, root_title: str, outline_text: str | None) -> list[dict[str, object]] | None:
-    lines = [line.rstrip() for line in str(outline_text or "").splitlines() if line.strip()]
-    if not lines:
-        return None
-    root_node: dict[str, object] = {
-        "title": str(root_title or "").strip() or "Exam",
-        "kind": WorkflowChecklistItemKind.CHAPTER.value,
-        "children": [],
-    }
-    stack: list[tuple[int, dict[str, object]]] = [(-1, root_node)]
-    for raw_line in lines:
-        indent_raw = len(raw_line) - len(raw_line.lstrip(" \t"))
-        normalized_depth = max(0, indent_raw // 2)
-        title = OUTLINE_BULLET_PREFIX_PATTERN.sub("", raw_line.lstrip()).strip()
-        if not title:
-            continue
-        node = {
-            "title": title,
-            "kind": _kind_for_exam_outline_title(title, depth=normalized_depth),
-            "children": [],
-        }
-        while stack and stack[-1][0] >= normalized_depth:
-            stack.pop()
-        parent = stack[-1][1] if stack else root_node
-        parent_children = parent.get("children")
-        if not isinstance(parent_children, list):
-            parent_children = []
-            parent["children"] = parent_children
-        parent_children.append(node)
-        stack.append((normalized_depth, node))
-    children = root_node.get("children")
-    return [root_node] if isinstance(children, list) and children else None
 
 
 def _build_linked_exam_generated_payload(
@@ -8447,3 +8391,4 @@ def generate_leaf_content(
         status=existing.status,
         leaf_content=WorkflowLeafContentOut.model_validate(existing),
     )
+

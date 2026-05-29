@@ -230,7 +230,6 @@ def create_exam(
         exam_date=payload.exam_date,
         max_score=payload.max_score,
         weight=payload.weight,
-        paper_outline_text=str(payload.paper_outline_text or "").strip() or None,
     )
     db.add(exam)
     db.flush()
@@ -284,8 +283,6 @@ def update_exam(
         exam.max_score = payload.max_score
     if payload.weight is not None:
         exam.weight = payload.weight
-    if payload.paper_outline_text is not None:
-        exam.paper_outline_text = str(payload.paper_outline_text or "").strip() or None
 
     if str(exam.title or "").strip() != previous_title:
         _sync_linked_workflow_titles_for_exam(db, exam, previous_title=previous_title)
