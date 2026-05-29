@@ -149,6 +149,16 @@ function _setCalendarViewIntent(intent) {
     // Non-fatal. Navigation can still proceed without restored calendar context.
   }
 }
+
+function _clearWorkflowEntryContext({ clearStoredIntent = true } = {}) {
+  _workflowEntryContext = null;
+  _workflowPreviewFocusOnly = true;
+  _workflowPreviewHideDone = false;
+  if (clearStoredIntent) {
+    try { sessionStorage.removeItem(WORKFLOW_VIEW_INTENT_KEY); } catch {}
+  }
+}
+
 const UNIT_ASSISTANT_ACTION_LABELS = {
   explain_section: 'Explain Section',
   generate_teacher_notes: 'Teacher Notes',
@@ -5443,6 +5453,7 @@ function _bindWorkflowEvents(el, classId) {
         }
         const ws = await api(`/workflow/classes/${classId}`).catch(() => null);
         if (ws) {
+          _clearWorkflowEntryContext();
           setWorkspace(ws);
         } else {
           setActiveUnit(unit);
@@ -5543,6 +5554,7 @@ function _bindWorkflowEvents(el, classId) {
         }
         const ws = await api(`/workflow/classes/${classId}`).catch(() => null);
         if (ws) {
+          _clearWorkflowEntryContext();
           setWorkspace(ws);
         } else {
           setActiveUnit(unit);
@@ -6875,6 +6887,7 @@ function _bindWorkflowEvents(el, classId) {
       try {
         await api(`/workflow/classes/${classId}/units/${unit.id}/close`, { method: 'POST' });
         const ws = await api(`/workflow/classes/${classId}`);
+        _clearWorkflowEntryContext();
         setWorkspace(ws);
         _activeTab = 0;
         _render(el, classId);
@@ -7223,9 +7236,7 @@ function _bindWorkflowEvents(el, classId) {
   });
 
   el.querySelector('#btn-dismiss-workflow-entry')?.addEventListener('click', () => {
-    _workflowEntryContext = null;
-    _workflowPreviewFocusOnly = true;
-    _workflowPreviewHideDone = false;
+    _clearWorkflowEntryContext({ clearStoredIntent: false });
     _render(el, classId);
   });
 
@@ -7269,6 +7280,7 @@ function _bindWorkflowEvents(el, classId) {
         try {
           const result = await api(`/workflow/classes/${classId}/units/${unitId}`, { method: 'DELETE' });
           const ws = await api(`/workflow/classes/${classId}`);
+          _clearWorkflowEntryContext();
           setWorkspace(ws);
           _activeTab = 0;
           _render(el, classId);
@@ -7296,6 +7308,7 @@ function _bindWorkflowEvents(el, classId) {
         try {
           await api(`/workflow/classes/${classId}/units/${unitId}/reopen`, { method: 'POST' });
           const ws = await api(`/workflow/classes/${classId}`);
+          _clearWorkflowEntryContext();
           setWorkspace(ws);
           _activeTab = 0;
           _render(el, classId);
