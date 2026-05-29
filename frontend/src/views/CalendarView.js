@@ -2641,8 +2641,9 @@ async function _selectSession(sessionId, el, classId) {
 
   try {
     const detail = await api(`/sessions/${sid}`);
-    if (detail && detail.unit_id != null) {
-      const blueprintState = await _loadCalendarUnitBlueprint(classId, detail.unit_id);
+    const detailUnitId = Number(detail?.unit_id || detail?.session?.unit_id || 0) || null;
+    if (detail && detailUnitId != null) {
+      const blueprintState = await _loadCalendarUnitBlueprint(classId, detailUnitId);
       detail.unit_blueprint = blueprintState?.item && typeof blueprintState.item === 'object' ? blueprintState.item : null;
       detail.unit_blueprint_error = blueprintState?.error ? String(blueprintState.error) : null;
       try {

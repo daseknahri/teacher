@@ -377,9 +377,13 @@ def get_session_detail(
     uploads = db.scalars(select(SessionUpload).where(SessionUpload.session_id == session_id).order_by(SessionUpload.created_at.asc())).all()
 
     return {
+        "unit_id": session.unit_id,
+        "unit_session_number": session.unit_session_number,
         "session": {
             "id": session.id,
             "class_id": session.class_id,
+            "unit_id": session.unit_id,
+            "unit_session_number": session.unit_session_number,
             "session_date": session.session_date.isoformat(),
             "start_time": session.start_time.isoformat() if session.start_time else None,
             "end_time": session.end_time.isoformat() if session.end_time else None,

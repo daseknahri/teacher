@@ -5994,6 +5994,47 @@ def test_infer_exam_title_from_source_text_prefers_visible_exam_heading():
     assert title == "Devoir surveille N 2 : Fractions"
 
 
+def test_infer_exam_title_from_source_text_skips_metadata_and_uses_topic_line():
+    from app.routers import workflow as workflow_router
+
+    extracted_text = "\n".join(
+        [
+            "DS N 2",
+            "Classe : 3AC",
+            "Fractions et operations",
+            "Exercice 1",
+        ]
+    )
+
+    title = workflow_router._infer_exam_title_from_source_text(
+        extracted_text,
+        fallback_title="exam-ds2-fractions",
+        file_name="exam-ds2-fractions.pdf",
+    )
+
+    assert title == "DS N 2 - Fractions et operations"
+
+
+def test_infer_exam_title_from_source_text_keeps_detailed_heading_without_forcing_subtitle():
+    from app.routers import workflow as workflow_router
+
+    extracted_text = "\n".join(
+        [
+            "Controle continu N 3 de mathematiques",
+            "Classe : 2AC",
+            "Exercice 1",
+        ]
+    )
+
+    title = workflow_router._infer_exam_title_from_source_text(
+        extracted_text,
+        fallback_title="controle-continu-maths-3",
+        file_name="controle-continu-maths-3.pdf",
+    )
+
+    assert title == "Controle continu N 3 de mathematiques"
+
+
 def _unique_owner_headers(client) -> dict[str, str]:
     from app.database import SessionLocal
     from app.models import User, UserRole
@@ -8045,7 +8086,7 @@ def test_owner_can_patch_class_teacher_assignment(client):
 
 
 def test_teacher_can_update_exam_result(client):
-    headers = _auth_headers(client)
+    headers = _unique_owner_headers(client)
 
     class_resp = client.post("/classes", headers=headers, json={"name": "Exam Class"})
     assert class_resp.status_code == 201
@@ -8101,6 +8142,50 @@ def test_teacher_can_update_exam_result(client):
     assert updated["note"] == "Updated"
     assert updated["teacher_comment"] == "Better now"
     assert updated["id"] is not None
+
+
+def test_session_detail_exposes_workflow_unit_linkage(client):
+    headers = _unique_owner_headers(client)
+
+    class_resp = client.post("/classes", headers=headers, json={"name": "Workflow Session Class"})
+    assert class_resp.status_code == 201
+    class_id = class_resp.json()["id"]
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={"unit_type": "chapter", "title": "Linked Unit", "source_text": "I- Titre"},
+    )
+    assert unit_resp.status_code == 201
+    unit_id = unit_resp.json()["id"]
+
+    student_import = client.post(
+        f"/classes/{class_id}/students/import",
+        headers=headers,
+        files={
+            "file": (
+                "students.xlsx",
+                _build_roster_file([("S1", "Student One")]),
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+        },
+    )
+    assert student_import.status_code == 200
+
+    session_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/start",
+        headers=headers,
+        json={"absent_student_ids": []},
+    )
+    assert session_resp.status_code == 201
+    session_id = session_resp.json()["id"]
+
+    detail_resp = client.get(f"/sessions/{session_id}", headers=headers)
+    assert detail_resp.status_code == 200
+    payload = detail_resp.json()
+    assert payload["unit_id"] == unit_id
+    assert payload["session"]["unit_id"] == unit_id
+    assert payload["session"]["unit_session_number"] == 1
 
 
 def test_owner_teacher_status_reset_and_password_change(client):

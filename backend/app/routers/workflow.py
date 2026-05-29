@@ -6,6 +6,7 @@ from pathlib import Path
 import json
 import logging
 import re
+import unicodedata
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
@@ -198,6 +199,11 @@ EXAM_TITLE_KEYWORD_PATTERN = re.compile(
     r"\b(examen|exam|devoir(?:\s+surveille)?|devoir\s+surveillé|controle|contr[oô]le|evaluation|évaluation|ds)\b",
     re.IGNORECASE,
 )
+EXAM_METADATA_PREFIX_PATTERN = re.compile(
+    r"^\s*(classe|niveau|nom|prenom|prénom|date|durée|duree|temps|matière|matiere|module|coefficient|prof(?:esseur)?|lycée|lycee|collège|college|académie|academie|année|annee|session)\b",
+    re.IGNORECASE,
+)
+EXAM_TITLE_SEPARATOR_PATTERN = re.compile(r"[:\-–—|]")
 
 
 def _utc_now_naive() -> datetime:
@@ -1612,6 +1618,59 @@ def _normalize_exam_title_candidate(value: str | None) -> str:
     return re.sub(r"\s+", " ", text).strip()[:255]
 
 
+def _fold_exam_text(value: str | None) -> str:
+    raw = str(value or "").strip().lower()
+    if not raw:
+        return ""
+    normalized = unicodedata.normalize("NFKD", raw)
+    return "".join(ch for ch in normalized if not unicodedata.combining(ch))
+
+
+def _looks_like_exam_metadata_line(value: str | None) -> bool:
+    text = _normalize_exam_title_candidate(value)
+    if not text:
+        return False
+    return bool(EXAM_METADATA_PREFIX_PATTERN.match(_fold_exam_text(text)))
+
+
+def _exam_heading_needs_subtitle(value: str | None) -> bool:
+    text = _normalize_exam_title_candidate(value)
+    if not text:
+        return False
+    if EXAM_TITLE_SEPARATOR_PATTERN.search(text):
+        return False
+    folded = _fold_exam_text(text)
+    token_count = len([part for part in folded.split() if part.strip()])
+    if token_count <= 4:
+        return True
+    if re.search(r"\b(?:n|no|numero)\s*\d+\b", folded):
+        return token_count <= 6
+    if re.search(r"\bds\s*\d+\b", folded):
+        return token_count <= 5
+    return len(text) <= 24
+
+
+def _pick_exam_subtitle(lines: list[str], start_index: int) -> str | None:
+    for offset in range(1, 4):
+        index = int(start_index) + offset
+        if index < 0 or index >= len(lines):
+            break
+        candidate = _normalize_exam_title_candidate(lines[index])
+        if not candidate:
+            continue
+        if _looks_like_exam_metadata_line(candidate):
+            continue
+        if EXAM_TITLE_KEYWORD_PATTERN.search(candidate):
+            continue
+        folded = _fold_exam_text(candidate)
+        if folded.startswith("exercice") or folded.startswith("exercise") or folded.startswith("probleme") or folded.startswith("problem"):
+            continue
+        if len(candidate) > 90:
+            continue
+        return candidate
+    return None
+
+
 def _title_needs_exam_inference(value: str | None, *, file_name: str | None = None) -> bool:
     text = _normalize_exam_title_candidate(value)
     if not text:
@@ -1646,10 +1705,10 @@ def _infer_exam_title_from_source_text(
         if not EXAM_TITLE_KEYWORD_PATTERN.search(line):
             continue
         candidate = line
-        if len(candidate) <= 18 and index + 1 < len(lines):
-            next_line = lines[index + 1]
-            if next_line and len(next_line) <= 80 and not EXAM_TITLE_KEYWORD_PATTERN.search(next_line):
-                candidate = f"{candidate} - {next_line}"
+        if _exam_heading_needs_subtitle(candidate):
+            subtitle = _pick_exam_subtitle(lines, index)
+            if subtitle:
+                candidate = f"{candidate} - {subtitle}"
         candidate = _normalize_exam_title_candidate(candidate)
         if candidate:
             return candidate
