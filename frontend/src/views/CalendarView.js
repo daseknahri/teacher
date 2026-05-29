@@ -3,7 +3,7 @@
  * Teacher Progress App - Tailwind v4
  */
 import { api, downloadWithAuth } from '../api/client.js';
-import { getSelectedId, getStudents } from '../state/class.js';
+import { getClassContextVersion, getSelectedId, getStudents } from '../state/class.js';
 import { getActiveSession, getCalendar, setCalendar } from '../state/workflow.js';
 import { showToast } from '../utils/toast.js';
 import { mountRetryCard } from '../utils/retryView.js';
@@ -18,6 +18,7 @@ let _selectedSessionLoading = false;
 let _selectedSessionError = null;
 let _mutationInFlight = false;
 let _calendarViewClassId = null;
+let _calendarViewClassVersion = 0;
 let _calendarPlannedHideDone = false;
 let _calendarSessionGuidanceHideImported = false;
 let _calendarSessionGuidanceKindFilter = 'all';
@@ -51,6 +52,8 @@ function _resetCalendarViewStateForClassChange() {
   _calendarCollapseTeacherPrep = false;
   _calendarCollapseWriteup = false;
   _holidayByDate = new Map();
+  _timetableRulesByClass.clear();
+  _timetableExceptionsByClass.clear();
   _sessionDetailCache.clear();
   _calendarUnitBlueprintCache.clear();
   _calendarAssistantArtifactCache.clear();
@@ -3610,9 +3613,14 @@ export async function renderCalendarView() {
   _showChrome();
   const el = document.getElementById('app-content');
   const classId = getSelectedId();
-  if (Number(_calendarViewClassId || 0) !== Number(classId || 0)) {
+  const classContextVersion = Number(getClassContextVersion() || 0);
+  if (
+    Number(_calendarViewClassId || 0) !== Number(classId || 0)
+    || Number(_calendarViewClassVersion || 0) !== classContextVersion
+  ) {
     _resetCalendarViewStateForClassChange();
     _calendarViewClassId = Number(classId || 0) || null;
+    _calendarViewClassVersion = classContextVersion;
   }
   const pendingCalendarIntent = _consumeCalendarViewIntent();
   if (pendingCalendarIntent?.session_date) {

@@ -4,7 +4,7 @@
  */
 
 import { getUserName, getRole, isOwner } from '../state/auth.js';
-import { getClasses, getSelectedId, setSelectedClass } from '../state/class.js';
+import { bumpClassContextVersion, getClasses, getSelectedId, setSelectedClass } from '../state/class.js';
 import { clearAuth } from '../state/auth.js';
 import { clearClassState } from '../state/class.js';
 import { clearWorkflowState } from '../state/workflow.js';
@@ -28,6 +28,7 @@ let _shellRendered = false;
 export function onClassChange(fn) { _classChangeListeners.push(fn); }
 
 export function notifyClassChange(classId = getSelectedId()) {
+  bumpClassContextVersion();
   _classChangeListeners.forEach(fn => fn(classId || null));
 }
 

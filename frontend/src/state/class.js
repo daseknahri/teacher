@@ -11,6 +11,7 @@ const _state = {
     students: [],
     dashboard: null,
     classTeachers: [],
+    contextVersion: 0,
 };
 
 // ---- Getters ----
@@ -20,6 +21,7 @@ export const getSelectedName = () => _state.selectedName;
 export const getStudents = () => _state.students;
 export const getDashboard = () => _state.dashboard;
 export const getClassTeachers = () => _state.classTeachers;
+export const getClassContextVersion = () => _state.contextVersion;
 export const hasClass = () => Boolean(_state.selectedId);
 export const hasStudents = () => _state.students.length > 0;
 
@@ -63,11 +65,17 @@ export function setClassTeachers(teachers) {
     _state.classTeachers = Array.isArray(teachers) ? teachers : [];
 }
 
+export function bumpClassContextVersion() {
+    _state.contextVersion += 1;
+    return _state.contextVersion;
+}
+
 export function clearClassState() {
     _state.selectedId = null;
     _state.selectedName = '';
     _state.students = [];
     _state.dashboard = null;
     _state.classTeachers = [];
+    _state.contextVersion += 1;
     localStorage.removeItem(CLASS_KEY);
 }

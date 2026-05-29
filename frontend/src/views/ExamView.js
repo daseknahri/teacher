@@ -7,7 +7,7 @@ import {
   getExams, getSelectedExamId, getResults, getSelectedExam,
   setExams, setSelectedExamId, setResults,
 } from '../state/exam.js';
-import { getSelectedId } from '../state/class.js';
+import { getClassContextVersion, getSelectedId } from '../state/class.js';
 import { showToast } from '../utils/toast.js';
 import { askConfirm } from '../utils/modal.js';
 import { mountRetryCard } from '../utils/retryView.js';
@@ -19,6 +19,7 @@ let _sortAsc = true;
 let _filterQ = '';
 let _showArchived = false;
 let _examViewClassId = null;
+let _examViewClassVersion = 0;
 
 function _resetExamViewStateForClassChange() {
   _filterQ = '';
@@ -55,9 +56,14 @@ export async function renderExamView() {
   _showChrome();
   const el = document.getElementById('app-content');
   const classId = getSelectedId();
-  if (Number(_examViewClassId || 0) !== Number(classId || 0)) {
+  const classContextVersion = Number(getClassContextVersion() || 0);
+  if (
+    Number(_examViewClassId || 0) !== Number(classId || 0)
+    || Number(_examViewClassVersion || 0) !== classContextVersion
+  ) {
     _resetExamViewStateForClassChange();
     _examViewClassId = Number(classId || 0) || null;
+    _examViewClassVersion = classContextVersion;
   }
 
   if (!classId) {

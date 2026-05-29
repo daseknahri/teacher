@@ -19,7 +19,7 @@ import {
   getAbsentIds, toggleAbsent,
 } from '../state/workflow.js';
 import { setSelectedExamId } from '../state/exam.js';
-import { getSelectedId, getStudents } from '../state/class.js';
+import { getClassContextVersion, getSelectedId, getStudents } from '../state/class.js';
 import { showToast } from '../utils/toast.js';
 import { askConfirm } from '../utils/modal.js';
 import { mountRetryCard } from '../utils/retryView.js';
@@ -31,6 +31,7 @@ let _recentWindow = 'month';
 let _selectedUnitType = 'chapter';
 let _checklistCollapseUnitId = null;
 let _workflowViewClassId = null;
+let _workflowViewClassVersion = 0;
 const WORKFLOW_VIEW_INTENT_KEY = 'workflow_view_intent';
 const CALENDAR_VIEW_INTENT_KEY = 'calendar_view_intent';
 let _workflowEntryContext = null;
@@ -2468,9 +2469,14 @@ export async function renderWorkflowView() {
   _showChrome();
   const el = document.getElementById('app-content');
   const classId = getSelectedId();
-  if (Number(_workflowViewClassId || 0) !== Number(classId || 0)) {
+  const classContextVersion = Number(getClassContextVersion() || 0);
+  if (
+    Number(_workflowViewClassId || 0) !== Number(classId || 0)
+    || Number(_workflowViewClassVersion || 0) !== classContextVersion
+  ) {
     _resetWorkflowViewStateForClassChange();
     _workflowViewClassId = Number(classId || 0) || null;
+    _workflowViewClassVersion = classContextVersion;
   }
   const pendingWorkflowIntent = _peekWorkflowViewIntent();
 
