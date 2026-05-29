@@ -2613,6 +2613,25 @@ function _isPastWorkflowSession(session, todayKey = _dateKey(new Date())) {
   return sessionDateKey < todayKey;
 }
 
+function _isArchivedExamWorkflowSession(session) {
+  return Boolean(
+    session
+    && session.unit_id != null
+    && Boolean(session.unit_exam_is_archived)
+    && (session.unit_type === 'exam' || session.unit_type === 'exam_correction')
+  );
+}
+
+function _workflowSessionEditLockReason(session, todayKey = _dateKey(new Date())) {
+  if (_isArchivedExamWorkflowSession(session)) {
+    return 'Archived exam sessions are read-only until the exam is restored.';
+  }
+  if (_isPastWorkflowSession(session, todayKey)) {
+    return 'Past workflow sessions are locked for date/time edits.';
+  }
+  return '';
+}
+
 async function _reloadCalendarData(classId) {
   const [workflowRows, sessionRows] = await Promise.all([
     api(`/workflow/classes/${classId}/calendar`).catch(() => []),
@@ -3476,8 +3495,9 @@ async function _submitPastSession({ classId, el, defaultDateKey }) {
 
 async function _moveSessionBlock({ classId, session, targetDayKey, targetSlotIndex, el }) {
   if (!session) return;
-  if (_isPastWorkflowSession(session)) {
-    showToast('Past workflow sessions are locked for move actions.', 'info');
+  const lockReason = _workflowSessionEditLockReason(session);
+  if (lockReason) {
+    showToast(lockReason, 'info');
     return;
   }
   const slot = TIME_SLOTS[targetSlotIndex];
@@ -3520,8 +3540,9 @@ async function _moveSessionBlock({ classId, session, targetDayKey, targetSlotInd
 
 async function _editSessionBlock({ classId, session, el }) {
   if (!session) return;
-  if (_isPastWorkflowSession(session)) {
-    showToast('Past workflow sessions are locked for time edits.', 'info');
+  const lockReason = _workflowSessionEditLockReason(session);
+  if (lockReason) {
+    showToast(lockReason, 'info');
     return;
   }
   const startMinutes = _timeToMinutes(session.start_time);
@@ -3808,14 +3829,15 @@ function _renderCalendar(el, classId) {
   const selectedDateKey = selectedEvent ? _dateKey(selectedEvent.session_date || selectedEvent.date) : '';
   const selectedIsFuture = Boolean(selectedDateKey) && selectedDateKey > todayKey;
   const selectedIsPastWorkflowLocked = Boolean(selectedEvent) && _isPastWorkflowSession(selectedEvent, todayKey);
+  const selectedSessionEditLockReason = selectedEvent ? _workflowSessionEditLockReason(selectedEvent, todayKey) : '';
   const selectedAlreadyConfirmed = Boolean(
     selectedEvent
     && selectedEvent.unit_id != null
     && (Boolean(selectedEvent.has_saved_writeup) || Number(selectedEvent.checked_items_count || 0) > 0)
   );
-  const selectedCanConfirm = Boolean(selectedEvent && selectedEvent.unit_id != null && !selectedIsFuture && !selectedAlreadyConfirmed);
-  const selectedCanEdit = Boolean(selectedEvent) && !selectedIsPastWorkflowLocked;
-  const selectedCanAttendanceEdit = Boolean(selectedEvent) && !selectedIsFuture;
+  const selectedCanConfirm = Boolean(selectedEvent && selectedEvent.unit_id != null && !selectedIsFuture && !selectedAlreadyConfirmed && !selectedEventWorkflowUnavailable);
+  const selectedCanEdit = Boolean(selectedEvent) && !selectedSessionEditLockReason;
+  const selectedCanAttendanceEdit = Boolean(selectedEvent) && !selectedIsFuture && !selectedEventWorkflowUnavailable;
   const selectedConfirmLabel = selectedIsFuture ? 'Future Session' : selectedAlreadyConfirmed ? 'Already Confirmed' : 'Confirm Session';
   const selectedHasWorkflowUnit = Boolean(selectedEvent && selectedEvent.unit_id != null);
   const selectedCompletedCount = Number(selectedEvent?.checked_items_count || 0);
@@ -3846,6 +3868,8 @@ function _renderCalendar(el, classId) {
   const selectedNextStepText = selectedEvent
     ? selectedIsFuture
       ? 'Review the planned teaching flow and prep suggestions before class.'
+      : selectedEventWorkflowUnavailable
+        ? 'This session belongs to an archived exam. Restore the exam if you want to edit the session, confirm it, or continue write-up work.'
       : selectedAlreadyConfirmed && !selectedWriteup
         ? 'This session is already confirmed. You can review the saved structure and continue with write-up work if needed.'
       : selectedWriteup
@@ -3919,16 +3943,18 @@ function _renderCalendar(el, classId) {
   const selectedConfirmTitle = selectedEvent
     ? (selectedCanConfirm
       ? 'Mark this delivered session as confirmed.'
+      : (selectedEventWorkflowUnavailable
+        ? 'Archived exam sessions are read-only until the exam is restored.'
       : (selectedAlreadyConfirmed
         ? 'This session is already confirmed.'
-        : (selectedEvent.unit_id == null ? 'Only workflow unit sessions can be confirmed.' : 'Future sessions can be confirmed only on/after the session date.')))
+        : (selectedEvent.unit_id == null ? 'Only workflow unit sessions can be confirmed.' : 'Future sessions can be confirmed only on/after the session date.'))))
     : '';
   const selectedEditTitle = selectedCanEdit
     ? 'Edit session date/time and note.'
-    : 'Past workflow sessions are locked for date/time edits.';
+    : (selectedSessionEditLockReason || 'Past workflow sessions are locked for date/time edits.');
   const selectedAttendanceTitle = selectedCanAttendanceEdit
     ? 'Update absent/present students for this session.'
-    : 'Future sessions cannot take attendance yet.';
+    : (selectedEventWorkflowUnavailable ? 'Archived exam sessions are read-only until the exam is restored.' : 'Future sessions cannot take attendance yet.');
   if (_calendarSessionGuidanceStateSessionId !== Number(selectedEvent?.session_id || 0)) {
     _calendarSessionGuidanceStateSessionId = Number(selectedEvent?.session_id || 0) || null;
     _calendarSessionGuidanceHideImported = false;
@@ -4020,12 +4046,16 @@ function _renderCalendar(el, classId) {
       const isSelected = Number(session.session_id) === Number(_selectedSessionId);
       const isGeneric = session.unit_id == null;
       const isPastWorkflowLocked = _isPastWorkflowSession(session, todayKey);
-      const canMoveOrResize = !isPastWorkflowLocked;
+      const isArchivedExamLocked = _isArchivedExamWorkflowSession(session);
+      const isSessionLocked = isPastWorkflowLocked || isArchivedExamLocked;
+      const canMoveOrResize = !isSessionLocked;
       const unitSessionNumber = isGeneric ? null : unitSessionNumbers.get(Number(session.session_id)) || null;
       const chipTime = session.end_time
         ? `${fmtTime(session.start_time).slice(0, 5)}-${fmtTime(session.end_time).slice(0, 5)}`
         : fmtTime(session.start_time).slice(0, 5);
-      const chipTitle = isPastWorkflowLocked
+      const chipTitle = isArchivedExamLocked
+        ? `${session.unit_title || 'Session'} (locked: linked exam is archived)`
+        : isPastWorkflowLocked
         ? `${session.unit_title || 'Session'} (locked: past workflow session)`
         : (session.unit_title || 'Session');
       return `
@@ -4033,7 +4063,8 @@ function _renderCalendar(el, classId) {
                             data-session-id="${session.session_id}"
                             data-session-day="${day.key}"
                             data-session-slot-index="${slotIndex}"
-                            data-session-locked="${isPastWorkflowLocked ? '1' : '0'}"
+                            data-session-locked="${isSessionLocked ? '1' : '0'}"
+                            data-session-lock-reason="${_escapeHtmlAttr(_workflowSessionEditLockReason(session, todayKey))}"
                             role="button"
                             tabindex="0"
                             aria-label="${_escapeHtml(`Open session ${session.unit_title || 'Session'} on ${fmtDate(day.key)} at ${fmtTime(session.start_time)}`)}"
@@ -4351,7 +4382,7 @@ function _renderCalendar(el, classId) {
 
     handle.addEventListener('mousedown', e => {
       if (String(chip.dataset.sessionLocked || '') === '1') {
-        showToast('Past workflow sessions are locked for resize.', 'info');
+        showToast(String(chip.dataset.sessionLockReason || 'This session is locked.'), 'info');
         return;
       }
       e.stopPropagation();
@@ -4445,7 +4476,7 @@ function _renderCalendar(el, classId) {
     chip.addEventListener('dragstart', event => {
       if (String(chip.dataset.sessionLocked || '') === '1') {
         event.preventDefault();
-        showToast('Past workflow sessions are locked for move actions.', 'info');
+        showToast(String(chip.dataset.sessionLockReason || 'This session is locked.'), 'info');
         return;
       }
       const sessionId = Number(chip.dataset.sessionId);
@@ -4899,6 +4930,10 @@ function _renderCalendar(el, classId) {
 
   el.querySelector('#btn-generate-selected-writeup')?.addEventListener('click', async event => {
     if (!selectedEvent || selectedEvent.unit_id == null) return;
+    if (selectedEventWorkflowUnavailable) {
+      showToast('Archived exam sessions are read-only until the exam is restored.', 'info');
+      return;
+    }
     if (selectedIsFuture) {
       showToast('Future sessions cannot generate a textbook write-up yet.', 'info');
       return;
@@ -4931,6 +4966,10 @@ function _renderCalendar(el, classId) {
 
   el.querySelector('#btn-toggle-selected-writeup-approval')?.addEventListener('click', async event => {
     if (!selectedEvent || !selectedWriteup) return;
+    if (selectedEventWorkflowUnavailable) {
+      showToast('Archived exam sessions are read-only until the exam is restored.', 'info');
+      return;
+    }
     if (_mutationInFlight) {
       showToast('Please wait for the current update to finish.', 'info');
       return;
@@ -4960,6 +4999,10 @@ function _renderCalendar(el, classId) {
 
   el.querySelector('#btn-edit-selected-writeup')?.addEventListener('click', async () => {
     if (!selectedEvent || !selectedWriteup) return;
+    if (selectedEventWorkflowUnavailable) {
+      showToast('Archived exam sessions are read-only until the exam is restored.', 'info');
+      return;
+    }
     if (_mutationInFlight) {
       showToast('Please wait for the current update to finish.', 'info');
       return;
@@ -5158,6 +5201,10 @@ function _renderCalendar(el, classId) {
   el.querySelectorAll('.btn-calendar-guidance-quick-pick').forEach(button => {
     button.addEventListener('click', async () => {
       if (!selectedEvent || selectedEvent.unit_id == null) return;
+      if (selectedEventWorkflowUnavailable) {
+        showToast('Archived exam sessions are read-only until the exam is restored.', 'info');
+        return;
+      }
       const artifactId = Number(button.dataset.artifactId || 0);
       if (!artifactId) return;
       try {
@@ -5194,6 +5241,10 @@ function _renderCalendar(el, classId) {
 
   el.querySelector('#btn-import-selected-guidance')?.addEventListener('click', async () => {
     if (!selectedEvent || selectedEvent.unit_id == null) return;
+    if (selectedEventWorkflowUnavailable) {
+      showToast('Archived exam sessions are read-only until the exam is restored.', 'info');
+      return;
+    }
     if (selectedIsFuture) {
       showToast('Future sessions cannot import saved guidance yet.', 'info');
       return;

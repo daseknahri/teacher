@@ -7022,6 +7022,7 @@ def test_linked_exam_workflow_exposes_exam_results_summary(client):
         files={"file": ("students.xlsx", roster, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
     )
     assert roster_resp.status_code == 200
+    students = client.get(f"/classes/{class_id}/students", headers=headers).json()
 
     exam_resp = client.post(
         f"/classes/{class_id}/exams",
@@ -7536,6 +7537,7 @@ def test_exam_update_archive_restore(client):
         files={"file": ("students.xlsx", roster, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
     )
     assert roster_resp.status_code == 200
+    students = client.get(f"/classes/{class_id}/students", headers=headers).json()
 
     exam_resp = client.post(
         f"/classes/{class_id}/exams",
@@ -7655,6 +7657,41 @@ def test_exam_update_archive_restore(client):
         headers=headers,
     )
     assert archived_reopen_resp.status_code == 409
+
+    session_update_blocked = client.put(
+        f"/sessions/{correction_session_id}",
+        headers=headers,
+        json={"note": "Archived exam note"},
+    )
+    assert session_update_blocked.status_code == 409
+    assert "read-only" in str(session_update_blocked.json().get("detail", "")).lower()
+
+    attendance_blocked = client.put(
+        f"/sessions/{correction_session_id}/attendance",
+        headers=headers,
+        json=[
+            {"student_id": int(students[0]["id"]), "status": "present", "minutes_late": 0, "comment": None},
+            {"student_id": int(students[1]["id"]), "status": "absent", "minutes_late": 0, "comment": None},
+        ],
+    )
+    assert attendance_blocked.status_code == 409
+    assert "read-only" in str(attendance_blocked.json().get("detail", "")).lower()
+
+    confirm_blocked = client.post(
+        f"/workflow/classes/{class_id}/sessions/{correction_session_id}/confirm",
+        headers=headers,
+        json={"auto_close_unit": False, "create_progress_items": False, "generate_session_writeup": False},
+    )
+    assert confirm_blocked.status_code == 409
+    assert "read-only" in str(confirm_blocked.json().get("detail", "")).lower()
+
+    writeup_blocked = client.post(
+        f"/workflow/classes/{class_id}/sessions/{correction_session_id}/writeup/generate",
+        headers=headers,
+        json={"regenerate": True},
+    )
+    assert writeup_blocked.status_code == 409
+    assert "read-only" in str(writeup_blocked.json().get("detail", "")).lower()
 
     results_file = _build_exam_file(
         [

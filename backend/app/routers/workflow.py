@@ -1083,6 +1083,17 @@ def _is_exam_id_archived(db: Session, exam_id: int | None) -> bool:
     return bool(state)
 
 
+def _ensure_workflow_session_writable(db: Session, session: ClassSession) -> None:
+    if session.unit_id is None:
+        return
+    linked_exam_id = db.scalar(select(WorkflowUnit.exam_id).where(WorkflowUnit.id == int(session.unit_id)))
+    if _is_exam_id_archived(db, linked_exam_id):
+        raise HTTPException(
+            status_code=409,
+            detail="Archived exam sessions are read-only until the exam is restored.",
+        )
+
+
 def _safe_serialize_session(db: Session, session: ClassSession, *, class_id: int) -> WorkflowSessionOut | None:
     try:
         return _serialize_session(db, session)
@@ -6801,6 +6812,7 @@ def confirm_workflow_session(
     session = db.get(ClassSession, session_id)
     if session is None or session.class_id != class_id or session.unit_id is None:
         raise HTTPException(status_code=404, detail="Workflow session not found.")
+    _ensure_workflow_session_writable(db, session)
     if session.session_date > date.today():
         raise HTTPException(status_code=409, detail="Future sessions cannot be confirmed yet.")
     already_confirmed = bool(
@@ -7408,6 +7420,7 @@ def get_workflow_session_writeup(
     session = db.get(ClassSession, int(session_id))
     if session is None or int(session.class_id) != int(class_id):
         raise HTTPException(status_code=404, detail="Workflow session not found.")
+    _ensure_workflow_session_writable(db, session)
     row = db.scalar(select(WorkflowSessionWriteup).where(WorkflowSessionWriteup.session_id == int(session_id)))
     if row is None:
         raise HTTPException(status_code=404, detail="Session write-up not found.")
@@ -7475,6 +7488,7 @@ def import_workflow_session_writeup_assistant_artifact(
     session = db.get(ClassSession, int(session_id))
     if session is None or int(session.class_id) != int(class_id) or session.unit_id is None:
         raise HTTPException(status_code=404, detail="Workflow session not found.")
+    _ensure_workflow_session_writable(db, session)
     artifact = db.get(WorkflowUnitAssistantArtifact, int(payload.artifact_id))
     if artifact is None or int(artifact.unit_id) != int(session.unit_id):
         raise HTTPException(status_code=404, detail="Saved guidance not found for this session unit.")
@@ -7530,6 +7544,7 @@ def generate_workflow_session_writeup(
     session = db.get(ClassSession, int(session_id))
     if session is None or int(session.class_id) != int(class_id) or session.unit_id is None:
         raise HTTPException(status_code=404, detail="Workflow session not found.")
+    _ensure_workflow_session_writable(db, session)
     if session.session_date > date.today():
         raise HTTPException(status_code=409, detail="Future sessions cannot generate a write-up yet.")
 

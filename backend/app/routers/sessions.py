@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from .. import config as app_config
 from ..config import MAX_SCREENSHOT_UPLOAD_BYTES, UPLOADS_DIR
 from ..database import get_db
-from ..models import AttendanceRecord, AttendanceStatus, ClassSession, ProgressItem, ProgressItemType, SessionUpload, Student, User
+from ..models import AttendanceRecord, AttendanceStatus, ClassSession, ExamArchiveState, ProgressItem, ProgressItemType, SessionUpload, Student, User, WorkflowUnit
 from ..security import ensure_class_access, ensure_class_writable, get_current_user, is_class_archived, require_teacher
 from ..schemas import (
     AttendanceIn,
@@ -44,6 +44,17 @@ router = APIRouter(tags=["sessions"], dependencies=[Depends(require_teacher)])
 def _ensure_session_writable(db: Session, session: ClassSession) -> None:
     if is_class_archived(db, session.class_id):
         raise HTTPException(status_code=409, detail="Class is archived and cannot be modified.")
+    if session.unit_id is not None:
+        linked_exam_id = db.scalar(select(WorkflowUnit.exam_id).where(WorkflowUnit.id == int(session.unit_id)))
+        if linked_exam_id is not None:
+            archived = db.scalar(
+                select(ExamArchiveState.is_archived).where(ExamArchiveState.exam_id == int(linked_exam_id))
+            )
+            if bool(archived):
+                raise HTTPException(
+                    status_code=409,
+                    detail="Archived exam sessions are read-only until the exam is restored.",
+                )
 
 
 def _is_non_working_day(value) -> bool:
