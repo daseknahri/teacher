@@ -7980,6 +7980,39 @@ def test_class_assignment_replaces_previous_teacher_and_exposes_teacher_user_id(
     assert current_access_resp.status_code == 200
 
 
+def test_teacher_can_access_multiple_assigned_classes(client):
+    owner_headers = _auth_headers(client)
+    teacher_id, teacher_headers = _create_teacher_and_login(client, owner_headers)
+
+    first_class_resp = client.post(
+        "/classes",
+        headers=owner_headers,
+        json={"name": "Math 1", "teacher_user_id": teacher_id},
+    )
+    assert first_class_resp.status_code == 201
+    first_class_id = first_class_resp.json()["id"]
+
+    second_class_resp = client.post(
+        "/classes",
+        headers=owner_headers,
+        json={"name": "Math 2", "teacher_user_id": teacher_id},
+    )
+    assert second_class_resp.status_code == 201
+    second_class_id = second_class_resp.json()["id"]
+
+    teacher_classes_resp = client.get("/classes", headers=teacher_headers)
+    assert teacher_classes_resp.status_code == 200
+    teacher_class_ids = {row["id"] for row in teacher_classes_resp.json()}
+    assert first_class_id in teacher_class_ids
+    assert second_class_id in teacher_class_ids
+
+    first_access_resp = client.get(f"/classes/{first_class_id}", headers=teacher_headers)
+    assert first_access_resp.status_code == 200
+
+    second_access_resp = client.get(f"/classes/{second_class_id}", headers=teacher_headers)
+    assert second_access_resp.status_code == 200
+
+
 def test_owner_teacher_status_reset_and_password_change(client):
     owner_headers = _auth_headers(client)
     owner_me = client.get("/auth/me", headers=owner_headers)
