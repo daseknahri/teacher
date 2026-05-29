@@ -116,9 +116,11 @@ function _renderExam(el, classId) {
           ${exam ? `<p class="text-[13px] text-slate-400 mt-0.5">${fmtDate(exam.exam_date)} | Max ${exam.max_score ?? 20} pts</p>` : ''}
           ${exam ? `
             <div class="mt-2 flex flex-wrap gap-2">
+              ${exam.is_archived ? `<span class="badge badge-amber">Archived</span>` : ''}
               ${exam.linked_exam_workflow_unit_id ? `<span class="badge ${examWorkflowActive ? 'badge-green' : 'badge-gray'}">${_escapeHtml(examWorkflowActive ? 'Supervision workflow active' : 'Supervision workflow linked')}</span>` : ''}
               ${exam.linked_correction_workflow_unit_id ? `<span class="badge ${correctionWorkflowActive ? 'badge-green' : 'badge-gray'}">${_escapeHtml(correctionWorkflowActive ? 'Correction workflow active' : 'Correction workflow linked')}</span>` : ''}
             </div>` : ''}
+          ${exam?.is_archived ? `<p class="text-[12px] text-amber-700 mt-2">Restore this exam to reopen supervision or correction workflows.</p>` : ''}
         </div>
         <div class="flex gap-2 flex-wrap">
           ${examId ? `
@@ -286,6 +288,10 @@ function _bindExamEvents(el, classId) {
     const exam = getSelectedExam();
     if (!exam) {
       showToast('Select an exam first.', 'warning');
+      return;
+    }
+    if (exam.is_archived) {
+      showToast('Restore this exam before opening its workflows.', 'warning');
       return;
     }
     const isOpenOnly = unitType === 'exam'
