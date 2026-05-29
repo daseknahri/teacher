@@ -624,8 +624,8 @@ def test_workflow_unit_session_lifecycle(client):
         headers=headers,
         data={"unit_type": "exam_correction", "title": "Correction CC1"},
     )
-    assert exam_correction_resp.status_code == 201
-    assert exam_correction_resp.json()["unit_type"] == "exam_correction"
+    assert exam_correction_resp.status_code == 400
+    assert "Create correction workflows from the linked exam record in Exams." in str(exam_correction_resp.json().get("detail", ""))
 
 
 def test_workflow_calendar_session_create_with_unit_and_absences(client):

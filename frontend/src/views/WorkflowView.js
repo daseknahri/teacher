@@ -5412,6 +5412,11 @@ function _bindWorkflowEvents(el, classId) {
         const form = new FormData();
         // use selected unit type; exam/exam_correction don't require source_text
         const unitType = _selectedUnitType || 'chapter';
+        if (unitType === 'exam_correction') {
+          _setBusy(createBtn, false);
+          showToast('Create correction workflows from Exams so they stay linked to a real exam.', 'warning');
+          return;
+        }
         form.append('unit_type', unitType);
         if (['chapter', 'exercise_series'].includes(unitType)) {
           form.append('source_text', title);   // let backend build checklist from typed title
@@ -5507,6 +5512,12 @@ function _bindWorkflowEvents(el, classId) {
       const form = new FormData();
       // use the currently selected unit type (pdf extract always has a file)
       const unitType = _selectedUnitType || 'chapter';
+      if (unitType === 'exam_correction') {
+        _setLabelBusy(pdfLabel, false);
+        e.target.value = '';
+        showToast('Create correction workflows from Exams so they stay linked to a real exam.', 'warning');
+        return;
+      }
       form.append('unit_type', unitType);
       form.append('title', title);
       if (plannedHoursResult.value != null) form.append('planned_hours', String(plannedHoursResult.value));

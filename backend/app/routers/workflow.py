@@ -3636,6 +3636,11 @@ def start_unit(
     current_user: User = Depends(get_current_user),
 ) -> WorkflowUnitOut:
     _ = ensure_class_writable(db, class_id, current_user)
+    if unit_type == WorkflowUnitType.EXAM_CORRECTION:
+        raise HTTPException(
+            status_code=400,
+            detail="Create correction workflows from the linked exam record in Exams.",
+        )
     unit = _create_unit_with_generated_checklist(
         db,
         class_id=class_id,
