@@ -6878,7 +6878,7 @@ def test_create_linked_exam_correction_workflow_reuses_exam_structure(client):
 
 
 def test_exam_list_includes_linked_workflow_status(client):
-    headers = _auth_headers(client)
+    headers = _unique_owner_headers(client)
     class_resp = client.post("/classes", json={"name": f"Exam Link Status {uuid.uuid4().hex[:6]}"}, headers=headers)
     assert class_resp.status_code == 201
     class_id = int(class_resp.json()["id"])
@@ -6905,6 +6905,63 @@ def test_exam_list_includes_linked_workflow_status(client):
     assert row["linked_exam_workflow_status"] == "active"
     assert row["linked_exam_workflow_title"] == "CC4"
     assert row["linked_correction_workflow_unit_id"] is None
+
+
+def test_updating_exam_title_syncs_linked_workflow_titles(client):
+    headers = _unique_owner_headers(client)
+    class_resp = client.post("/classes", json={"name": f"Exam Title Sync {uuid.uuid4().hex[:6]}"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    exam_resp = client.post(
+        f"/classes/{class_id}/exams",
+        headers=headers,
+        json={"title": "CC7", "exam_date": "2026-07-15", "max_score": 20, "weight": 1},
+    )
+    assert exam_resp.status_code == 201
+    exam_id = int(exam_resp.json()["id"])
+
+    exam_unit_resp = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam"},
+    )
+    assert exam_unit_resp.status_code == 200
+
+    close_exam_unit = client.post(
+        f"/workflow/classes/{class_id}/units/{exam_unit_resp.json()['unit']['id']}/close",
+        headers=headers,
+    )
+    assert close_exam_unit.status_code == 200
+
+    correction_unit_resp = client.post(
+        f"/workflow/classes/{class_id}/exams/{exam_id}/linked-unit",
+        headers=headers,
+        json={"unit_type": "exam_correction"},
+    )
+    assert correction_unit_resp.status_code == 200
+
+    update_resp = client.put(
+        f"/exams/{exam_id}",
+        headers=headers,
+        json={"title": "CC7 - Fractions", "exam_date": "2026-07-15", "max_score": 20, "weight": 1},
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.json()["title"] == "CC7 - Fractions"
+
+    exams_resp = client.get(f"/classes/{class_id}/exams", headers=headers)
+    assert exams_resp.status_code == 200
+    exam_row = next(item for item in exams_resp.json() if int(item["id"]) == exam_id)
+    assert exam_row["linked_exam_workflow_title"] == "CC7 - Fractions"
+    assert exam_row["linked_correction_workflow_title"] == "Correction - CC7 - Fractions"
+
+    workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_resp.status_code == 200
+    active_unit = workspace_resp.json().get("active_unit")
+    assert isinstance(active_unit, dict)
+    assert active_unit["title"] == "Correction - CC7 - Fractions"
+    closed_titles = {row["title"] for row in workspace_resp.json().get("closed_units", [])}
+    assert "CC7 - Fractions" in closed_titles
 
 
 def test_create_linked_exam_workflow_reopens_closed_linked_unit(client):

@@ -29,6 +29,42 @@ from ..services.upload_validation import (
 router = APIRouter(tags=["exams"], dependencies=[Depends(require_teacher)])
 
 
+def _sync_linked_workflow_titles_for_exam(db: Session, exam: Exam, *, previous_title: str | None = None) -> None:
+    exam_title = str(exam.title or "").strip()
+    if not exam_title:
+        return
+    previous = str(previous_title or "").strip()
+    correction_title = f"Correction - {exam_title}"
+    previous_correction_title = f"Correction - {previous}" if previous else ""
+
+    units = db.scalars(
+        select(WorkflowUnit).where(WorkflowUnit.exam_id == int(exam.id)).order_by(WorkflowUnit.id.asc())
+    ).all()
+    if not units:
+        return
+
+    for unit in units:
+        if unit.unit_type == WorkflowUnitType.EXAM:
+            unit.title = exam_title
+            root_item = next((row for row in (unit.checklist_items or []) if row.parent_item_id is None), None)
+            if root_item is not None:
+                root_item.title = exam_title
+        elif unit.unit_type == WorkflowUnitType.EXAM_CORRECTION:
+            unit.title = correction_title
+            root_item = next((row for row in (unit.checklist_items or []) if row.parent_item_id is None), None)
+            if root_item is not None:
+                if not previous_correction_title or str(root_item.title or "").strip() == previous_correction_title:
+                    root_item.title = correction_title
+                elif str(root_item.title or "").strip().lower().startswith("correction -"):
+                    root_item.title = correction_title
+
+        blueprint = getattr(unit, "blueprint", None)
+        if blueprint is not None and isinstance(blueprint.blueprint_json, dict):
+            payload = dict(blueprint.blueprint_json)
+            payload["unit_title"] = unit.title
+            blueprint.blueprint_json = payload
+
+
 def _archive_flags_for_exams(db: Session, exam_ids: list[int]) -> dict[int, bool]:
     if not exam_ids:
         return {}
@@ -165,6 +201,7 @@ def update_exam(
     _ = ensure_class_writable(db, exam.class_id, current_user)
     if _is_exam_archived(db, exam_id):
         raise HTTPException(status_code=409, detail="Exam is archived and cannot be modified.")
+    previous_title = str(exam.title or "").strip()
 
     if payload.title is not None:
         exam.title = payload.title.strip()
@@ -176,6 +213,9 @@ def update_exam(
         exam.weight = payload.weight
     if payload.paper_outline_text is not None:
         exam.paper_outline_text = str(payload.paper_outline_text or "").strip() or None
+
+    if str(exam.title or "").strip() != previous_title:
+        _sync_linked_workflow_titles_for_exam(db, exam, previous_title=previous_title)
 
     log_audit(
         db,
