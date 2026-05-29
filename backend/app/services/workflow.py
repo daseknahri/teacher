@@ -48,6 +48,28 @@ def generate_unit_checklist(
     session_count: int | None = None,
     document_path: str | None = None,
 ) -> dict[str, Any]:
+    if unit_type in {WorkflowUnitType.EXAM, WorkflowUnitType.EXAM_CORRECTION}:
+        package = generate_unit_checklist_package(
+            unit_type=unit_type,
+            title=title,
+            source_text=source_text,
+            session_count=session_count,
+            provider="template",
+            document_path=document_path,
+        )
+        return {
+            "source": package.get("source") or "template",
+            "requested_provider": package.get("requested_provider") or "template",
+            "model": package.get("model"),
+            "status": package.get("status") or "ready",
+            "items": package.get("items") or [],
+            "unit_map": package.get("unit_map") if isinstance(package.get("unit_map"), dict) else None,
+            "content_blocks": package.get("content_blocks") if isinstance(package.get("content_blocks"), list) else None,
+            "raw_provider_response": package.get("raw_provider_response"),
+            "error_message": package.get("error_message"),
+            "provider_context": package.get("provider_context") if isinstance(package.get("provider_context"), dict) else None,
+        }
+
     configured_provider = str(app_config.UNIT_PLANNER_PROVIDER or "fallback").strip().lower() or "fallback"
     has_document = bool(str(document_path or "").strip())
 

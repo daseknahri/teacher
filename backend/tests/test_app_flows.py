@@ -6094,6 +6094,27 @@ def test_workflow_start_exam_unit_from_pdf_infers_better_title(client):
     assert float(exams[0]["max_score"]) == 20.0
 
 
+def test_generate_unit_checklist_skips_notebooklm_readiness_for_exam_pdf(monkeypatch):
+    from app.services import workflow as workflow_service
+    from app.models import WorkflowUnitType
+
+    def _boom(**kwargs):
+        raise AssertionError("NotebookLM readiness should not run for exam templates")
+
+    monkeypatch.setattr(workflow_service, "ensure_notebooklm_generation_ready", _boom)
+
+    result = workflow_service.generate_unit_checklist(
+        WorkflowUnitType.EXAM,
+        "DS 2",
+        "Devoir surveille N 2",
+        document_path="fake.pdf",
+    )
+
+    assert result["source"] == "template"
+    assert result["requested_provider"] == "template"
+    assert result["items"][0]["title"] == "Supervision d'examen"
+
+
 def test_workflow_start_notebooklm_for_exam_unit_stores_provider_context(client, monkeypatch):
     from app.services import workflow_generation
 
