@@ -19,6 +19,32 @@ let _sortAsc = true;
 let _filterQ = '';
 let _showArchived = false;
 
+async function _reloadExamCollection(classId, { preferredExamId = null, keepResultsForSelected = false } = {}) {
+  const exams = await api(`/classes/${classId}/exams?include_archived=true`);
+  setExams(exams || []);
+  const preferredId = Number(preferredExamId || getSelectedExamId() || 0) || null;
+  const selectedExam = preferredId ? (exams || []).find(e => Number(e?.id || 0) === preferredId) : null;
+  if (selectedExam) {
+    setSelectedExamId(Number(selectedExam.id));
+    if (selectedExam.is_archived) _showArchived = true;
+  } else {
+    const fallback = (exams || []).find(e => !e?.is_archived) || exams?.[0] || null;
+    setSelectedExamId(fallback?.id || null);
+  }
+
+  const finalSelectedId = getSelectedExamId();
+  if (keepResultsForSelected && finalSelectedId && Number(finalSelectedId) === Number(preferredId || 0)) {
+    return exams || [];
+  }
+  if (finalSelectedId) {
+    const results = await api(`/exams/${finalSelectedId}/results`).catch(() => []);
+    setResults(results || []);
+  } else {
+    setResults([]);
+  }
+  return exams || [];
+}
+
 export async function renderExamView() {
   _showChrome();
   const el = document.getElementById('app-content');
@@ -37,19 +63,7 @@ export async function renderExamView() {
   el.innerHTML = `<div class="view-container"><div class="skeleton h-96 rounded-2xl animate-pulse"></div></div>`;
 
   try {
-    const exams = await api(`/classes/${classId}/exams?include_archived=true`);
-    setExams(exams || []);
-    const selectedId = getSelectedExamId();
-    const selectedExists = selectedId && (exams || []).some(e => e.id === selectedId);
-    if (!selectedExists) {
-      const visibleDefault = (exams || []).find(e => !e?.is_archived) || exams?.[0] || null;
-      setSelectedExamId(visibleDefault?.id || null);
-    }
-    const examId = getSelectedExamId();
-    if (examId) {
-      const results = await api(`/exams/${examId}/results`);
-      setResults(results || []);
-    }
+    await _reloadExamCollection(classId);
   } catch {
     mountRetryCard(el, {
       title: 'Exams View Unavailable',
@@ -378,10 +392,7 @@ function _bindExamEvents(el, classId) {
           max_score: max,
         }),
       });
-      const exams = await api(`/classes/${classId}/exams`);
-      setExams(exams || []);
-      setSelectedExamId(exam.id);
-      setResults([]);
+      await _reloadExamCollection(classId, { preferredExamId: exam.id });
       _renderExam(el, classId);
       showToast(`Exam "${name}" created!`, 'ok');
     } catch (err) {
@@ -460,8 +471,7 @@ function _bindExamEvents(el, classId) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated),
       });
-      const exams = await api(`/classes/${classId}/exams`);
-      setExams(exams || []);
+      await _reloadExamCollection(classId, { preferredExamId: exam.id, keepResultsForSelected: true });
       _renderExam(el, classId);
       showToast('Exam updated.', 'ok');
     } catch (err) { showToast(err.message, 'error'); }
@@ -473,9 +483,7 @@ function _bindExamEvents(el, classId) {
     if (!ok) return;
     try {
       await api(`/exams/${examId}/archive`, { method: 'POST' });
-      const exams = await api(`/classes/${classId}/exams`);
-      setExams(exams || []);
-      setSelectedExamId(exams?.[0]?.id || null);
+      await _reloadExamCollection(classId, { preferredExamId: examId, keepResultsForSelected: true });
       _renderExam(el, classId);
       showToast('Exam archived.', 'ok');
     } catch (err) { showToast(err.message, 'error'); }
@@ -485,9 +493,7 @@ function _bindExamEvents(el, classId) {
     if (!examId) return;
     try {
       await api(`/exams/${examId}/restore`, { method: 'POST' });
-      const exams = await api(`/classes/${classId}/exams`);
-      setExams(exams || []);
-      setSelectedExamId(examId);
+      await _reloadExamCollection(classId, { preferredExamId: examId, keepResultsForSelected: true });
       _renderExam(el, classId);
       showToast('Exam restored!', 'ok');
     } catch (err) { showToast(err.message, 'error'); }
