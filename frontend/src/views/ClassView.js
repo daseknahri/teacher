@@ -463,9 +463,7 @@ function _bindEvents(el, classId) {
       try {
         const res = await api(`/classes/${classId}/students/import`, { method: 'POST', body: form });
         showToast(`Imported ${res.created || 0} students.`, 'ok');
-        const students = await api(`/classes/${classId}/students`);
-        setStudents(students || []);
-        renderClassView();
+        notifyClassChange(classId);
       } catch (err) { showToast(err.message || 'Student import failed. Use .xlsx or .xlsm.', 'error'); }
     };
     inp.click();
