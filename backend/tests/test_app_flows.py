@@ -6486,6 +6486,43 @@ def test_closing_unit_deletes_future_planned_sessions(client):
     assert future_session_id not in calendar_session_ids
 
 
+def test_cannot_schedule_new_calendar_session_for_closed_unit(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Workflow Closed Unit Planning", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Closed Planning Unit",
+            "source_text": "chapter seed",
+        },
+    )
+    assert unit_resp.status_code == 201
+    unit_id = int(unit_resp.json()["id"])
+
+    close_resp = client.post(f"/workflow/classes/{class_id}/units/{unit_id}/close", headers=headers)
+    assert close_resp.status_code == 200
+
+    create_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions",
+        headers=headers,
+        json={
+            "session_date": "2026-06-12",
+            "start_time": "08:00:00",
+            "end_time": "09:00:00",
+            "unit_id": unit_id,
+            "note": "Should be blocked",
+            "allow_on_holiday": True,
+        },
+    )
+    assert create_resp.status_code == 409
+    assert "must be active" in str(create_resp.json().get("detail", "")).lower()
+
+
 def test_workflow_delete_unit_deletes_linked_sessions(client):
     headers = _auth_headers(client)
     class_resp = client.post("/classes", json={"name": "Workflow Delete Unit", "subject": "Math"}, headers=headers)

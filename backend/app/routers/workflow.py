@@ -5840,6 +5840,8 @@ def create_workflow_calendar_session(
         unit = db.get(WorkflowUnit, payload.unit_id)
         if unit is None or unit.class_id != class_id:
             raise HTTPException(status_code=404, detail="Workflow unit not found.")
+        if unit.status != WorkflowUnitStatus.ACTIVE:
+            raise HTTPException(status_code=409, detail="Workflow unit must be active to schedule a new session.")
 
     students = db.scalars(select(Student).where(Student.class_id == class_id).order_by(Student.id.asc())).all()
     student_ids = {student.id for student in students}
