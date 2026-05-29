@@ -20,6 +20,13 @@ class ClassroomCreate(BaseModel):
     teacher_user_id: int | None = None
 
 
+class ClassroomUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    subject: str | None = None
+    level: str | None = None
+    teacher_user_id: int | None = None
+
+
 class ClassroomOut(BaseModel):
     id: int
     name: str

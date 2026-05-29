@@ -25,7 +25,7 @@ from ..models import (
     UserRole,
 )
 from ..security import ensure_class_access, ensure_class_writable, get_current_user, require_owner, require_teacher
-from ..schemas import ClassroomCreate, ClassroomOut, StudentOut, UserOut
+from ..schemas import ClassroomCreate, ClassroomOut, ClassroomUpdate, StudentOut, UserOut
 from ..services.audit import log_audit
 from ..services.excel import parse_roster_excel
 from ..services.rate_limit import enforce_rate_limit
@@ -78,6 +78,21 @@ def _attach_archive_flag(db: Session, classroom: Classroom) -> Classroom:
     setattr(classroom, "is_archived", _archive_flags_for_classes(db, [classroom.id]).get(classroom.id, False))
     setattr(classroom, "teacher_user_id", _teacher_ids_for_classes(db, [classroom.id]).get(classroom.id))
     return classroom
+
+
+def _set_class_teacher_assignment(
+    db: Session,
+    class_id: int,
+    teacher_user_id: int | None,
+) -> list[int]:
+    existing_links = db.scalars(select(ClassAccess).where(ClassAccess.class_id == class_id)).all()
+    existing_teacher_ids = sorted({link.user_id for link in existing_links})
+    for link in existing_links:
+        if teacher_user_id is None or link.user_id != teacher_user_id:
+            db.delete(link)
+    if teacher_user_id is not None and teacher_user_id not in existing_teacher_ids:
+        db.add(ClassAccess(class_id=class_id, user_id=teacher_user_id))
+    return [tid for tid in existing_teacher_ids if tid != teacher_user_id]
 
 
 @router.post("", response_model=ClassroomOut, status_code=status.HTTP_201_CREATED)
@@ -229,13 +244,7 @@ def assign_teacher_to_class(
     teacher = db.get(User, teacher_user_id)
     if teacher is None or teacher.role != UserRole.TEACHER:
         raise HTTPException(status_code=400, detail="Teacher not found.")
-    existing_links = db.scalars(select(ClassAccess).where(ClassAccess.class_id == class_id)).all()
-    existing_teacher_ids = {link.user_id for link in existing_links}
-    for link in existing_links:
-        if link.user_id != teacher_user_id:
-            db.delete(link)
-    if teacher_user_id not in existing_teacher_ids:
-        db.add(ClassAccess(class_id=class_id, user_id=teacher_user_id))
+    replaced_teacher_ids = _set_class_teacher_assignment(db, class_id, teacher_user_id)
     log_audit(
         db,
         user=_,
@@ -243,7 +252,7 @@ def assign_teacher_to_class(
         entity_type="class_access",
         entity_id=class_id,
         class_id=class_id,
-        details={"teacher_user_id": teacher_user_id, "replaced_teacher_ids": sorted(existing_teacher_ids - {teacher_user_id})},
+        details={"teacher_user_id": teacher_user_id, "replaced_teacher_ids": replaced_teacher_ids},
     )
     db.commit()
 
@@ -297,6 +306,53 @@ def unassign_teacher_from_class(
 @router.get("/{class_id}", response_model=ClassroomOut)
 def get_classroom(class_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> Classroom:
     return _attach_archive_flag(db, ensure_class_access(db, class_id, current_user))
+
+
+@router.patch("/{class_id}", response_model=ClassroomOut)
+def update_classroom(
+    class_id: int,
+    payload: ClassroomUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Classroom:
+    classroom = ensure_class_writable(db, class_id, current_user)
+    if current_user.role != UserRole.OWNER:
+        raise HTTPException(status_code=403, detail="Owner access required.")
+
+    details: dict[str, object] = {}
+    if payload.name is not None:
+        clean_name = payload.name.strip()
+        classroom.name = clean_name
+        details["name"] = clean_name
+    if payload.subject is not None:
+        classroom.subject = payload.subject
+        details["subject"] = payload.subject
+    if payload.level is not None:
+        classroom.level = payload.level
+        details["level"] = payload.level
+    if payload.teacher_user_id is not None:
+        teacher = db.get(User, payload.teacher_user_id)
+        if teacher is None or teacher.role != UserRole.TEACHER:
+            raise HTTPException(status_code=400, detail="Assigned teacher not found.")
+        details["teacher_user_id"] = payload.teacher_user_id
+        details["replaced_teacher_ids"] = _set_class_teacher_assignment(db, class_id, payload.teacher_user_id)
+    elif "teacher_user_id" in payload.model_fields_set:
+        details["teacher_user_id"] = None
+        details["replaced_teacher_ids"] = _set_class_teacher_assignment(db, class_id, None)
+
+    if details:
+        log_audit(
+            db,
+            user=current_user,
+            action="class.update",
+            entity_type="class",
+            entity_id=class_id,
+            class_id=class_id,
+            details=details,
+        )
+    db.commit()
+    db.refresh(classroom)
+    return _attach_archive_flag(db, classroom)
 
 
 @router.post("/{class_id}/archive")

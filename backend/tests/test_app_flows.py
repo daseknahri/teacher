@@ -8013,6 +8013,37 @@ def test_teacher_can_access_multiple_assigned_classes(client):
     assert second_access_resp.status_code == 200
 
 
+def test_owner_can_patch_class_teacher_assignment(client):
+    owner_headers = _auth_headers(client)
+    teacher_id, teacher_headers = _create_teacher_and_login(client, owner_headers)
+
+    create_resp = client.post("/classes", headers=owner_headers, json={"name": "Patchable Class"})
+    assert create_resp.status_code == 201
+    class_id = create_resp.json()["id"]
+
+    patch_assign_resp = client.patch(
+        f"/classes/{class_id}",
+        headers=owner_headers,
+        json={"teacher_user_id": teacher_id},
+    )
+    assert patch_assign_resp.status_code == 200
+    assert patch_assign_resp.json()["teacher_user_id"] == teacher_id
+
+    teacher_access_resp = client.get(f"/classes/{class_id}", headers=teacher_headers)
+    assert teacher_access_resp.status_code == 200
+
+    patch_clear_resp = client.patch(
+        f"/classes/{class_id}",
+        headers=owner_headers,
+        json={"teacher_user_id": None},
+    )
+    assert patch_clear_resp.status_code == 200
+    assert patch_clear_resp.json()["teacher_user_id"] is None
+
+    teacher_forbidden_resp = client.get(f"/classes/{class_id}", headers=teacher_headers)
+    assert teacher_forbidden_resp.status_code == 403
+
+
 def test_owner_teacher_status_reset_and_password_change(client):
     owner_headers = _auth_headers(client)
     owner_me = client.get("/auth/me", headers=owner_headers)
