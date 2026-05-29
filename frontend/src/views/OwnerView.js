@@ -10,6 +10,7 @@ import { askConfirm } from '../utils/modal.js';
 import { mountRetryCard } from '../utils/retryView.js';
 import { generateStrongPassword, buildTeacherInviteText, copyText } from '../utils/password.js';
 import { navigate } from '../router.js';
+import { updateClassSelector } from '../components/AppShell.js';
 
 let _teachers = [];
 let _allClasses = [];
@@ -19,6 +20,21 @@ let _holidayYear = new Date().getFullYear();
 let _ownerHolidays = [];
 let _notebooklmStatus = null;
 let _notebooklmSmoke = null;
+
+function _rebuildClassTeacherMap(classes) {
+  _classTeachers = {};
+  (Array.isArray(classes) ? classes : []).forEach(cls => {
+    if (cls?.teacher_user_id) _classTeachers[cls.id] = cls.teacher_user_id;
+  });
+}
+
+function _publishOwnerClassState({ activeClasses, archivedClasses }) {
+  _allClasses = Array.isArray(activeClasses) ? activeClasses.filter(c => !c.is_archived) : [];
+  _archivedClasses = Array.isArray(archivedClasses) ? archivedClasses.filter(c => c.is_archived) : [];
+  _rebuildClassTeacherMap(_allClasses);
+  setClasses(_allClasses);
+  updateClassSelector();
+}
 
 function _escapeHtml(value) {
   return String(value ?? '')
@@ -69,15 +85,9 @@ export async function renderOwnerView() {
       api(`/workflow/holidays?year=${_holidayYear}&country_code=MA`).catch(() => []),
       api('/ops/notebooklm/status').catch(() => null),
     ]);
-    _allClasses = (classes || []).filter(c => !c.is_archived);
-    _archivedClasses = (archived || []).filter(c => c.is_archived);
+    _publishOwnerClassState({ activeClasses: classes || [], archivedClasses: archived || [] });
     _ownerHolidays = Array.isArray(holidays) ? holidays : [];
     _notebooklmStatus = notebooklmStatus || null;
-    // Build class-teacher map from class list
-    _classTeachers = {};
-    _allClasses.forEach(c => {
-      if (c.teacher_user_id) _classTeachers[c.id] = c.teacher_user_id;
-    });
   } catch {
     mountRetryCard(el, {
       title: 'Owner Panel Unavailable',
@@ -682,9 +692,11 @@ function _bindOwnerEvents(el) {
         }
         if (teacherId) _classTeachers[cid] = teacherId;
         else delete _classTeachers[cid];
-        const refreshed = await api('/classes');
-        _allClasses = (refreshed || []).filter(c => !c.is_archived);
-        setClasses(_allClasses);
+        const [classes, archived] = await Promise.all([
+          api('/classes'),
+          api('/classes?include_archived=true'),
+        ]);
+        _publishOwnerClassState({ activeClasses: classes || [], archivedClasses: archived || [] });
         const tName = teacherId ? (_teachers.find(t => t.id === teacherId)?.full_name || '') : 'none';
         showToast(`Assigned: ${tName || 'unassigned'}.`, 'ok');
       } catch (err) {
@@ -758,8 +770,13 @@ function _bindOwnerEvents(el) {
       if (!ok) return;
       try {
         await api(`/auth/users/${tid}`, { method: 'DELETE' });
-        const users = await api('/auth/users');
+        const [users, classes, archived] = await Promise.all([
+          api('/auth/users'),
+          api('/classes'),
+          api('/classes?include_archived=true'),
+        ]);
         _teachers = (users || []).filter(u => u.role === 'teacher');
+        _publishOwnerClassState({ activeClasses: classes || [], archivedClasses: archived || [] });
         _renderOwner(el);
         showToast('Teacher deleted.', 'ok');
       } catch (err) { showToast(err.message, 'error'); }
@@ -775,9 +792,7 @@ function _bindOwnerEvents(el) {
         const [classes, archived] = await Promise.all([
           api('/classes'), api('/classes?include_archived=true'),
         ]);
-        _allClasses = (classes || []).filter(c => !c.is_archived);
-        _archivedClasses = (archived || []).filter(c => c.is_archived);
-        setClasses(_allClasses);
+        _publishOwnerClassState({ activeClasses: classes || [], archivedClasses: archived || [] });
         showToast('Class restored!', 'ok');
         _renderOwner(el);
       } catch (err) { showToast(err.message, 'error'); }
