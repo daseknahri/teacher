@@ -452,7 +452,7 @@ function _bindExamEvents(el, classId) {
   });
 
   el.querySelector('#btn-create-exam-workflow')?.addEventListener('click', async () => {
-    await createLinkedWorkflow('exam', 'Exam workflow');
+    await createLinkedWorkflow('exam', 'Supervision workflow');
   });
 
   el.querySelector('#btn-create-correction-workflow')?.addEventListener('click', async () => {
