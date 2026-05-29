@@ -553,6 +553,7 @@ class TimetableVersionRestoreOut(BaseModel):
 
 class WorkflowSessionStartIn(BaseModel):
     absent_student_ids: list[int] = Field(default_factory=list)
+    session_id: int | None = None
 
 
 class WorkflowCalendarSessionCreateIn(BaseModel):

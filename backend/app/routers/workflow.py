@@ -2552,6 +2552,59 @@ def _suggest_session_schedule_for_unit_start(
     return selected[0]
 
 
+def _session_has_saved_workflow_state(db: Session, *, session_id: int) -> bool:
+    if db.scalar(select(WorkflowSessionChecklistAction.id).where(WorkflowSessionChecklistAction.session_id == int(session_id)).limit(1)) is not None:
+        return True
+    if db.scalar(select(ProgressItem.id).where(ProgressItem.session_id == int(session_id)).limit(1)) is not None:
+        return True
+    if db.scalar(select(WorkflowSessionWriteup.id).where(WorkflowSessionWriteup.session_id == int(session_id)).limit(1)) is not None:
+        return True
+    if db.scalar(select(SessionUpload.id).where(SessionUpload.session_id == int(session_id)).limit(1)) is not None:
+        return True
+    return False
+
+
+def _find_reusable_workflow_session_for_unit_start(
+    db: Session,
+    *,
+    class_id: int,
+    unit_id: int,
+    preferred_session_id: int | None = None,
+) -> ClassSession | None:
+    def _is_reusable(session: ClassSession | None) -> bool:
+        if session is None:
+            return False
+        if int(session.class_id) != int(class_id) or int(session.unit_id or 0) != int(unit_id):
+            return False
+        if session.end_time is None:
+            return False
+        if _session_has_saved_workflow_state(db, session_id=int(session.id)):
+            return False
+        return True
+
+    if preferred_session_id is not None:
+        preferred = db.get(ClassSession, int(preferred_session_id))
+        return preferred if _is_reusable(preferred) else None
+
+    candidates = db.scalars(
+        select(ClassSession)
+        .where(
+            ClassSession.class_id == int(class_id),
+            ClassSession.unit_id == int(unit_id),
+            ClassSession.end_time.is_not(None),
+        )
+        .order_by(
+            ClassSession.session_date.asc(),
+            ClassSession.start_time.asc().nulls_last(),
+            ClassSession.id.asc(),
+        )
+    ).all()
+    for row in candidates:
+        if _is_reusable(row):
+            return row
+    return None
+
+
 def _session_note_from_rule(
     *,
     prefix: str,
@@ -6489,6 +6542,68 @@ def start_workflow_session(
     if unknown_ids:
         raise HTTPException(status_code=400, detail=f"Unknown student ids: {unknown_ids}")
 
+    absent_set = set(absent_ids)
+
+    reusable_session = _find_reusable_workflow_session_for_unit_start(
+        db,
+        class_id=int(class_id),
+        unit_id=int(unit.id),
+        preferred_session_id=(int(payload.session_id) if payload.session_id is not None else None),
+    )
+    if payload.session_id is not None and reusable_session is None:
+        requested_session = db.get(ClassSession, int(payload.session_id))
+        if requested_session is None or int(requested_session.class_id) != int(class_id):
+            raise HTTPException(status_code=404, detail="Scheduled session not found.")
+        if int(requested_session.unit_id or 0) != int(unit.id):
+            raise HTTPException(status_code=409, detail="Scheduled session belongs to a different workflow unit.")
+        if requested_session.end_time is None:
+            raise HTTPException(status_code=409, detail="Scheduled session is already open.")
+        raise HTTPException(
+            status_code=409,
+            detail="Scheduled session already has recorded work and cannot be started again.",
+        )
+    if reusable_session is not None:
+        reusable_session.end_time = None
+        existing_rows = db.scalars(
+            select(AttendanceRecord).where(AttendanceRecord.session_id == int(reusable_session.id))
+        ).all()
+        attendance_by_student_id = {int(row.student_id): row for row in existing_rows}
+        for student in students:
+            existing = attendance_by_student_id.get(int(student.id))
+            status_value = AttendanceStatus.ABSENT if student.id in absent_set else AttendanceStatus.PRESENT
+            if existing is None:
+                db.add(
+                    AttendanceRecord(
+                        session_id=reusable_session.id,
+                        student_id=student.id,
+                        status=status_value,
+                        minutes_late=0,
+                        comment=None,
+                    )
+                )
+                continue
+            existing.status = status_value
+            existing.minutes_late = 0
+            existing.comment = None
+
+        log_audit(
+            db,
+            user=current_user,
+            action="workflow.session.start_reuse",
+            entity_type="session",
+            entity_id=reusable_session.id,
+            class_id=class_id,
+            details={
+                "unit_id": unit.id,
+                "unit_session_number": reusable_session.unit_session_number,
+                "absent_count": len(absent_set),
+                "preferred_session_id": int(payload.session_id) if payload.session_id is not None else None,
+            },
+        )
+        db.commit()
+        db.refresh(reusable_session)
+        return _serialize_session(db, reusable_session)
+
     suggested_slot = _suggest_session_schedule_for_unit_start(
         db,
         class_id=class_id,
@@ -6523,7 +6638,6 @@ def start_workflow_session(
     db.add(session)
     db.flush()
 
-    absent_set = set(absent_ids)
     for student in students:
         db.add(
             AttendanceRecord(

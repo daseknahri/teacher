@@ -628,6 +628,153 @@ def test_workflow_unit_session_lifecycle(client):
     assert "Create correction workflows from the linked exam record in Exams." in str(exam_correction_resp.json().get("detail", ""))
 
 
+def test_start_workflow_session_reuses_earliest_planned_unit_session(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Reuse Planned Session", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    roster = _build_roster_file([("STD001", "Alice"), ("STD002", "Bob")])
+    import_resp = client.post(
+        f"/classes/{class_id}/students/import",
+        headers=headers,
+        files={"file": ("students.xlsx", roster, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert import_resp.status_code == 200
+    students = client.get(f"/classes/{class_id}/students", headers=headers).json()
+    assert len(students) == 2
+
+    start_unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Chapitre 2",
+            "planned_hours": "4",
+            "source_text": "Chapitre 2\n1.1 Revision",
+        },
+    )
+    assert start_unit_resp.status_code == 201
+    unit = start_unit_resp.json()
+
+    planned_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions",
+        headers=headers,
+        json={
+            "unit_id": unit["id"],
+            "session_date": "2026-06-01",
+            "start_time": "08:00:00",
+            "end_time": "09:00:00",
+            "note": "Planned from calendar",
+            "absent_student_ids": [students[0]["id"]],
+        },
+    )
+    assert planned_resp.status_code == 201
+    planned_session = planned_resp.json()
+    assert planned_session["unit_session_number"] == 1
+    assert planned_session["end_time"] == "09:00:00"
+
+    start_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/start",
+        headers=headers,
+        json={"absent_student_ids": [students[1]["id"]]},
+    )
+    assert start_resp.status_code == 201
+    started_session = start_resp.json()
+    assert int(started_session["id"]) == int(planned_session["id"])
+    assert started_session["unit_session_number"] == 1
+    assert started_session["end_time"] is None
+    assert started_session["note"] == "Planned from calendar"
+    assert sorted(started_session["absent_student_ids"]) == [int(students[1]["id"])]
+
+    workspace_resp = client.get(f"/workflow/classes/{class_id}", headers=headers)
+    assert workspace_resp.status_code == 200
+    workspace = workspace_resp.json()
+    assert int(workspace["active_session"]["id"]) == int(planned_session["id"])
+
+    unit_sessions_resp = client.get(f"/workflow/units/{unit['id']}/sessions", headers=headers)
+    assert unit_sessions_resp.status_code == 200
+    unit_sessions = unit_sessions_resp.json()
+    assert len(unit_sessions) == 1
+    assert int(unit_sessions[0]["id"]) == int(planned_session["id"])
+    assert unit_sessions[0]["end_time"] is None
+
+
+def test_start_workflow_session_reuses_requested_calendar_session(client):
+    headers = _auth_headers(client)
+    class_resp = client.post("/classes", json={"name": "Reuse Selected Session", "subject": "Math"}, headers=headers)
+    assert class_resp.status_code == 201
+    class_id = int(class_resp.json()["id"])
+
+    roster = _build_roster_file([("STD001", "Alice"), ("STD002", "Bob")])
+    import_resp = client.post(
+        f"/classes/{class_id}/students/import",
+        headers=headers,
+        files={"file": ("students.xlsx", roster, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert import_resp.status_code == 200
+
+    start_unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={
+            "unit_type": "chapter",
+            "title": "Chapitre 3",
+            "planned_hours": "4",
+            "source_text": "Chapitre 3\n1.1 Revision",
+        },
+    )
+    assert start_unit_resp.status_code == 201
+    unit = start_unit_resp.json()
+
+    planned_first_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions",
+        headers=headers,
+        json={
+            "unit_id": unit["id"],
+            "session_date": "2026-06-01",
+            "start_time": "08:00:00",
+            "end_time": "09:00:00",
+            "note": "Planned first session",
+        },
+    )
+    assert planned_first_resp.status_code == 201
+    planned_first = planned_first_resp.json()
+
+    planned_second_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions",
+        headers=headers,
+        json={
+            "unit_id": unit["id"],
+            "session_date": "2026-06-02",
+            "start_time": "08:00:00",
+            "end_time": "09:00:00",
+            "note": "Planned second session",
+        },
+    )
+    assert planned_second_resp.status_code == 201
+    planned_second = planned_second_resp.json()
+    assert planned_first["unit_session_number"] == 1
+    assert planned_second["unit_session_number"] == 2
+
+    start_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/start",
+        headers=headers,
+        json={"absent_student_ids": [], "session_id": planned_second["id"]},
+    )
+    assert start_resp.status_code == 201
+    started_session = start_resp.json()
+    assert int(started_session["id"]) == int(planned_second["id"])
+    assert started_session["unit_session_number"] == 2
+    assert started_session["end_time"] is None
+
+    unit_sessions_resp = client.get(f"/workflow/units/{unit['id']}/sessions", headers=headers)
+    assert unit_sessions_resp.status_code == 200
+    sessions_by_id = {int(row["id"]): row for row in unit_sessions_resp.json()}
+    assert sessions_by_id[int(planned_first["id"])]["end_time"] == "09:00:00"
+    assert sessions_by_id[int(planned_second["id"])]["end_time"] is None
+
+
 def test_workflow_calendar_session_create_with_unit_and_absences(client):
     headers = _auth_headers(client)
     class_resp = client.post("/classes", json={"name": "Workflow Calendar Create", "subject": "Math"}, headers=headers)

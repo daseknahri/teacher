@@ -8,7 +8,7 @@
  *   POST   /workflow/classes/{id}/units/{uid}/close      close unit
  *   POST   /workflow/classes/{id}/units/{uid}/reopen     reopen closed unit
  *   DELETE /workflow/classes/{id}/units/{uid}            delete unit and linked sessions
- *   POST   /workflow/classes/{id}/sessions/start         JSON: {absent_student_ids:[]}
+ *   POST   /workflow/classes/{id}/sessions/start         JSON: {absent_student_ids:[],session_id?}
  *   POST   /workflow/classes/{id}/sessions/{sid}/end     JSON: {session_date,start_time,end_time,absent_student_ids,note}
  *   POST   /workflow/classes/{id}/sessions/{sid}/items/{iid}/toggle   JSON: {checked:bool}
  */
@@ -5597,12 +5597,18 @@ function _bindWorkflowEvents(el, classId) {
         if (!proceed) return;
       }
       const absentIds = [...getAbsentIds()];
+      const plannedSessionId = _workflowEntryContext?.source === 'calendar'
+        ? Number(_workflowEntryContext.session_id || 0) || null
+        : null;
       _setBusy(triggerBtn, true);
       try {
         const session = await api(`/workflow/classes/${classId}/sessions/start`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ absent_student_ids: absentIds }),
+          body: JSON.stringify({
+            absent_student_ids: absentIds,
+            session_id: plannedSessionId,
+          }),
         });
         setActiveSession(session);
         await _refreshWorkflowCalendarSnapshot(classId);
