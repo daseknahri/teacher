@@ -5,15 +5,15 @@
 import { api, downloadWithAuth } from '../api/client.js';
 import {
   getClasses, getSelectedId, getSelectedName,
-  getStudents, getDashboard, hasClass,
-  setStudents, setDashboard, setClasses, setSelectedClass, clearClassState,
+  getStudents, getDashboard,
+  setStudents, setDashboard, setClasses, clearClassState,
 } from '../state/class.js';
 import { showToast } from '../utils/toast.js';
 import { askConfirm } from '../utils/modal.js';
 import { mountRetryCard } from '../utils/retryView.js';
 import { fmtDate, fmtPct, fmtScore, clamp } from '../utils/format.js';
 import { navigate } from '../router.js';
-import { updateClassSelector } from '../components/AppShell.js';
+import { notifyClassChange, setSelectedClassAndNotify, updateClassSelector } from '../components/AppShell.js';
 
 const CLASS_INIT_AUTO_OPEN_KEY = 'class_init_auto_open';
 
@@ -390,15 +390,13 @@ async function _createClass() {
     });
     const classes = await api('/classes');
     setClasses(classes || []);
-    setSelectedClass(cls.id, cls.name);
-    updateClassSelector();
+    setSelectedClassAndNotify(cls.id, cls.name);
     showToast(`Class "${cls.name}" created!`, 'ok');
     inp.value = '';
     const subjectInp = document.getElementById('new-class-subject');
     const levelInp = document.getElementById('new-class-level');
     if (subjectInp) subjectInp.value = '';
     if (levelInp) levelInp.value = '';
-    renderClassView();
   } catch (err) {
     if (createBtn) { createBtn.classList.remove('btn-busy'); createBtn.disabled = false; }
     showToast(err.message, 'error');
@@ -444,7 +442,7 @@ function _bindEvents(el, classId) {
       setClasses(classes || []);
       updateClassSelector();
       showToast('Class archived.', 'ok');
-      renderClassView();
+      notifyClassChange(getSelectedId());
     } catch (err) { showToast(err.message, 'error'); }
   });
 
@@ -868,12 +866,10 @@ async function _openAndSubmitClassInitSetup() {
     });
     const classes = await api('/classes');
     setClasses(classes || []);
-    setSelectedClass(Number(result?.class_id || 0), String(result?.class_name || 'Class'));
-    updateClassSelector();
+    setSelectedClassAndNotify(Number(result?.class_id || 0), String(result?.class_name || 'Class'));
     const studentsCreated = Number(result?.students_created || 0);
     const sessionsApplied = Number(result?.timetable_applied_rows || 0);
     showToast(`Setup saved: ${studentsCreated} students + ${sessionsApplied} timetable slots.`, 'ok');
-    renderClassView();
   } catch (err) {
     showToast(err.message || 'Failed to submit class setup.', 'error');
   }

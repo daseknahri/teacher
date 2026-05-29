@@ -27,6 +27,16 @@ let _shellRendered = false;
 
 export function onClassChange(fn) { _classChangeListeners.push(fn); }
 
+export function notifyClassChange(classId = getSelectedId()) {
+  _classChangeListeners.forEach(fn => fn(classId || null));
+}
+
+export function setSelectedClassAndNotify(id, name) {
+  setSelectedClass(id, name);
+  updateClassSelector();
+  notifyClassChange(id || null);
+}
+
 function _getUserPresentation() {
   const rawName = (getUserName() || '').trim();
   const name = rawName || (isOwner() ? 'Owner' : 'Teacher');
@@ -244,19 +254,16 @@ export function renderShell() {
   document.getElementById('class-selector').addEventListener('change', e => {
     const id = Number(e.target.value);
     if (!id) {
-      setSelectedClass(null, '');
-      _classChangeListeners.forEach(fn => fn(null));
+      setSelectedClassAndNotify(null, '');
       return;
     }
     const classes = getClasses();
     const cls = classes.find(c => c.id === id);
     if (!cls) {
-      setSelectedClass(null, '');
-      _classChangeListeners.forEach(fn => fn(null));
+      setSelectedClassAndNotify(null, '');
       return;
     }
-    setSelectedClass(id, cls.name);
-    _classChangeListeners.forEach(fn => fn(id));
+    setSelectedClassAndNotify(id, cls.name);
   });
 
   updateClassSelector();
