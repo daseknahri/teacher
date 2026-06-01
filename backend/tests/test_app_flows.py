@@ -8432,6 +8432,13 @@ def test_teacher_class_isolation_and_assignment(client):
     assert assigned_class_resp.status_code == 201
     assigned_class_id = assigned_class_resp.json()["id"]
 
+    session_resp = client.post(
+        f"/classes/{assigned_class_id}/sessions",
+        headers=owner_headers,
+        json={"session_date": "2026-05-22", "start_time": "08:00", "end_time": "09:00", "note": "Overview test"},
+    )
+    assert session_resp.status_code == 201
+
     teacher_list_after = client.get("/classes", headers=teacher_headers)
     assert teacher_list_after.status_code == 200
     ids_after = {row["id"] for row in teacher_list_after.json()}
@@ -8448,9 +8455,30 @@ def test_teacher_class_isolation_and_assignment(client):
     assert owner_overview.status_code == 200
     overview_payload = owner_overview.json()
     assert overview_payload["counts"]["teachers"] >= 1
+    assert "classes" in overview_payload
+    assert any(row["class_id"] == assigned_class_id for row in overview_payload["classes"])
+    assigned_class_overview = next(row for row in overview_payload["classes"] if row["class_id"] == assigned_class_id)
+    assert assigned_class_overview["teacher_user_id"] == teacher_id
+    assert assigned_class_overview["teacher_name"]
+    assert "recent_sessions" in overview_payload
+    assert any(row["session_id"] == session_resp.json()["id"] for row in overview_payload["recent_sessions"])
+    recent_session = next(row for row in overview_payload["recent_sessions"] if row["session_id"] == session_resp.json()["id"])
+    assert recent_session["class_name"] == "Assigned Class"
+    assert recent_session["teacher_user_id"] == teacher_id
+    assert recent_session["is_open"] is False
     teacher_overview_rows = [row for row in overview_payload["teachers"] if row["teacher_id"] == teacher_id]
     assert teacher_overview_rows
     assert teacher_overview_rows[0]["assigned_classes"] >= 1
+    assert "students" in overview_payload["counts"]
+    assert "active_units" in overview_payload["counts"]
+    assert "completed_checklist_items" in overview_payload["counts"]
+    assert "class_names" in teacher_overview_rows[0]
+    assert "classes" in teacher_overview_rows[0]
+    assert teacher_overview_rows[0]["classes"]
+    assert teacher_overview_rows[0]["classes"][0]["name"]
+    assert "active_classes" in teacher_overview_rows[0]
+    assert "completed_checklist_items" in teacher_overview_rows[0]
+    assert "checked_session_rows" in teacher_overview_rows[0]
 
     teacher_forbidden_owner_view = client.get(f"/classes/by-teacher/{teacher_id}", headers=teacher_headers)
     assert teacher_forbidden_owner_view.status_code == 403

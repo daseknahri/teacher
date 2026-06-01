@@ -12,6 +12,7 @@ from ..config import MAX_EXCEL_UPLOAD_BYTES
 from ..database import get_db
 from ..models import (
     AttendanceRecord,
+    AttendanceStatus,
     ClassAccess,
     ClassArchiveState,
     ClassSession,
@@ -23,6 +24,10 @@ from ..models import (
     Student,
     User,
     UserRole,
+    WorkflowChecklistItem,
+    WorkflowSessionChecklistAction,
+    WorkflowUnit,
+    WorkflowUnitStatus,
 )
 from ..security import ensure_class_access, ensure_class_writable, get_current_user, require_owner, require_teacher
 from ..schemas import ClassroomCreate, ClassroomOut, ClassroomUpdate, StudentOut, UserOut
@@ -189,20 +194,278 @@ def owner_overview(
     total_students = int(db.scalar(select(func.count(Student.id))) or 0)
     total_sessions = int(db.scalar(select(func.count(ClassSession.id))) or 0)
     total_exams = int(db.scalar(select(func.count(Exam.id))) or 0)
+    open_sessions = int(db.scalar(select(func.count(ClassSession.id)).where(ClassSession.end_time.is_(None))) or 0)
+    active_units = int(
+        db.scalar(select(func.count(WorkflowUnit.id)).where(WorkflowUnit.status == WorkflowUnitStatus.ACTIVE)) or 0
+    )
+    closed_units = int(
+        db.scalar(select(func.count(WorkflowUnit.id)).where(WorkflowUnit.status == WorkflowUnitStatus.CLOSED)) or 0
+    )
+    completed_checklist_items = int(
+        db.scalar(select(func.count(WorkflowChecklistItem.id)).where(WorkflowChecklistItem.is_completed.is_(True))) or 0
+    )
+    checked_session_rows = int(
+        db.scalar(
+            select(func.count(WorkflowSessionChecklistAction.id)).where(
+                WorkflowSessionChecklistAction.checked.is_(True)
+            )
+        )
+        or 0
+    )
+    exam_results = int(db.scalar(select(func.count(ExamResult.id))) or 0)
+    classes_by_id = {row.id: row for row in all_classes}
+    teachers_by_id = {row.id: row for row in teachers}
+    teacher_ids_by_class = _teacher_ids_for_classes(db, [row.id for row in all_classes])
+    recent_session_rows: list[dict] = []
+    recent_sessions = db.scalars(
+        select(ClassSession)
+        .order_by(ClassSession.session_date.desc(), ClassSession.created_at.desc(), ClassSession.id.desc())
+        .limit(20)
+    ).all()
+    for session in recent_sessions:
+        classroom = classes_by_id.get(session.class_id)
+        teacher_id = teacher_ids_by_class.get(session.class_id)
+        assigned_teacher = teachers_by_id.get(teacher_id) if teacher_id else None
+        attendance_rows = int(
+            db.scalar(select(func.count(AttendanceRecord.id)).where(AttendanceRecord.session_id == session.id)) or 0
+        )
+        absent_rows = int(
+            db.scalar(
+                select(func.count(AttendanceRecord.id)).where(
+                    AttendanceRecord.session_id == session.id,
+                    AttendanceRecord.status == AttendanceStatus.ABSENT,
+                )
+            )
+            or 0
+        )
+        recent_session_rows.append(
+            {
+                "session_id": session.id,
+                "class_id": session.class_id,
+                "class_name": classroom.name if classroom else f"Class #{session.class_id}",
+                "teacher_user_id": teacher_id,
+                "teacher_name": assigned_teacher.full_name if assigned_teacher else None,
+                "teacher_email": assigned_teacher.email if assigned_teacher else None,
+                "session_date": session.session_date.isoformat(),
+                "start_time": session.start_time.isoformat(timespec="minutes") if session.start_time else None,
+                "end_time": session.end_time.isoformat(timespec="minutes") if session.end_time else None,
+                "is_open": session.end_time is None,
+                "unit_session_number": session.unit_session_number,
+                "attendance_rows": attendance_rows,
+                "absent_rows": absent_rows,
+                "progress_items": int(
+                    db.scalar(select(func.count(ProgressItem.id)).where(ProgressItem.session_id == session.id)) or 0
+                ),
+                "checked_session_rows": int(
+                    db.scalar(
+                        select(func.count(WorkflowSessionChecklistAction.id)).where(
+                            WorkflowSessionChecklistAction.session_id == session.id,
+                            WorkflowSessionChecklistAction.checked.is_(True),
+                        )
+                    )
+                    or 0
+                ),
+                "note_preview": (session.note or "")[:160] if session.note else None,
+            }
+        )
+
+    overview_class_rows: list[dict] = []
+    for classroom in sorted(all_classes, key=lambda row: row.name.lower()):
+        teacher_id = teacher_ids_by_class.get(classroom.id)
+        assigned_teacher = teachers_by_id.get(teacher_id) if teacher_id else None
+        class_last_session_date = db.scalar(
+            select(func.max(ClassSession.session_date)).where(ClassSession.class_id == classroom.id)
+        )
+        overview_class_rows.append(
+            {
+                "class_id": classroom.id,
+                "name": classroom.name,
+                "subject": classroom.subject,
+                "level": classroom.level,
+                "is_archived": bool(archive_flags.get(classroom.id, False)),
+                "teacher_user_id": teacher_id,
+                "teacher_name": assigned_teacher.full_name if assigned_teacher else None,
+                "teacher_email": assigned_teacher.email if assigned_teacher else None,
+                "teacher_is_active": bool(assigned_teacher.is_active) if assigned_teacher else None,
+                "students": int(db.scalar(select(func.count(Student.id)).where(Student.class_id == classroom.id)) or 0),
+                "sessions": int(
+                    db.scalar(select(func.count(ClassSession.id)).where(ClassSession.class_id == classroom.id)) or 0
+                ),
+                "open_sessions": int(
+                    db.scalar(
+                        select(func.count(ClassSession.id)).where(
+                            ClassSession.class_id == classroom.id,
+                            ClassSession.end_time.is_(None),
+                        )
+                    )
+                    or 0
+                ),
+                "active_units": int(
+                    db.scalar(
+                        select(func.count(WorkflowUnit.id)).where(
+                            WorkflowUnit.class_id == classroom.id,
+                            WorkflowUnit.status == WorkflowUnitStatus.ACTIVE,
+                        )
+                    )
+                    or 0
+                ),
+                "exams": int(db.scalar(select(func.count(Exam.id)).where(Exam.class_id == classroom.id)) or 0),
+                "last_session_date": class_last_session_date.isoformat() if class_last_session_date else None,
+            }
+        )
 
     teacher_rows: list[dict] = []
     for teacher in teachers:
         class_ids = sorted(set(db.scalars(select(ClassAccess.class_id).where(ClassAccess.user_id == teacher.id)).all()))
         if class_ids:
+            active_class_ids = [class_id for class_id in class_ids if not archive_flags.get(class_id, False)]
+            archived_class_ids = [class_id for class_id in class_ids if archive_flags.get(class_id, False)]
             student_count = int(db.scalar(select(func.count(Student.id)).where(Student.class_id.in_(class_ids))) or 0)
             session_count = int(db.scalar(select(func.count(ClassSession.id)).where(ClassSession.class_id.in_(class_ids))) or 0)
+            open_session_count = int(
+                db.scalar(
+                    select(func.count(ClassSession.id)).where(
+                        ClassSession.class_id.in_(class_ids),
+                        ClassSession.end_time.is_(None),
+                    )
+                )
+                or 0
+            )
             exam_count = int(db.scalar(select(func.count(Exam.id)).where(Exam.class_id.in_(class_ids))) or 0)
             last_session_date = db.scalar(select(func.max(ClassSession.session_date)).where(ClassSession.class_id.in_(class_ids)))
+            attendance_rows = int(
+                db.scalar(
+                    select(func.count(AttendanceRecord.id))
+                    .join(ClassSession, AttendanceRecord.session_id == ClassSession.id)
+                    .where(ClassSession.class_id.in_(class_ids))
+                )
+                or 0
+            )
+            progress_items = int(
+                db.scalar(
+                    select(func.count(ProgressItem.id))
+                    .join(ClassSession, ProgressItem.session_id == ClassSession.id)
+                    .where(ClassSession.class_id.in_(class_ids))
+                )
+                or 0
+            )
+            active_unit_count = int(
+                db.scalar(
+                    select(func.count(WorkflowUnit.id)).where(
+                        WorkflowUnit.class_id.in_(class_ids),
+                        WorkflowUnit.status == WorkflowUnitStatus.ACTIVE,
+                    )
+                )
+                or 0
+            )
+            closed_unit_count = int(
+                db.scalar(
+                    select(func.count(WorkflowUnit.id)).where(
+                        WorkflowUnit.class_id.in_(class_ids),
+                        WorkflowUnit.status == WorkflowUnitStatus.CLOSED,
+                    )
+                )
+                or 0
+            )
+            checklist_items = int(
+                db.scalar(
+                    select(func.count(WorkflowChecklistItem.id))
+                    .join(WorkflowUnit, WorkflowChecklistItem.unit_id == WorkflowUnit.id)
+                    .where(WorkflowUnit.class_id.in_(class_ids))
+                )
+                or 0
+            )
+            completed_items = int(
+                db.scalar(
+                    select(func.count(WorkflowChecklistItem.id))
+                    .join(WorkflowUnit, WorkflowChecklistItem.unit_id == WorkflowUnit.id)
+                    .where(
+                        WorkflowUnit.class_id.in_(class_ids),
+                        WorkflowChecklistItem.is_completed.is_(True),
+                    )
+                )
+                or 0
+            )
+            checked_actions = int(
+                db.scalar(
+                    select(func.count(WorkflowSessionChecklistAction.id))
+                    .join(ClassSession, WorkflowSessionChecklistAction.session_id == ClassSession.id)
+                    .where(
+                        ClassSession.class_id.in_(class_ids),
+                        WorkflowSessionChecklistAction.checked.is_(True),
+                    )
+                )
+                or 0
+            )
+            exam_result_stats = db.execute(
+                select(func.count(ExamResult.id), func.avg(ExamResult.score))
+                .join(Exam, ExamResult.exam_id == Exam.id)
+                .where(Exam.class_id.in_(class_ids))
+            ).one()
+            exam_result_count = int(exam_result_stats[0] or 0)
+            average_exam_score = float(exam_result_stats[1]) if exam_result_stats[1] is not None else None
+            teacher_class_rows = []
+            for class_id in class_ids:
+                classroom = classes_by_id.get(class_id)
+                if classroom is None:
+                    continue
+                class_last_session_date = db.scalar(
+                    select(func.max(ClassSession.session_date)).where(ClassSession.class_id == class_id)
+                )
+                teacher_class_rows.append(
+                    {
+                        "class_id": class_id,
+                        "name": classroom.name,
+                        "subject": classroom.subject,
+                        "level": classroom.level,
+                        "is_archived": bool(archive_flags.get(class_id, False)),
+                        "students": int(
+                            db.scalar(select(func.count(Student.id)).where(Student.class_id == class_id)) or 0
+                        ),
+                        "sessions": int(
+                            db.scalar(select(func.count(ClassSession.id)).where(ClassSession.class_id == class_id))
+                            or 0
+                        ),
+                        "open_sessions": int(
+                            db.scalar(
+                                select(func.count(ClassSession.id)).where(
+                                    ClassSession.class_id == class_id,
+                                    ClassSession.end_time.is_(None),
+                                )
+                            )
+                            or 0
+                        ),
+                        "active_units": int(
+                            db.scalar(
+                                select(func.count(WorkflowUnit.id)).where(
+                                    WorkflowUnit.class_id == class_id,
+                                    WorkflowUnit.status == WorkflowUnitStatus.ACTIVE,
+                                )
+                            )
+                            or 0
+                        ),
+                        "last_session_date": class_last_session_date.isoformat() if class_last_session_date else None,
+                    }
+                )
         else:
+            active_class_ids = []
+            archived_class_ids = []
             student_count = 0
             session_count = 0
+            open_session_count = 0
             exam_count = 0
             last_session_date = None
+            attendance_rows = 0
+            progress_items = 0
+            active_unit_count = 0
+            closed_unit_count = 0
+            checklist_items = 0
+            completed_items = 0
+            checked_actions = 0
+            exam_result_count = 0
+            average_exam_score = None
+            teacher_class_rows = []
+        class_names = [classes_by_id[class_id].name for class_id in class_ids if class_id in classes_by_id]
         teacher_rows.append(
             {
                 "teacher_id": teacher.id,
@@ -210,9 +473,23 @@ def owner_overview(
                 "email": teacher.email,
                 "is_active": bool(teacher.is_active),
                 "assigned_classes": len(class_ids),
+                "active_classes": len(active_class_ids),
+                "archived_classes": len(archived_class_ids),
+                "class_names": class_names,
+                "classes": teacher_class_rows,
                 "students": student_count,
                 "sessions": session_count,
+                "open_sessions": open_session_count,
                 "exams": exam_count,
+                "exam_results": exam_result_count,
+                "average_exam_score": average_exam_score,
+                "attendance_rows": attendance_rows,
+                "progress_items": progress_items,
+                "active_units": active_unit_count,
+                "closed_units": closed_unit_count,
+                "checklist_items": checklist_items,
+                "completed_checklist_items": completed_items,
+                "checked_session_rows": checked_actions,
                 "last_session_date": last_session_date.isoformat() if last_session_date else None,
             }
         )
@@ -225,9 +502,17 @@ def owner_overview(
             "classes_archived": archived_classes,
             "students": total_students,
             "sessions": total_sessions,
+            "open_sessions": open_sessions,
             "exams": total_exams,
+            "exam_results": exam_results,
+            "active_units": active_units,
+            "closed_units": closed_units,
+            "completed_checklist_items": completed_checklist_items,
+            "checked_session_rows": checked_session_rows,
         },
         "teachers": teacher_rows,
+        "classes": overview_class_rows,
+        "recent_sessions": recent_session_rows,
     }
 
 
