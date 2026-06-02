@@ -22,6 +22,8 @@ let _notebooklmStatus = null;
 let _notebooklmSmoke = null;
 let _ownerOverview = null;
 let _selectedOwnerTeacherId = null;
+let _ownerSelectedCalendarSessionId = null;
+let _ownerCalendarWeekStart = null;
 let _ownerTeacherFilter = 'all';
 let _ownerTeacherSearch = '';
 let _ownerTeacherLimit = 8;
@@ -56,6 +58,9 @@ function _loadOwnerSelectedTeacherId() {
 
 function _setOwnerSelectedTeacherId(value) {
   const tid = Number(value || 0);
+  if (Number(_selectedOwnerTeacherId || 0) !== Number(tid || 0)) {
+    _ownerSelectedCalendarSessionId = null;
+  }
   _selectedOwnerTeacherId = tid > 0 ? tid : null;
   try {
     if (_selectedOwnerTeacherId) localStorage.setItem(OWNER_SELECTED_TEACHER_KEY, String(_selectedOwnerTeacherId));
@@ -872,6 +877,13 @@ function _ownerWeekDays(value = new Date()) {
   });
 }
 
+function _ownerCurrentCalendarWeekStart() {
+  if (!_ownerCalendarWeekStart) {
+    _ownerCalendarWeekStart = _ownerWeekStart(new Date());
+  }
+  return _ownerWeekStart(_ownerCalendarWeekStart);
+}
+
 function _ownerRuleWeekdayForDate(dateValue) {
   const d = dateValue instanceof Date ? dateValue : new Date(dateValue);
   if (Number.isNaN(d.getTime())) return null;
@@ -1024,16 +1036,11 @@ function _ownerTeacherTrackerPanel(row) {
         <div class="card-header bg-white">
           <div>
             <h3 class="font-semibold text-slate-800 text-[15px]">Weekly Calendar Tracker</h3>
-            <p class="text-[12px] text-slate-400 mt-1">Read-only supervisor copy of the teacher calendar: session blocks, timetable expectations, and gaps.</p>
-          </div>
-          <div class="flex gap-2 flex-wrap justify-end">
-            <span class="badge badge-blue">${sessions.length} session row${sessions.length === 1 ? '' : 's'}</span>
-            <span class="badge badge-gray">${rules.length} timetable slot${rules.length === 1 ? '' : 's'}</span>
+            <p class="text-[12px] text-slate-400 mt-1">Click a session block to inspect the teaching record. Dashed rows are timetable slots without a visible session.</p>
           </div>
         </div>
-        <div class="card-body flex flex-col gap-4">
+        <div class="card-body flex flex-col gap-3">
           ${_ownerNextSessionCard(nextSession, nextSlot)}
-          ${_ownerTeacherCoverageStrip(row, sessions, rules)}
           ${_ownerTeacherWeekGrid(row)}
         </div>
       </div>
@@ -1081,70 +1088,23 @@ function _ownerNextSessionCard(nextSession, nextSlot) {
     </div>`;
 }
 
-function _ownerTeacherCoverageStrip(row, sessions, rules) {
-  const safeSessions = Array.isArray(sessions) ? sessions : [];
-  const safeRules = Array.isArray(rules) ? rules : [];
-  const weekDays = _ownerWeekDays(new Date());
-  const weekKeys = new Set(weekDays.map(day => _ownerLocalDateKey(day)));
-  const now = Date.now();
-  const weekSessions = safeSessions.filter(session => weekKeys.has(String(session.session_date || '')));
-  const planned = weekSessions.filter(session => {
-    const when = _ownerSessionDateTime(session);
-    return when && when.getTime() >= now + 15 * 60 * 1000;
-  }).length;
-  const unclosed = weekSessions.filter(session => session.is_open && !_ownerSessionIsFuture(session)).length;
-  const recorded = Math.max(0, weekSessions.length - planned - unclosed);
-  const timetableOnly = weekDays.reduce((sum, day) => {
-    const key = _ownerLocalDateKey(day);
-    const weekday = _ownerRuleWeekdayForDate(day);
-    const hasSession = weekSessions.some(session => String(session.session_date || '') === key);
-    if (hasSession) return sum;
-    return sum + safeRules.filter(rule => {
-      if (Number(rule.weekday || 0) !== weekday) return false;
-      if (rule.effective_from && key < String(rule.effective_from)) return false;
-      if (rule.effective_to && key > String(rule.effective_to)) return false;
-      return true;
-    }).length;
-  }, 0);
-  return `
-    <div class="grid grid-cols-2 gap-2 md:grid-cols-4">
-      ${_ownerTrackerMini('This week', weekSessions.length, `${recorded} recorded`, 'blue')}
-      ${_ownerTrackerMini('Planned', planned, 'future workflow sessions', planned ? 'green' : 'slate')}
-      ${_ownerTrackerMini('Timetable only', timetableOnly, 'slots without workflow session', timetableOnly ? 'amber' : 'green')}
-      ${_ownerTrackerMini('Unclosed', unclosed, 'needs cleanup if old', unclosed ? 'amber' : 'slate')}
-    </div>
-    <p class="text-[12px] text-slate-400">
-      Tracking ${_num(row?.assigned_classes, 0)} assigned class${_num(row?.assigned_classes, 0) === 1 ? '' : 'es'} for this teacher. Planned means future session; unclosed means a past or current row without an end time.
-    </p>`;
-}
-
 function _ownerSessionIsFuture(row) {
   const when = _ownerSessionDateTime(row);
   return !!when && when.getTime() >= Date.now() + 15 * 60 * 1000;
 }
 
-function _ownerTrackerMini(label, value, hint, tone = 'slate') {
-  const toneMap = {
-    blue: 'bg-blue-50 border-blue-100 text-blue-800',
-    green: 'bg-green-50 border-green-100 text-green-800',
-    amber: 'bg-amber-50 border-amber-100 text-amber-800',
-    slate: 'bg-slate-50 border-slate-100 text-slate-800',
-  };
-  return `
-    <div class="rounded-2xl border ${toneMap[tone] || toneMap.slate} px-3 py-3">
-      <p class="text-[20px] font-black leading-none">${_escapeHtml(value)}</p>
-      <p class="mt-1 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500">${_escapeHtml(label)}</p>
-      <p class="mt-1 text-[11px] text-slate-500">${_escapeHtml(hint)}</p>
-    </div>`;
-}
-
 function _ownerTeacherWeekGrid(row) {
   const sessions = _ownerTeacherSessionRows(row);
   const rules = _ownerTeacherTimetableRows(row);
-  const weekDays = _ownerWeekDays(new Date());
+  const weekStart = _ownerCurrentCalendarWeekStart();
+  const weekDays = _ownerWeekDays(weekStart);
   const weekStartKey = _ownerLocalDateKey(weekDays[0]);
   const weekEndKey = _ownerLocalDateKey(weekDays[6]);
-  const visibleSessionIds = new Set();
+  const selectedSession = sessions.find(session => (
+    Number(session?.session_id || 0) === Number(_ownerSelectedCalendarSessionId || 0)
+    && String(session?.session_date || '') >= weekStartKey
+    && String(session?.session_date || '') <= weekEndKey
+  )) || null;
   const outsideRows = [];
   const sessionsByDaySlot = new Map();
   const rulesByDaySlot = new Map();
@@ -1159,7 +1119,6 @@ function _ownerTeacherWeekGrid(row) {
     const key = `${dayKey}|${slotKey}`;
     if (!sessionsByDaySlot.has(key)) sessionsByDaySlot.set(key, []);
     sessionsByDaySlot.get(key).push(session);
-    visibleSessionIds.add(_ownerSessionIdentity(session));
   });
   rules.forEach(rule => {
     const slotKey = _ownerSessionSlotKey(rule);
@@ -1187,10 +1146,13 @@ function _ownerTeacherWeekGrid(row) {
     <div class="rounded-3xl border border-slate-200 bg-white overflow-hidden">
       <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 flex-wrap gap-2">
         <div class="cal-week-nav w-full sm:w-auto justify-between sm:justify-start">
+          <button id="btn-owner-calendar-prev-week" class="btn btn-ghost btn-sm" type="button">Prev</button>
           <div class="week-label ${weekStartKey === _ownerLocalDateKey(_ownerWeekStart(new Date())) ? 'is-current-week' : ''}">
             <span class="block text-[10px] uppercase tracking-wide opacity-70">Week ${weekNumber}${weekMonthLabel ? ` - ${_escapeHtml(weekMonthLabel)}` : ''}</span>
             <span>${_escapeHtml(_fmtOwnerDate(weekStartKey))} - ${_escapeHtml(_fmtOwnerDate(weekEndKey))}</span>
           </div>
+          <button id="btn-owner-calendar-next-week" class="btn btn-ghost btn-sm" type="button">Next</button>
+          <button id="btn-owner-calendar-this-week" class="btn-today ml-2" type="button">Today</button>
         </div>
         <div class="flex items-center gap-2 flex-wrap text-[11px]">
           <span class="badge badge-blue">Session blocks</span>
@@ -1223,7 +1185,7 @@ function _ownerTeacherWeekGrid(row) {
               const overflowCount = (cellSessions.length + cellRules.length) - (visibleSessions.length + visibleRules.length);
               return `
                 <div class="cal-slot week-slot-cell p-1 flex flex-col gap-[3px]">
-                  ${visibleSessions.map(session => _ownerCalendarSessionChip(session)).join('')}
+                  ${visibleSessions.map(session => _ownerCalendarSessionChip(session, selectedSession)).join('')}
                   ${visibleRules.map(rule => _ownerCalendarTimetableChip(rule)).join('')}
                   ${overflowCount > 0 ? `<div class="cal-slot-overflow text-center">+${overflowCount} more</div>` : ''}
                 </div>`;
@@ -1236,24 +1198,33 @@ function _ownerTeacherWeekGrid(row) {
           <p class="text-[11px] text-slate-500">${outsideRows.length} session${outsideRows.length === 1 ? '' : 's'} outside visible grid hours.</p>
           <div class="mt-1.5 flex flex-wrap gap-2">
             ${outsideRows.map(session => `
-              <span class="btn btn-ghost btn-sm">
+              <button type="button" class="btn btn-ghost btn-sm owner-calendar-outside-session ${Number(selectedSession?.session_id || 0) === Number(session?.session_id || 0) ? 'ring-2 ring-blue-500 ring-offset-1' : ''}"
+                      data-owner-session-id="${_escapeHtmlAttr(String(session?.session_id || ''))}">
                 ${_escapeHtml(_fmtOwnerDate(session.session_date))} | ${_escapeHtml(_ownerSessionTimeLabel(session))} | ${_escapeHtml(session.unit_title || session.class_name || 'Session')}
-              </span>
+              </button>
             `).join('')}
           </div>
         </div>` : ''}
+      ${selectedSession ? _ownerCalendarSessionDetailPanel(selectedSession) : `
+        <div class="px-4 py-3 border-t border-slate-100 bg-slate-50/70">
+          <p class="text-[12px] text-slate-500">Click a session block to view its class, time, unit session, checked structure, and supervisor note.</p>
+        </div>`}
     </div>`;
 }
 
-function _ownerCalendarSessionChip(session) {
+function _ownerCalendarSessionChip(session, selectedSession = null) {
   const isWorkflow = session?.unit_id != null;
   const isFuture = _ownerSessionIsFuture(session);
   const isUnclosed = session?.is_open && !isFuture;
   const stateLabel = isFuture ? 'Planned' : isUnclosed ? 'Unclosed' : 'Recorded';
   const chipClass = isWorkflow ? 'chip-workflow' : 'chip-generic';
   const title = session?.unit_title || session?.class_name || 'Session';
+  const selected = Number(selectedSession?.session_id || 0) === Number(session?.session_id || 0);
   return `
-    <div class="cal-chip group relative flex flex-col items-start gap-1 w-full text-left rounded-xl shadow-sm ${chipClass} ${isUnclosed ? 'ring-1 ring-amber-300' : ''}"
+    <button type="button"
+         class="cal-chip owner-calendar-session-chip group relative flex flex-col items-start gap-1 w-full text-left rounded-xl transition-all hover:scale-[1.02] shadow-sm ${selected ? 'chip-selected ring-2 ring-blue-500 ring-offset-1' : ''} ${chipClass} ${isUnclosed && !selected ? 'ring-1 ring-amber-300' : ''}"
+         data-owner-session-id="${_escapeHtmlAttr(String(session?.session_id || ''))}"
+         aria-label="${_escapeHtmlAttr(`Inspect ${title} on ${_fmtOwnerDate(session?.session_date)} at ${_ownerSessionTimeLabel(session)}`)}"
          title="${_escapeHtmlAttr(`${title} - ${stateLabel}`)}">
       <div class="pointer-events-none w-full flex flex-col text-left gap-0.5 overflow-hidden">
         <div class="flex items-center justify-between gap-1 w-full">
@@ -1263,7 +1234,109 @@ function _ownerCalendarSessionChip(session) {
         <span class="truncate w-full font-bold text-[12px] leading-tight">${_escapeHtml(title)}</span>
         <span class="truncate w-full text-[9px] opacity-80">${_escapeHtml(session?.class_name || '')}</span>
       </div>
+    </button>`;
+}
+
+function _ownerCalendarSessionDetailPanel(session) {
+  const state = _ownerSessionState(session);
+  const title = session?.unit_title || session?.class_name || 'Session';
+  const sessionNumber = Number(session?.unit_session_number || 0);
+  const checkedItems = Array.isArray(session?.checked_items)
+    ? session.checked_items.map(value => String(value || '').trim()).filter(Boolean)
+    : [];
+  const checked = checkedItems.length || _num(session?.checked_session_rows, 0);
+  const progress = _num(session?.progress_items, 0);
+  const isWorkflow = session?.unit_id != null;
+  const supervisorNote = _ownerCalendarSessionSupervisorNote(session);
+  return `
+    <div class="cal-detail-panel mx-3.5 mt-3 mb-4">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between border-b border-slate-100 pb-3 mb-3">
+        <div class="min-w-0">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">Session Detail</p>
+          <h3 class="detail-title mb-0 mt-1 break-words">${_escapeHtml(title)}</h3>
+          <p class="detail-meta mb-0 mt-1">
+            ${_escapeHtml(session?.class_name || 'Class')} | ${_escapeHtml(_fmtOwnerDate(session?.session_date))} | ${_escapeHtml(_ownerSessionTimeLabel(session))}
+          </p>
+        </div>
+        <div class="flex gap-2 flex-wrap sm:justify-end">
+          <span class="badge ${state.badgeClass}">${_escapeHtml(state.label)}</span>
+          ${isWorkflow ? '<span class="badge badge-blue">Workflow</span>' : '<span class="badge badge-gray">General</span>'}
+          ${sessionNumber ? `<span class="badge badge-blue">Unit Session ${sessionNumber}</span>` : ''}
+          <button id="btn-owner-calendar-close-session-detail" class="btn btn-ghost btn-sm text-slate-400">Close</button>
+        </div>
+      </div>
+
+      <div class="grid gap-3 lg:grid-cols-[1fr_.85fr]">
+        <div class="rounded-2xl border border-slate-200 bg-white p-3">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Teaching Record</p>
+          <div class="mt-3 grid grid-cols-2 md:grid-cols-4 gap-2">
+            ${_ownerDetailMini('Class', session?.class_name || '-')}
+            ${_ownerDetailMini('Date', _fmtOwnerDate(session?.session_date))}
+            ${_ownerDetailMini('Time', _ownerSessionTimeLabel(session))}
+            ${_ownerDetailMini('Status', state.label)}
+          </div>
+          <div class="mt-3 grid grid-cols-2 gap-2">
+            ${_ownerDetailMini('Checked rows', checked)}
+            ${_ownerDetailMini('Progress rows', progress)}
+          </div>
+          <div class="mt-3 rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
+            <div class="flex items-center justify-between gap-2">
+              <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">Checked By Teacher</p>
+              <span class="badge ${checkedItems.length ? 'badge-blue' : 'badge-gray'}">${checked} checked</span>
+            </div>
+            ${checkedItems.length ? `
+              <div class="mt-2 flex flex-col gap-1.5 max-h-[180px] overflow-auto pr-1">
+                ${checkedItems.map((item, idx) => `
+                  <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-[12px] font-semibold text-slate-700">
+                    <span class="text-slate-400">${idx + 1}.</span> ${_escapeHtml(item)}
+                  </div>
+                `).join('')}
+              </div>` : `
+              <p class="mt-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-[12px] text-amber-700">
+                No checked checklist rows were saved for this session yet.
+              </p>`}
+          </div>
+        </div>
+
+        <div class="rounded-2xl border border-blue-100 bg-blue-50/70 p-3">
+          <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">Supervisor Read</p>
+          <p class="mt-2 text-[13px] leading-6 text-slate-700">${_escapeHtml(supervisorNote)}</p>
+          <p class="mt-3 text-[11px] text-slate-500">For full attendance and checklist details, open the teacher calendar or workflow record.</p>
+        </div>
+      </div>
     </div>`;
+}
+
+function _ownerDetailMini(label, value) {
+  return `
+    <div class="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-2">
+      <p class="text-[13px] font-bold text-slate-800 truncate">${_escapeHtml(value == null || value === '' ? '-' : value)}</p>
+      <p class="mt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400">${_escapeHtml(label)}</p>
+    </div>`;
+}
+
+function _ownerSessionState(session) {
+  const when = _ownerSessionDateTime(session);
+  const isFuture = when && when.getTime() >= Date.now() + 15 * 60 * 1000;
+  if (isFuture) return { label: 'Planned', badgeClass: 'badge-blue' };
+  if (session?.is_open) return { label: 'Open / unclosed', badgeClass: 'badge-amber' };
+  return { label: 'Recorded', badgeClass: 'badge-green' };
+}
+
+function _ownerCalendarSessionSupervisorNote(session) {
+  const checked = _num(session?.checked_session_rows, 0);
+  const progress = _num(session?.progress_items, 0);
+  const state = _ownerSessionState(session);
+  if (state.label === 'Planned') {
+    return 'This is a planned session. Check that the teacher has a clear next lesson path before the class starts.';
+  }
+  if (session?.is_open) {
+    return 'This session is still open. Ask the teacher to close it after confirming what was actually taught.';
+  }
+  if (checked <= 0 && progress <= 0) {
+    return 'The session is recorded, but no checklist/progress rows were captured. This may need follow-up.';
+  }
+  return 'The session has a saved teaching trace. Use the checked rows as the reliable summary of what was covered.';
 }
 
 function _ownerCalendarTimetableChip(rule) {
@@ -1298,10 +1371,6 @@ function _ownerTimeToMinutes(value) {
   const m = Number(match[2]);
   if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
   return (h * 60) + m;
-}
-
-function _ownerSessionIdentity(session) {
-  return String(session?.session_id || `${session?.class_id || ''}|${session?.session_date || ''}|${session?.start_time || ''}`);
 }
 
 function _ownerIsoWeekNumber(value) {
@@ -1822,8 +1891,8 @@ function _ownerSessionTimeLabel(row) {
   if (start && end) return `${start}-${end}`;
   if (!start) return 'No time';
   const when = _ownerSessionDateTime(row);
-  if (when && when.getTime() >= Date.now() + 15 * 60 * 1000) return `${start}-planned`;
-  return row?.is_open ? `${start}-unclosed` : start;
+  if (when && when.getTime() >= Date.now() + 15 * 60 * 1000) return `${start} (planned)`;
+  return row?.is_open ? `${start} (unclosed)` : start;
 }
 
 function _ownerRecentActivityPanel(rows, selectedTeacher = null) {
@@ -1949,6 +2018,48 @@ function _bindOwnerEvents(el) {
     const tid = Number(ev.target?.value || 0);
     if (!tid) return;
     _setOwnerSelectedTeacherId(tid);
+    _renderOwner(el);
+  });
+  const selectOwnerCalendarSession = (sessionId) => {
+    const sid = Number(sessionId || 0);
+    if (!sid) return;
+    _ownerSelectedCalendarSessionId = sid;
+    _renderOwner(el);
+    setTimeout(() => {
+      document.querySelector('.cal-detail-panel')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 0);
+  };
+  el.querySelectorAll('[data-owner-session-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectOwnerCalendarSession(btn.dataset.ownerSessionId);
+    });
+    btn.addEventListener('keydown', ev => {
+      if (ev.key !== 'Enter' && ev.key !== ' ') return;
+      ev.preventDefault();
+      selectOwnerCalendarSession(btn.dataset.ownerSessionId);
+    });
+  });
+  el.querySelector('#btn-owner-calendar-close-session-detail')?.addEventListener('click', () => {
+    _ownerSelectedCalendarSessionId = null;
+    _renderOwner(el);
+  });
+  el.querySelector('#btn-owner-calendar-prev-week')?.addEventListener('click', () => {
+    const next = _ownerCurrentCalendarWeekStart();
+    next.setDate(next.getDate() - 7);
+    _ownerCalendarWeekStart = next;
+    _ownerSelectedCalendarSessionId = null;
+    _renderOwner(el);
+  });
+  el.querySelector('#btn-owner-calendar-next-week')?.addEventListener('click', () => {
+    const next = _ownerCurrentCalendarWeekStart();
+    next.setDate(next.getDate() + 7);
+    _ownerCalendarWeekStart = next;
+    _ownerSelectedCalendarSessionId = null;
+    _renderOwner(el);
+  });
+  el.querySelector('#btn-owner-calendar-this-week')?.addEventListener('click', () => {
+    _ownerCalendarWeekStart = _ownerWeekStart(new Date());
+    _ownerSelectedCalendarSessionId = null;
     _renderOwner(el);
   });
   const ownerSectionButtons = Array.from(el.querySelectorAll('[data-owner-section-target]'));

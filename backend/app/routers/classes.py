@@ -454,10 +454,31 @@ def owner_overview(
                 .order_by(ClassSession.session_date.desc(), ClassSession.start_time.desc(), ClassSession.id.desc())
                 .limit(24)
             ).all()
+            teacher_session_ids = [int(session.id) for session in teacher_sessions]
+            checked_items_by_session: dict[int, list[str]] = {session_id: [] for session_id in teacher_session_ids}
+            if teacher_session_ids:
+                checked_rows = db.execute(
+                    select(WorkflowSessionChecklistAction.session_id, WorkflowChecklistItem.title)
+                    .join(WorkflowChecklistItem, WorkflowSessionChecklistAction.item_id == WorkflowChecklistItem.id)
+                    .where(
+                        WorkflowSessionChecklistAction.session_id.in_(teacher_session_ids),
+                        WorkflowSessionChecklistAction.checked.is_(True),
+                    )
+                    .order_by(
+                        WorkflowSessionChecklistAction.session_id.asc(),
+                        WorkflowChecklistItem.position.asc(),
+                        WorkflowChecklistItem.id.asc(),
+                    )
+                ).all()
+                for session_id, title in checked_rows:
+                    clean_title = str(title or "").strip()
+                    if clean_title:
+                        checked_items_by_session.setdefault(int(session_id), []).append(clean_title)
             teacher_session_rows = []
             for session in teacher_sessions:
                 classroom = classes_by_id.get(session.class_id)
                 unit = session.unit
+                checked_item_titles = checked_items_by_session.get(int(session.id), [])
                 teacher_session_rows.append(
                     {
                         "session_id": session.id,
@@ -471,15 +492,8 @@ def owner_overview(
                         "unit_title": unit.title if unit else None,
                         "unit_type": unit.unit_type.value if unit else None,
                         "unit_session_number": session.unit_session_number,
-                        "checked_session_rows": int(
-                            db.scalar(
-                                select(func.count(WorkflowSessionChecklistAction.id)).where(
-                                    WorkflowSessionChecklistAction.session_id == session.id,
-                                    WorkflowSessionChecklistAction.checked.is_(True),
-                                )
-                            )
-                            or 0
-                        ),
+                        "checked_session_rows": len(checked_item_titles),
+                        "checked_items": checked_item_titles,
                         "progress_items": int(
                             db.scalar(select(func.count(ProgressItem.id)).where(ProgressItem.session_id == session.id))
                             or 0

@@ -8479,6 +8479,9 @@ def test_teacher_class_isolation_and_assignment(client):
     assert "active_classes" in teacher_overview_rows[0]
     assert "completed_checklist_items" in teacher_overview_rows[0]
     assert "checked_session_rows" in teacher_overview_rows[0]
+    assert "recent_sessions" in teacher_overview_rows[0]
+    assert "checked_items" in teacher_overview_rows[0]["recent_sessions"][0]
+    assert isinstance(teacher_overview_rows[0]["recent_sessions"][0]["checked_items"], list)
 
     teacher_forbidden_owner_view = client.get(f"/classes/by-teacher/{teacher_id}", headers=teacher_headers)
     assert teacher_forbidden_owner_view.status_code == 403
