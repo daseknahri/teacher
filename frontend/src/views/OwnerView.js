@@ -26,6 +26,22 @@ let _ownerTeacherFilter = 'all';
 let _ownerTeacherSearch = '';
 let _ownerTeacherLimit = 8;
 const OWNER_SELECTED_TEACHER_KEY = 'teacher_progress_owner_selected_teacher';
+const OWNER_WEEKDAY_LABELS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const OWNER_TIME_SLOTS = [
+  { key: '07', label: '07:00 - 08:00', start: 7 * 60, end: 8 * 60 },
+  { key: '08', label: '08:00 - 09:00', start: 8 * 60, end: 9 * 60 },
+  { key: '09', label: '09:00 - 10:00', start: 9 * 60, end: 10 * 60 },
+  { key: '10', label: '10:00 - 11:00', start: 10 * 60, end: 11 * 60 },
+  { key: '11', label: '11:00 - 12:00', start: 11 * 60, end: 12 * 60 },
+  { key: '12', label: '12:00 - 13:00', start: 12 * 60, end: 13 * 60 },
+  { key: '13', label: '13:00 - 14:00', start: 13 * 60, end: 14 * 60 },
+  { key: '14', label: '14:00 - 15:00', start: 14 * 60, end: 15 * 60 },
+  { key: '15', label: '15:00 - 16:00', start: 15 * 60, end: 16 * 60 },
+  { key: '16', label: '16:00 - 17:00', start: 16 * 60, end: 17 * 60 },
+  { key: '17', label: '17:00 - 18:00', start: 17 * 60, end: 18 * 60 },
+  { key: '18', label: '18:00 - 19:00', start: 18 * 60, end: 19 * 60 },
+  { key: '19', label: '19:00 - 20:00', start: 19 * 60, end: 20 * 60 },
+];
 
 function _loadOwnerSelectedTeacherId() {
   if (_selectedOwnerTeacherId) return _selectedOwnerTeacherId;
@@ -71,6 +87,10 @@ function _escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function _escapeHtmlAttr(value) {
+  return _escapeHtml(value);
 }
 
 function _fmtStatusTs(value) {
@@ -186,11 +206,18 @@ function _renderOwner(el) {
         </div>
       </div>
 
-      ${_ownerTeacherFocusPanel(operationRows, selectedTeacher)}
+      ${_ownerSectionNav()}
 
-      ${_ownerTeacherTrackerPanel(selectedTeacher)}
+      <section id="owner-section-teacher" class="scroll-mt-48">
+        ${_ownerTeacherFocusPanel(operationRows, selectedTeacher)}
+      </section>
 
-      ${_ownerAnalyticsPanel({
+      <section id="owner-section-calendar" class="scroll-mt-48">
+        ${_ownerTeacherTrackerPanel(selectedTeacher)}
+      </section>
+
+      <section id="owner-section-analytics" class="scroll-mt-48">
+        ${_ownerAnalyticsPanel({
         lockedCount: locked.length,
         teacherTotal,
         activeClassTotal,
@@ -201,13 +228,14 @@ function _renderOwner(el) {
         classRows,
         recentSessionRows,
       })}
+      </section>
 
-      <div class="grid gap-4 xl:grid-cols-[1.05fr_.95fr]">
+      <section id="owner-section-actions" class="scroll-mt-48 grid gap-4 xl:grid-cols-[1.05fr_.95fr]">
         ${_ownerSupervisorBriefPanel(supervisionBrief)}
         ${_ownerNeedsAttentionPanel(attentionRows, overviewCounts)}
-      </div>
+      </section>
 
-      <div class="grid gap-4 xl:grid-cols-[1.2fr_.8fr]">
+      <section id="owner-section-directory" class="scroll-mt-48 grid gap-4 xl:grid-cols-[1.2fr_.8fr]">
         ${_ownerTeacherDirectoryPanel({
           operationRows,
           filteredOperationRows,
@@ -216,11 +244,13 @@ function _renderOwner(el) {
           selectedTeacherId,
         })}
         ${_ownerRecentActivityPanel(_ownerTeacherRecentRows(selectedTeacher, recentSessionRows), selectedTeacher)}
-      </div>
+      </section>
 
-      ${_ownerClassSupervisionPanel(classRows, classAttentionRows)}
+      <section id="owner-section-classes" class="scroll-mt-48">
+        ${_ownerClassSupervisionPanel(classRows, classAttentionRows)}
+      </section>
 
-      <div class="card">
+      <section id="owner-section-ai" class="scroll-mt-48 card">
         <div class="card-header">
           <h3 class="font-semibold text-slate-700 text-[14px]">AI & NotebookLM Setup</h3>
         </div>
@@ -284,10 +314,10 @@ function _renderOwner(el) {
             <p>7. Easiest option: click <span class="font-mono break-all">Download Refresh Helper</span>, then double-click the downloaded <span class="font-mono break-all">.cmd</span> file on your Windows machine.</p>
           </div>
         </div>
-      </div>
+      </section>
 
       <!-- Holiday controls -->
-      <div class="card">
+      <section id="owner-section-school-calendar" class="scroll-mt-48 card">
         <div class="card-header">
           <h3 class="font-semibold text-slate-700 text-[14px]">Academic Calendar Controls</h3>
         </div>
@@ -323,63 +353,72 @@ function _renderOwner(el) {
             `).join('') : '<p class="text-[12px] text-slate-500 px-3 py-3">No holidays loaded for this year.</p>'}
           </div>
         </div>
-      </div>
+      </section>
 
       <!-- Teacher management -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="font-semibold text-slate-700 text-[14px]">Teacher Accounts</h3>
+      <section id="owner-section-accounts" class="scroll-mt-48 grid gap-4">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3 class="font-semibold text-slate-700 text-[14px]">Teacher Accounts</h3>
+              <p class="text-[12px] text-slate-400">Manage who can teach and what they can access.</p>
+            </div>
+          </div>
+          <div id="teacher-list" class="divide-y divide-slate-100">
+            ${_teachers.length ? _teachers.map(t => _teacherRow(t)).join('') : `
+            <div class="empty-state py-12">
+              <div class="text-xl font-black opacity-30">TCH</div>
+              <p class="text-[13px] text-slate-400">No teachers yet. Create one below.</p>
+            </div>`}
+          </div>
         </div>
-        <div id="teacher-list" class="divide-y divide-slate-100">
-          ${_teachers.length ? _teachers.map(t => _teacherRow(t)).join('') : `
-          <div class="empty-state py-12">
-            <div class="text-xl font-black opacity-30">TCH</div>
-            <p class="text-[13px] text-slate-400">No teachers yet. Create one below.</p>
-          </div>`}
-        </div>
-      </div>
 
-      <!-- Create teacher form -->
-      <div class="card">
-        <div class="card-header">
-          <h3 class="font-semibold text-slate-700 text-[14px]">Create Teacher Account</h3>
-        </div>
-        <div class="card-body flex flex-col gap-3">
-          <div class="grid sm:grid-cols-2 gap-3">
-            <div class="flex flex-col gap-1.5">
-              <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Full name</label>
-              <input id="new-teacher-name" type="text" placeholder="First Last" />
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <h3 class="font-semibold text-slate-700 text-[14px]">Create Teacher Account</h3>
+              <p class="text-[12px] text-slate-400">Add a teacher, then assign classes in the next section.</p>
+            </div>
+          </div>
+          <div class="card-body flex flex-col gap-3">
+            <div class="grid sm:grid-cols-2 gap-3">
+              <div class="flex flex-col gap-1.5">
+                <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Full name</label>
+                <input id="new-teacher-name" type="text" placeholder="First Last" />
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Email</label>
+                <input id="new-teacher-email" type="email" placeholder="teacher@school.edu" />
+              </div>
             </div>
             <div class="flex flex-col gap-1.5">
-              <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Email</label>
-              <input id="new-teacher-email" type="email" placeholder="teacher@school.edu" />
+              <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Temporary password</label>
+              <div class="flex gap-2">
+                <input id="new-teacher-pwd" type="text" placeholder="Auto-generated" class="flex-1" />
+                <button id="btn-gen-pwd"
+                  class="btn btn-secondary btn-sm flex-shrink-0">Generate</button>
+              </div>
             </div>
-          </div>
-          <div class="flex flex-col gap-1.5">
-            <label class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Temporary password</label>
-            <div class="flex gap-2">
-              <input id="new-teacher-pwd" type="text" placeholder="Auto-generated" class="flex-1" />
-              <button id="btn-gen-pwd"
-                class="btn btn-secondary btn-sm flex-shrink-0">Generate</button>
+            <div class="flex gap-2 flex-wrap mt-1">
+              <button id="btn-create-teacher" class="btn btn-primary">Create Teacher</button>
+              <button id="btn-copy-invite" class="btn btn-secondary">Copy Invite</button>
             </div>
+            <div id="invite-preview" class="hidden p-3 bg-slate-50 rounded-xl border border-slate-200
+                 text-[12px] text-slate-500 font-mono whitespace-pre-wrap leading-relaxed"></div>
           </div>
-          <div class="flex gap-2 flex-wrap mt-1">
-            <button id="btn-create-teacher" class="btn btn-primary">Create Teacher</button>
-            <button id="btn-copy-invite" class="btn btn-secondary">Copy Invite</button>
-          </div>
-          <div id="invite-preview" class="hidden p-3 bg-slate-50 rounded-xl border border-slate-200
-               text-[12px] text-slate-500 font-mono whitespace-pre-wrap leading-relaxed"></div>
         </div>
-      </div>
+      </section>
 
       <!-- Class-Teacher Assignments -->
-      ${_allClasses.length ? `
-      <div class="card">
+      <section id="owner-section-assignments" class="scroll-mt-48 card">
         <div class="card-header">
-          <h3 class="font-semibold text-slate-700 text-[14px]">Class Ownership Assignments</h3>
+          <div>
+            <h3 class="font-semibold text-slate-700 text-[14px]">Class Ownership Assignments</h3>
+            <p class="text-[12px] text-slate-400">Connect every class to the teacher responsible for its workflow.</p>
+          </div>
         </div>
         <div class="card-body flex flex-col gap-2">
-          ${_allClasses.map(c => {
+          ${_allClasses.length ? _allClasses.map(c => {
     const assignedId = _classTeachers[c.id];
     const assigned = assignedId ? _teachers.find(t => t.id === assignedId) : null;
     return `
@@ -394,15 +433,17 @@ function _renderOwner(el) {
               </select>
               <button class="btn btn-secondary btn-sm btn-assign-teacher" data-class-id="${c.id}" title="Save assignment">Save</button>
             </div>`;
-  }).join('')}
+          }).join('') : `
+          <div class="empty-state py-10">
+            <div class="text-xl font-black opacity-30">CLS</div>
+            <p class="text-[13px] text-slate-400">No active classes are available for assignment yet.</p>
+          </div>`}
         </div>
-      </div>
-
-      ` : ''}
+      </section>
 
       <!-- Archived classes restore -->
       ${_archivedClasses.length ? `
-      <div class="card">
+      <section class="card">
         <div class="card-header">
           <h3 class="font-semibold text-slate-700 text-[14px]">Archived Classes</h3>
         </div>
@@ -414,10 +455,10 @@ function _renderOwner(el) {
             <button class="btn btn-secondary btn-sm btn-restore" data-class-id="${c.id}">Restore</button>
           </div>`).join('')}
         </div>
-      </div>` : ''}
+      </section>` : ''}
 
       <!-- Change Password -->
-      <div class="card">
+      <section id="owner-section-security" class="scroll-mt-48 card">
         <div class="card-header">
           <h3 class="font-semibold text-slate-700 text-[14px]">Owner Password</h3>
         </div>
@@ -435,7 +476,7 @@ function _renderOwner(el) {
           <p id="chg-pwd-error" class="text-[12px] text-red-600 hidden"></p>
           <button id="btn-change-pwd" class="btn btn-primary self-start">Update Password</button>
         </div>
-      </div>
+      </section>
 
     </div>`;
 
@@ -710,6 +751,38 @@ function _ownerQuickSignal(label, value, tone = 'slate') {
     </div>`;
 }
 
+function _ownerSectionNav() {
+  const items = [
+    ['owner-section-teacher', 'Teacher'],
+    ['owner-section-calendar', 'Calendar'],
+    ['owner-section-analytics', 'Analytics'],
+    ['owner-section-actions', 'Actions'],
+    ['owner-section-directory', 'Directory'],
+    ['owner-section-classes', 'Classes'],
+    ['owner-section-ai', 'NotebookLM'],
+    ['owner-section-school-calendar', 'School Calendar'],
+    ['owner-section-accounts', 'Accounts'],
+    ['owner-section-assignments', 'Assignments'],
+    ['owner-section-security', 'Security'],
+  ];
+  return `
+    <nav id="owner-section-nav" aria-label="Supervisor dashboard sections" class="sticky top-[72px] z-20 -mx-1 rounded-[1.6rem] border border-slate-200 bg-white/90 px-3 py-3 shadow-sm backdrop-blur">
+      <div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-600">Supervisor sections</p>
+          <p class="text-[12px] text-slate-500">Jump to the part you need without scrolling through the whole dashboard.</p>
+        </div>
+        <div class="flex gap-2 overflow-x-auto pb-1 lg:max-w-[760px]">
+          ${items.map(([id, label]) => `
+            <button type="button" data-owner-section-target="${_escapeHtmlAttr(id)}" class="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">
+              ${_escapeHtml(label)}
+            </button>
+          `).join('')}
+        </div>
+      </div>
+    </nav>`;
+}
+
 function _ownerTeacherSessionRows(row) {
   if (Array.isArray(row?.recent_sessions)) return row.recent_sessions;
   return [];
@@ -904,7 +977,7 @@ function _ownerTeacherTrackerPanel(row) {
   const rules = _ownerTeacherTimetableRows(row);
   const classes = _ownerClassDetailRows(row);
   return `
-    <div class="grid gap-4 xl:grid-cols-[.9fr_1.35fr]">
+    <div class="grid gap-4">
       <div class="card overflow-hidden">
         <div class="card-header bg-slate-50/80">
           <div>
@@ -950,8 +1023,8 @@ function _ownerTeacherTrackerPanel(row) {
       <div class="card overflow-hidden">
         <div class="card-header bg-white">
           <div>
-            <h3 class="font-semibold text-slate-800 text-[15px]">Teacher Calendar Tracker</h3>
-            <p class="text-[12px] text-slate-400 mt-1">Week view for visible sessions and timetable expectations.</p>
+            <h3 class="font-semibold text-slate-800 text-[15px]">Weekly Calendar Tracker</h3>
+            <p class="text-[12px] text-slate-400 mt-1">Read-only supervisor copy of the teacher calendar: session blocks, timetable expectations, and gaps.</p>
           </div>
           <div class="flex gap-2 flex-wrap justify-end">
             <span class="badge badge-blue">${sessions.length} session row${sessions.length === 1 ? '' : 's'}</span>
@@ -1069,46 +1142,175 @@ function _ownerTeacherWeekGrid(row) {
   const sessions = _ownerTeacherSessionRows(row);
   const rules = _ownerTeacherTimetableRows(row);
   const weekDays = _ownerWeekDays(new Date());
+  const weekStartKey = _ownerLocalDateKey(weekDays[0]);
+  const weekEndKey = _ownerLocalDateKey(weekDays[6]);
+  const visibleSessionIds = new Set();
+  const outsideRows = [];
+  const sessionsByDaySlot = new Map();
+  const rulesByDaySlot = new Map();
+  sessions.forEach(session => {
+    const dayKey = String(session.session_date || '');
+    if (!dayKey) return;
+    const slotKey = _ownerSessionSlotKey(session);
+    if (!slotKey) {
+      if (dayKey >= weekStartKey && dayKey <= weekEndKey) outsideRows.push(session);
+      return;
+    }
+    const key = `${dayKey}|${slotKey}`;
+    if (!sessionsByDaySlot.has(key)) sessionsByDaySlot.set(key, []);
+    sessionsByDaySlot.get(key).push(session);
+    visibleSessionIds.add(_ownerSessionIdentity(session));
+  });
+  rules.forEach(rule => {
+    const slotKey = _ownerSessionSlotKey(rule);
+    if (!slotKey) return;
+    weekDays.forEach(day => {
+      const dayKey = _ownerLocalDateKey(day);
+      if (Number(rule.weekday || 0) !== _ownerRuleWeekdayForDate(day)) return;
+      if (rule.effective_from && dayKey < String(rule.effective_from)) return;
+      if (rule.effective_to && dayKey > String(rule.effective_to)) return;
+      const key = `${dayKey}|${slotKey}`;
+      if (sessionsByDaySlot.has(key)) return;
+      if (!rulesByDaySlot.has(key)) rulesByDaySlot.set(key, []);
+      rulesByDaySlot.get(key).push({ ...rule, session_date: dayKey });
+    });
+  });
+  const weekNumber = _ownerIsoWeekNumber(weekDays[0]);
+  const weekMonthLabel = (() => {
+    try {
+      return weekDays[0].toLocaleDateString('fr-MA', { month: 'long', year: 'numeric' });
+    } catch {
+      return '';
+    }
+  })();
   return `
-    <div class="grid gap-2 lg:grid-cols-7">
-      ${weekDays.map(day => {
-        const dayKey = _ownerLocalDateKey(day);
-        const weekday = _ownerRuleWeekdayForDate(day);
-        const daySessions = sessions
-          .filter(session => String(session.session_date || '') === dayKey)
-          .sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || '')));
-        const dayRules = rules
-          .filter(rule => Number(rule.weekday || 0) === weekday)
-          .filter(rule => (!rule.effective_from || dayKey >= String(rule.effective_from)) && (!rule.effective_to || dayKey <= String(rule.effective_to)))
-          .sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || '')));
-        const isToday = dayKey === _ownerLocalDateKey(new Date());
-        return `
-          <div class="min-h-[148px] rounded-3xl border ${isToday ? 'border-blue-300 bg-blue-50/50' : 'border-slate-200 bg-slate-50/60'} px-3 py-3">
-            <div class="flex items-start justify-between gap-2">
-              <div>
-                <p class="text-[11px] font-bold uppercase tracking-[0.16em] ${isToday ? 'text-blue-600' : 'text-slate-400'}">${_escapeHtml(_ownerShortDayLabel(day))}</p>
-                <p class="mt-0.5 text-[13px] font-semibold text-slate-800">${_escapeHtml(_ownerShortDateLabel(day))}</p>
-              </div>
-              ${isToday ? '<span class="badge badge-blue">Today</span>' : ''}
-            </div>
-            <div class="mt-3 flex flex-col gap-2">
-              ${daySessions.length ? daySessions.map(session => `
-                <div class="rounded-2xl border border-blue-100 bg-white px-2.5 py-2 shadow-[0_1px_0_rgba(15,23,42,0.03)]">
-                  <p class="text-[12px] font-semibold text-slate-900">${_escapeHtml(session.class_name || 'Class')}</p>
-                  <p class="mt-0.5 text-[11px] text-slate-500">${_escapeHtml(_ownerSessionTimeLabel(session))}</p>
-                  ${session.unit_title ? `<p class="mt-1 text-[11px] text-blue-700 line-clamp-2">${_escapeHtml(session.unit_title)}</p>` : ''}
-                </div>`).join('') : ''}
-              ${!daySessions.length && dayRules.length ? dayRules.slice(0, 3).map(rule => `
-                <div class="rounded-2xl border border-dashed border-slate-300 bg-white/70 px-2.5 py-2">
-                  <p class="text-[12px] font-semibold text-slate-700">${_escapeHtml(rule.class_name || 'Class')}</p>
-                  <p class="mt-0.5 text-[11px] text-slate-400">${_escapeHtml(String(rule.start_time || '').slice(0, 5))}${rule.end_time ? `-${_escapeHtml(String(rule.end_time).slice(0, 5))}` : ''}</p>
-                  <p class="mt-1 text-[10px] uppercase tracking-wider text-slate-400">Timetable</p>
-                </div>`).join('') : ''}
-              ${!daySessions.length && !dayRules.length ? '<p class="rounded-2xl border border-slate-200 bg-white/60 px-2.5 py-2 text-[11px] text-slate-400">No visible slot</p>' : ''}
-            </div>
-          </div>`;
-      }).join('')}
+    <div class="rounded-3xl border border-slate-200 bg-white overflow-hidden">
+      <div class="flex items-center justify-between px-4 py-3 border-b border-slate-100 flex-wrap gap-2">
+        <div class="cal-week-nav w-full sm:w-auto justify-between sm:justify-start">
+          <div class="week-label ${weekStartKey === _ownerLocalDateKey(_ownerWeekStart(new Date())) ? 'is-current-week' : ''}">
+            <span class="block text-[10px] uppercase tracking-wide opacity-70">Week ${weekNumber}${weekMonthLabel ? ` - ${_escapeHtml(weekMonthLabel)}` : ''}</span>
+            <span>${_escapeHtml(_fmtOwnerDate(weekStartKey))} - ${_escapeHtml(_fmtOwnerDate(weekEndKey))}</span>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap text-[11px]">
+          <span class="badge badge-blue">Session blocks</span>
+          <span class="badge badge-gray">Dashed = timetable only</span>
+          <span class="badge badge-amber">Unclosed needs review</span>
+        </div>
+      </div>
+      <div class="weekly-grid-wrap">
+        <div class="weekly-grid">
+          <div class="cal-time-axis flex items-end justify-end pb-1 pr-2">Time</div>
+          ${weekDays.map((day, idx) => {
+            const dayKey = _ownerLocalDateKey(day);
+            const isToday = dayKey === _ownerLocalDateKey(new Date());
+            return `
+              <div class="cal-day-header ${isToday ? 'is-today' : ''} flex flex-col justify-end pb-1">
+                <span class="text-[11px] font-bold uppercase tracking-wider">${_escapeHtml(OWNER_WEEKDAY_LABELS[idx] || _ownerShortDayLabel(day))}</span>
+                <span class="text-[14px] font-semibold">${_escapeHtml(_ownerShortDateLabel(day))}</span>
+              </div>`;
+          }).join('')}
+          ${OWNER_TIME_SLOTS.map(slot => `
+            <div class="week-time-cell cal-time-axis flex items-start justify-end pr-2 pt-1 font-normal opacity-50">${_escapeHtml(slot.label.split(' - ')[0])}</div>
+            ${weekDays.map(day => {
+              const dayKey = _ownerLocalDateKey(day);
+              const cellKey = `${dayKey}|${slot.key}`;
+              const cellSessions = (sessionsByDaySlot.get(cellKey) || []).sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || '')));
+              const cellRules = (rulesByDaySlot.get(cellKey) || []).sort((a, b) => String(a.start_time || '').localeCompare(String(b.start_time || '')));
+              const maxVisible = 3;
+              const visibleSessions = cellSessions.slice(0, maxVisible);
+              const visibleRules = cellRules.slice(0, Math.max(0, maxVisible - visibleSessions.length));
+              const overflowCount = (cellSessions.length + cellRules.length) - (visibleSessions.length + visibleRules.length);
+              return `
+                <div class="cal-slot week-slot-cell p-1 flex flex-col gap-[3px]">
+                  ${visibleSessions.map(session => _ownerCalendarSessionChip(session)).join('')}
+                  ${visibleRules.map(rule => _ownerCalendarTimetableChip(rule)).join('')}
+                  ${overflowCount > 0 ? `<div class="cal-slot-overflow text-center">+${overflowCount} more</div>` : ''}
+                </div>`;
+            }).join('')}
+          `).join('')}
+        </div>
+      </div>
+      ${outsideRows.length ? `
+        <div class="px-4 py-2.5 border-t border-slate-100 bg-slate-50">
+          <p class="text-[11px] text-slate-500">${outsideRows.length} session${outsideRows.length === 1 ? '' : 's'} outside visible grid hours.</p>
+          <div class="mt-1.5 flex flex-wrap gap-2">
+            ${outsideRows.map(session => `
+              <span class="btn btn-ghost btn-sm">
+                ${_escapeHtml(_fmtOwnerDate(session.session_date))} | ${_escapeHtml(_ownerSessionTimeLabel(session))} | ${_escapeHtml(session.unit_title || session.class_name || 'Session')}
+              </span>
+            `).join('')}
+          </div>
+        </div>` : ''}
     </div>`;
+}
+
+function _ownerCalendarSessionChip(session) {
+  const isWorkflow = session?.unit_id != null;
+  const isFuture = _ownerSessionIsFuture(session);
+  const isUnclosed = session?.is_open && !isFuture;
+  const stateLabel = isFuture ? 'Planned' : isUnclosed ? 'Unclosed' : 'Recorded';
+  const chipClass = isWorkflow ? 'chip-workflow' : 'chip-generic';
+  const title = session?.unit_title || session?.class_name || 'Session';
+  return `
+    <div class="cal-chip group relative flex flex-col items-start gap-1 w-full text-left rounded-xl shadow-sm ${chipClass} ${isUnclosed ? 'ring-1 ring-amber-300' : ''}"
+         title="${_escapeHtmlAttr(`${title} - ${stateLabel}`)}">
+      <div class="pointer-events-none w-full flex flex-col text-left gap-0.5 overflow-hidden">
+        <div class="flex items-center justify-between gap-1 w-full">
+          <span class="opacity-75 text-[9px] uppercase font-bold tracking-widest whitespace-nowrap">${_escapeHtml(_ownerSessionTimeLabel(session))}</span>
+          <span class="text-[9px]">${_escapeHtml(session?.unit_session_number ? `S${Number(session.unit_session_number)}` : stateLabel)}</span>
+        </div>
+        <span class="truncate w-full font-bold text-[12px] leading-tight">${_escapeHtml(title)}</span>
+        <span class="truncate w-full text-[9px] opacity-80">${_escapeHtml(session?.class_name || '')}</span>
+      </div>
+    </div>`;
+}
+
+function _ownerCalendarTimetableChip(rule) {
+  const startText = rule?.end_time
+    ? `${String(rule.start_time || '').slice(0, 5)}-${String(rule.end_time || '').slice(0, 5)}`
+    : String(rule?.start_time || '').slice(0, 5);
+  const title = rule?.class_name || rule?.subject || 'Timetable slot';
+  const metaText = [rule?.room, rule?.group_name].filter(Boolean).join(' - ');
+  return `
+    <div class="cal-planned-chip" title="${_escapeHtmlAttr(`Timetable only: ${title}`)}">
+      <div class="cal-planned-chip-main">
+        <span class="cal-planned-chip-time">${_escapeHtml(startText)}</span>
+        <span class="cal-planned-chip-title">${_escapeHtml(title)}</span>
+        ${metaText ? `<span class="cal-planned-chip-meta">${_escapeHtml(metaText)}</span>` : ''}
+      </div>
+      <span class="text-[9px] text-slate-500 mt-0.5">Timetable only</span>
+    </div>`;
+}
+
+function _ownerSessionSlotKey(row) {
+  const startMinutes = _ownerTimeToMinutes(row?.start_time);
+  if (startMinutes == null) return null;
+  const slot = OWNER_TIME_SLOTS.find(item => startMinutes >= item.start && startMinutes < item.end);
+  return slot ? slot.key : null;
+}
+
+function _ownerTimeToMinutes(value) {
+  if (!value) return null;
+  const match = String(value).trim().match(/^(\d{1,2}):(\d{2})/);
+  if (!match) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return (h * 60) + m;
+}
+
+function _ownerSessionIdentity(session) {
+  return String(session?.session_id || `${session?.class_id || ''}|${session?.session_date || ''}|${session?.start_time || ''}`);
+}
+
+function _ownerIsoWeekNumber(value) {
+  const date = _ownerWeekStart(value instanceof Date ? value : new Date(value));
+  const target = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = target.getUTCDay() || 7;
+  target.setUTCDate(target.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+  return Math.ceil((((target - yearStart) / 86400000) + 1) / 7);
 }
 
 function _ownerAnalyticsPanel({ lockedCount, teacherTotal, activeClassTotal, studentTotal, sessionTotal, examTotal, overviewCounts, classRows, recentSessionRows }) {
@@ -1748,6 +1950,33 @@ function _bindOwnerEvents(el) {
     if (!tid) return;
     _setOwnerSelectedTeacherId(tid);
     _renderOwner(el);
+  });
+  const ownerSectionButtons = Array.from(el.querySelectorAll('[data-owner-section-target]'));
+  const setActiveOwnerSection = (targetId) => {
+    ownerSectionButtons.forEach(btn => {
+      const active = String(btn.dataset.ownerSectionTarget || '') === targetId;
+      btn.classList.toggle('border-blue-300', active);
+      btn.classList.toggle('bg-blue-50', active);
+      btn.classList.toggle('text-blue-700', active);
+      btn.classList.toggle('shadow-sm', active);
+      if (active) {
+        btn.setAttribute('aria-current', 'true');
+      } else {
+        btn.removeAttribute('aria-current');
+      }
+    });
+  };
+  if (ownerSectionButtons.length) {
+    setActiveOwnerSection(String(ownerSectionButtons[0].dataset.ownerSectionTarget || ''));
+  }
+  ownerSectionButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetId = String(btn.dataset.ownerSectionTarget || '').trim();
+      const target = targetId ? document.getElementById(targetId) : null;
+      if (!target) return;
+      setActiveOwnerSection(targetId);
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
   });
   el.querySelector('#owner-teacher-search')?.addEventListener('change', (ev) => {
     _ownerTeacherSearch = String(ev.target?.value || '').trim();
