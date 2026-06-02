@@ -3950,11 +3950,11 @@ function _render(el, classId) {
                   ${canAskRowAssistant ? `<button class="btn btn-ghost btn-sm !text-sky-700 !px-2 btn-item-assistant" data-item-id="${item.id}">Ask</button>` : ''}
                 </div>` : ''}
                 <div class="row-hover-actions checklist-edit-actions flex items-center gap-1 ml-auto flex-wrap rounded-full border border-slate-200 bg-white/90 px-1.5 py-1 shadow-sm">
-                  <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-up ${meta.canUp ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Move up">↑</button>
-                  <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-down ${meta.canDown ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Move down">↓</button>
-                  <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-indent ${meta.canIndent ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Nest under previous">→</button>
-                  <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-outdent ${meta.canOutdent ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Move one level up">←</button>
-                  <button class="btn btn-ghost btn-sm !text-slate-400 todo-drag-handle transition-all hover:!text-blue-500" data-drag-item-id="${item.id}" draggable="true" title="Drag to reorder / nest">⋮⋮</button>
+                  <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-up ${meta.canUp ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Move up" aria-label="Move item up">↑</button>
+                  <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-down ${meta.canDown ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Move down" aria-label="Move item down">↓</button>
+                  <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-indent ${meta.canIndent ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Nest under previous" aria-label="Nest item under previous row">→</button>
+                  <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-outdent ${meta.canOutdent ? '' : 'opacity-40 pointer-events-none'}" data-item-id="${item.id}" title="Move one level up" aria-label="Move item one level up">←</button>
+                  <button class="btn btn-ghost btn-sm !text-slate-400 todo-drag-handle transition-all hover:!text-blue-500" data-drag-item-id="${item.id}" draggable="true" title="Drag to reorder / nest" aria-label="Drag item to reorder or nest">⋮⋮</button>
                   <div class="h-4 w-px bg-slate-200 mx-0.5"></div>
                   <button class="btn btn-ghost btn-sm !text-slate-500 btn-item-add-child" data-item-id="${item.id}" title="Add child">+Child</button>
                   <button class="btn btn-ghost btn-sm !text-blue-600 btn-item-edit" data-item-id="${item.id}" data-item-kind="${item.item_kind || 'other'}" data-item-title="${_escapeHtmlAttr(item.title)}" data-item-note="${_escapeHtmlAttr(item.teacher_note || '')}" title="Edit item">Edit</button>

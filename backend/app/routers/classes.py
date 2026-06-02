@@ -14,6 +14,7 @@ from ..models import (
     AttendanceRecord,
     AttendanceStatus,
     ClassAccess,
+    ClassTimetableRule,
     ClassArchiveState,
     ClassSession,
     Classroom,
@@ -447,6 +448,71 @@ def owner_overview(
                         "last_session_date": class_last_session_date.isoformat() if class_last_session_date else None,
                     }
                 )
+            teacher_sessions = db.scalars(
+                select(ClassSession)
+                .where(ClassSession.class_id.in_(class_ids))
+                .order_by(ClassSession.session_date.desc(), ClassSession.start_time.desc(), ClassSession.id.desc())
+                .limit(24)
+            ).all()
+            teacher_session_rows = []
+            for session in teacher_sessions:
+                classroom = classes_by_id.get(session.class_id)
+                unit = session.unit
+                teacher_session_rows.append(
+                    {
+                        "session_id": session.id,
+                        "class_id": session.class_id,
+                        "class_name": classroom.name if classroom else f"Class #{session.class_id}",
+                        "session_date": session.session_date.isoformat(),
+                        "start_time": session.start_time.isoformat(timespec="minutes") if session.start_time else None,
+                        "end_time": session.end_time.isoformat(timespec="minutes") if session.end_time else None,
+                        "is_open": session.end_time is None,
+                        "unit_id": session.unit_id,
+                        "unit_title": unit.title if unit else None,
+                        "unit_type": unit.unit_type.value if unit else None,
+                        "unit_session_number": session.unit_session_number,
+                        "checked_session_rows": int(
+                            db.scalar(
+                                select(func.count(WorkflowSessionChecklistAction.id)).where(
+                                    WorkflowSessionChecklistAction.session_id == session.id,
+                                    WorkflowSessionChecklistAction.checked.is_(True),
+                                )
+                            )
+                            or 0
+                        ),
+                        "progress_items": int(
+                            db.scalar(select(func.count(ProgressItem.id)).where(ProgressItem.session_id == session.id))
+                            or 0
+                        ),
+                    }
+                )
+            timetable_rules = db.scalars(
+                select(ClassTimetableRule)
+                .where(
+                    ClassTimetableRule.class_id.in_(class_ids),
+                    (ClassTimetableRule.effective_to.is_(None)) | (ClassTimetableRule.effective_to >= date.today()),
+                )
+                .order_by(ClassTimetableRule.weekday.asc(), ClassTimetableRule.start_time.asc())
+                .limit(40)
+            ).all()
+            timetable_rule_rows = []
+            for rule in timetable_rules:
+                classroom = classes_by_id.get(rule.class_id)
+                timetable_rule_rows.append(
+                    {
+                        "rule_id": rule.id,
+                        "class_id": rule.class_id,
+                        "class_name": classroom.name if classroom else f"Class #{rule.class_id}",
+                        "weekday": rule.weekday,
+                        "start_time": rule.start_time.isoformat(timespec="minutes"),
+                        "end_time": rule.end_time.isoformat(timespec="minutes"),
+                        "subject": rule.subject,
+                        "room": rule.room,
+                        "group_name": rule.group_name,
+                        "effective_from": rule.effective_from.isoformat(),
+                        "effective_to": rule.effective_to.isoformat() if rule.effective_to else None,
+                    }
+                )
         else:
             active_class_ids = []
             archived_class_ids = []
@@ -465,6 +531,8 @@ def owner_overview(
             exam_result_count = 0
             average_exam_score = None
             teacher_class_rows = []
+            teacher_session_rows = []
+            timetable_rule_rows = []
         class_names = [classes_by_id[class_id].name for class_id in class_ids if class_id in classes_by_id]
         teacher_rows.append(
             {
@@ -491,6 +559,8 @@ def owner_overview(
                 "completed_checklist_items": completed_items,
                 "checked_session_rows": checked_actions,
                 "last_session_date": last_session_date.isoformat() if last_session_date else None,
+                "recent_sessions": teacher_session_rows,
+                "timetable_rules": timetable_rule_rows,
             }
         )
 
