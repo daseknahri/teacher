@@ -6523,7 +6523,11 @@ def start_workflow_session(
     current_user: User = Depends(get_current_user),
 ) -> WorkflowSessionOut:
     _ = ensure_class_writable(db, class_id, current_user)
-    now = datetime.now()
+    # Use the same UTC clock the rest of the workflow uses (e.g. session end), so a
+    # session's start_time and a later end_time are comparable. Mixing datetime.now()
+    # (machine-local) here with _utc_now_naive() at close caused end_time < start_time
+    # rejections on any host ahead of UTC.
+    now = _utc_now_naive()
     unit = _ensure_active_unit(db, class_id)
     open_existing = db.scalar(
         select(ClassSession).where(
@@ -6807,6 +6811,8 @@ def end_workflow_session(
     auto_closed_unit = False
     if session.unit_id is not None and session.end_time is not None:
         auto_closed_unit = _auto_close_completed_past_unit(db, unit_id=int(session.unit_id))
+
+    session.version = int(getattr(session, "version", 1) or 1) + 1
 
     log_audit(
         db,

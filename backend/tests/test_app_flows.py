@@ -1291,7 +1291,11 @@ def test_workflow_start_session_uses_next_timetable_slot_after_last_unit_session
         json={"title": "I- Multiplication", "item_kind": "section", "parent_item_id": None},
     )
     assert add_item_resp.status_code == 201
+    item_id = int(add_item_resp.json()["id"])
 
+    # Make the prior session a genuinely completed one (a checked checklist item counts as
+    # saved workflow state) so /sessions/start suggests the next timetable slot instead of
+    # reusing this session as an empty/planned one.
     previous_resp = client.post(
         f"/workflow/classes/{class_id}/sessions",
         headers=headers,
@@ -1299,11 +1303,23 @@ def test_workflow_start_session_uses_next_timetable_slot_after_last_unit_session
             "unit_id": unit_id,
             "session_date": "2026-09-07",
             "start_time": "08:00:00",
-            "end_time": "09:00:00",
             "note": "Live unit session",
         },
     )
     assert previous_resp.status_code == 201
+    previous_id = int(previous_resp.json()["id"])
+    toggle_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/{previous_id}/items/{item_id}/toggle",
+        headers=headers,
+        json={"checked": True},
+    )
+    assert toggle_resp.status_code == 200
+    close_prev_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions/{previous_id}/end",
+        headers=headers,
+        json={"session_date": "2026-09-07", "start_time": "08:00:00", "end_time": "09:00:00"},
+    )
+    assert close_prev_resp.status_code == 200
 
     start_resp = client.post(
         f"/workflow/classes/{class_id}/sessions/start",
@@ -1318,7 +1334,7 @@ def test_workflow_start_session_uses_next_timetable_slot_after_last_unit_session
     assert payload["end_time"] is None
 
 
-def test_workflow_start_session_skips_existing_future_slot_and_uses_next_available_one(client):
+def test_workflow_start_session_reuses_earliest_planned_session(client):
     headers = _auth_headers(client)
     class_name = f"NEXT-SESSION-SKIP-{uuid.uuid4().hex[:6]}"
     class_resp = client.post("/classes", json={"name": class_name, "subject": "Math"}, headers=headers)
@@ -1378,6 +1394,7 @@ def test_workflow_start_session_skips_existing_future_slot_and_uses_next_availab
         },
     )
     assert previous_resp.status_code == 201
+    previous_id = int(previous_resp.json()["id"])
 
     existing_future_resp = client.post(
         f"/workflow/classes/{class_id}/sessions",
@@ -1399,9 +1416,13 @@ def test_workflow_start_session_skips_existing_future_slot_and_uses_next_availab
     )
     assert start_resp.status_code == 201
     payload = start_resp.json()
+    # 'Reuse planned sessions': starting reopens the earliest empty planned session for the
+    # unit (2026-09-07) instead of creating a duplicate or skipping ahead to a free slot.
     assert int(payload["unit_id"]) == unit_id
-    assert str(payload["session_date"]) == "2026-09-14"
+    assert int(payload["id"]) == previous_id
+    assert str(payload["session_date"]) == "2026-09-07"
     assert str(payload["start_time"]) == "08:00:00"
+    assert payload["end_time"] is None
 
 
 def test_workflow_class_setup_creates_class_students_and_timetable(client):
@@ -7817,41 +7838,45 @@ def test_exam_update_archive_restore(client):
     assert correction_workflow_resp.status_code == 200
     correction_unit_id = int(correction_workflow_resp.json()["unit"]["id"])
 
+    # Create two distinct correction sessions with explicit dates: one kept (today or
+    # earlier) and one future (deleted on archive). We use the explicit session endpoint
+    # rather than /sessions/start because the latter intentionally reuses an existing
+    # closed session that has no saved checklist work, which would collapse these into one.
+    # Dates skip Sunday, the only non-working day, so the test is robust to any run date.
+    kept_date = date.today()
+    while kept_date.weekday() == 6:
+        kept_date -= timedelta(days=1)
+    future_date = date.today() + timedelta(days=10)
+    while future_date.weekday() == 6:
+        future_date += timedelta(days=1)
+
     correction_session_resp = client.post(
-        f"/workflow/classes/{class_id}/sessions/start",
+        f"/workflow/classes/{class_id}/sessions",
         headers=headers,
-        json={"absent_student_ids": []},
+        json={
+            "unit_id": correction_unit_id,
+            "session_date": kept_date.isoformat(),
+            "start_time": "10:00:00",
+            "end_time": "11:00:00",
+            "note": "Past correction session",
+        },
     )
     assert correction_session_resp.status_code == 201
     correction_session_id = int(correction_session_resp.json()["id"])
-    correction_end_resp = client.post(
-        f"/workflow/classes/{class_id}/sessions/{correction_session_id}/end",
-        headers=headers,
-        json={
-            "session_date": date.today().isoformat(),
-            "start_time": correction_session_resp.json()["start_time"],
-            "end_time": correction_session_resp.json()["start_time"],
-        },
-    )
-    assert correction_end_resp.status_code == 200
 
     future_correction_session_resp = client.post(
-        f"/workflow/classes/{class_id}/sessions/start",
+        f"/workflow/classes/{class_id}/sessions",
         headers=headers,
-        json={"absent_student_ids": []},
+        json={
+            "unit_id": correction_unit_id,
+            "session_date": future_date.isoformat(),
+            "start_time": "10:00:00",
+            "end_time": "11:00:00",
+            "note": "Future correction session",
+        },
     )
     assert future_correction_session_resp.status_code == 201
     future_correction_session_id = int(future_correction_session_resp.json()["id"])
-    future_correction_end_resp = client.post(
-        f"/workflow/classes/{class_id}/sessions/{future_correction_session_id}/end",
-        headers=headers,
-        json={
-            "session_date": (date.today() + timedelta(days=10)).isoformat(),
-            "start_time": future_correction_session_resp.json()["start_time"],
-            "end_time": future_correction_session_resp.json()["start_time"],
-        },
-    )
-    assert future_correction_end_resp.status_code == 200
 
     update_resp = client.put(
         f"/exams/{exam_id}",
@@ -8117,7 +8142,7 @@ def test_masked_export_privacy_mode(client):
     session_resp = client.post(
         f"/classes/{class_id}/sessions",
         headers=headers,
-        json={"session_date": "2026-03-08", "note": "privacy test"},
+        json={"session_date": "2026-03-09", "note": "privacy test"},  # Monday; 2026-03-08 was a Sunday (rejected as non-working)
     )
     assert session_resp.status_code == 201
     session_id = session_resp.json()["id"]
@@ -10548,3 +10573,98 @@ def test_leaf_content_generate_requires_blueprint(client):
     )
     assert resp.status_code == 409
     assert "blueprint" in resp.json()["detail"].lower()
+
+
+def test_session_update_optimistic_locking(client):
+    headers = _auth_headers(client)
+    class_id = client.post("/classes", json={"name": "Lock Class", "subject": "Math"}, headers=headers).json()["id"]
+    roster = _build_roster_file([("L1", "One"), ("L2", "Two")])
+    import_resp = client.post(
+        f"/classes/{class_id}/students/import",
+        headers=headers,
+        files={"file": ("s.xlsx", roster, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert import_resp.status_code == 200
+    students = client.get(f"/classes/{class_id}/students", headers=headers).json()
+
+    create = client.post(f"/classes/{class_id}/sessions", headers=headers, json={"session_date": "2026-03-09", "note": "v1"})
+    assert create.status_code == 201
+    session_id = create.json()["id"]
+    assert create.json()["version"] == 1
+
+    # Correct version edits and bumps the counter.
+    r1 = client.put(f"/sessions/{session_id}", headers=headers, json={"note": "v2", "expected_version": 1})
+    assert r1.status_code == 200
+    assert r1.json()["version"] == 2
+
+    # A stale expected_version is rejected with 409 (concurrent edit).
+    r2 = client.put(f"/sessions/{session_id}", headers=headers, json={"note": "v3", "expected_version": 1})
+    assert r2.status_code == 409
+
+    # Omitting expected_version stays backward-compatible.
+    r3 = client.put(f"/sessions/{session_id}", headers=headers, json={"note": "v3b"})
+    assert r3.status_code == 200
+    assert r3.json()["version"] == 3
+
+    # Attendance honors the same guard and bumps the version.
+    att = [{"student_id": students[0]["id"], "status": "present", "minutes_late": 0, "comment": None}]
+    stale = client.put(f"/sessions/{session_id}/attendance?expected_version=1", headers=headers, json=att)
+    assert stale.status_code == 409
+    ok = client.put(f"/sessions/{session_id}/attendance?expected_version=3", headers=headers, json=att)
+    assert ok.status_code == 200
+
+    # The attendance write bumped the version, so a session edit holding the old version now conflicts.
+    conflict = client.put(f"/sessions/{session_id}", headers=headers, json={"note": "x", "expected_version": 3})
+    assert conflict.status_code == 409
+
+
+def test_retention_cleanup_removes_old_exports(client, monkeypatch):
+    from datetime import datetime, timedelta
+    from app import config as app_config
+    from app.database import SessionLocal
+    from app.models import ExportArtifact
+
+    headers = _auth_headers(client)
+    class_id = client.post("/classes", json={"name": "Ret Class"}, headers=headers).json()["id"]
+
+    monkeypatch.setattr(app_config, "RETENTION_EXPORTS_DAYS", 30)
+    app_config.EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    old_file = app_config.EXPORTS_DIR / "old_export.xlsx"
+    old_file.write_bytes(b"stale-export")
+    with SessionLocal() as db:
+        db.add(
+            ExportArtifact(
+                class_id=class_id,
+                export_type="test",
+                file_name="old_export.xlsx",
+                file_path=str(old_file),
+                file_size=old_file.stat().st_size,
+                created_at=datetime.utcnow() - timedelta(days=60),
+            )
+        )
+        db.commit()
+
+    # Dry run previews the deletion without removing anything.
+    dry = client.post("/ops/retention/cleanup?dry_run=true", headers=headers)
+    assert dry.status_code == 200
+    assert dry.json()["categories"]["exports"]["deleted"] == 1
+    assert old_file.exists()
+
+    # Real run removes the row and the file.
+    res = client.post("/ops/retention/cleanup", headers=headers)
+    assert res.status_code == 200
+    assert res.json()["categories"]["exports"]["deleted"] == 1
+    assert res.json()["total_deleted"] >= 1
+    assert not old_file.exists()
+
+    # Status reflects the configured policy and a disabled category stays off.
+    status_resp = client.get("/ops/retention/status", headers=headers)
+    assert status_resp.status_code == 200
+    body = status_resp.json()
+    assert body["policy"]["exports_days"] == 30
+    assert body["policy"]["uploads_days"] == 0
+
+    # A teacher cannot run retention (owner-only).
+    _, teacher_headers = _create_teacher_and_login(client, headers)
+    forbidden = client.post("/ops/retention/cleanup", headers=teacher_headers)
+    assert forbidden.status_code == 403

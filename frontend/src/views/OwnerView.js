@@ -20,8 +20,10 @@ let _holidayYear = new Date().getFullYear();
 let _ownerHolidays = [];
 let _notebooklmStatus = null;
 let _notebooklmSmoke = null;
+let _retentionStatus = null;
 let _ownerOverview = null;
 let _selectedOwnerTeacherId = null;
+let _ownerSection = 'overview';
 let _ownerSelectedCalendarSessionId = null;
 let _ownerCalendarWeekStart = null;
 let _ownerTeacherFilter = 'all';
@@ -119,11 +121,20 @@ function _tsValue(value) {
   }
 }
 
-export async function renderOwnerView() {
+export async function renderOwnerView(section) {
   _showChrome();
   if (!isOwner()) { navigate('class'); return; }
+  if (section) _ownerSection = section;
   const el = document.getElementById('app-content');
-  el.innerHTML = `<div class="view-container"><div class="skeleton h-96 rounded-2xl animate-pulse"></div></div>`;
+
+  // If owner data is already loaded, render the chosen section instantly and
+  // refresh in the background. Otherwise show a skeleton while the first load runs.
+  const hasData = _ownerOverview != null;
+  if (hasData) {
+    _renderOwner(el);
+  } else {
+    el.innerHTML = `<div class="view-container"><div class="skeleton h-96 rounded-2xl animate-pulse"></div></div>`;
+  }
 
   try {
     const [overview, users] = await Promise.all([
@@ -133,24 +144,28 @@ export async function renderOwnerView() {
     _ownerOverview = overview || null;
     _teachers = (users || []).filter(u => u.role === 'teacher');
     // Load classes list separately
-    const [classes, archived, holidays, notebooklmStatus] = await Promise.all([
+    const [classes, archived, holidays, notebooklmStatus, retentionStatus] = await Promise.all([
       api('/classes'),
       api('/classes?include_archived=true'),
       api(`/workflow/holidays?year=${_holidayYear}&country_code=MA`).catch(() => []),
       api('/ops/notebooklm/status').catch(() => null),
+      api('/ops/retention/status').catch(() => null),
     ]);
     _publishOwnerClassState({ activeClasses: classes || [], archivedClasses: archived || [] });
     _ownerHolidays = Array.isArray(holidays) ? holidays : [];
     _notebooklmStatus = notebooklmStatus || null;
+    _retentionStatus = retentionStatus || null;
   } catch {
-    _ownerOverview = null;
-    mountRetryCard(el, {
-      title: 'Owner Panel Unavailable',
-      message: 'Unable to load owner data right now. Retry after checking API connection.',
-      buttonId: 'btn-retry-owner-load',
-      onRetry: () => renderOwnerView(),
-    });
-    showToast('Failed to load owner panel data.', 'error');
+    if (!hasData) {
+      _ownerOverview = null;
+      mountRetryCard(el, {
+        title: 'Owner Panel Unavailable',
+        message: 'Unable to load owner data right now. Retry after checking API connection.',
+        buttonId: 'btn-retry-owner-load',
+        onRetry: () => renderOwnerView(),
+      });
+      showToast('Failed to load owner panel data.', 'error');
+    }
     return;
   }
 
@@ -167,9 +182,7 @@ function _renderOwner(el) {
   const classRows = _ownerClassRows();
   const classAttentionRows = classRows.filter(row => _ownerClassHealth(row).rank <= 5);
   const recentSessionRows = _ownerRecentSessionRows();
-  const supervisionBrief = _ownerSupervisionBrief(operationRows, classRows, recentSessionRows);
-  const filteredOperationRows = _ownerFilteredTeacherRows(operationRows);
-  const visibleOperationRows = filteredOperationRows.slice(0, Math.max(1, Number(_ownerTeacherLimit || 8)));
+  const visibleOperationRows = operationRows.slice(0, Math.max(1, Number(_ownerTeacherLimit || 8)));
   const defaultTeacher = operationRows.find(row => row.is_active !== false && _num(row.sessions, 0) > 0)
     || operationRows.find(row => row.is_active !== false && _num(row.assigned_classes, 0) > 0)
     || attentionRows[0]
@@ -189,18 +202,27 @@ function _renderOwner(el) {
   const lastFailureTs = _tsValue(runtimeHealth?.last_error_at);
   const showActiveError = Boolean(runtimeHealth?.last_error_message) && (refreshRequired || lastFailureTs > lastSuccessTs);
 
+  const section = _ownerSection || 'overview';
+  const pane = (name) => (section === name ? '' : 'hidden');
+  const sectionTitles = {
+    overview: ['Teacher progress at a glance', 'Curriculum coverage, class load, and last activity for each teacher. Teachers needing follow-up come first.'],
+    classes: ['Classes & platform analytics', 'Class setup health and platform-wide totals at a glance.'],
+    teachers: ['Teacher accounts & assignments', 'Create teachers, assign classes, and manage access.'],
+    calendar: ['Academic calendar', 'Manage holidays and blocked dates used across planning.'],
+    ai: ['NotebookLM & AI setup', 'Connect and monitor the AI assistant integration.'],
+    settings: ['Owner settings', 'Manage your owner account security.'],
+  };
+  const [sectionTitle, sectionSubtitle] = sectionTitles[section] || sectionTitles.overview;
+
   el.innerHTML = `
-    <div class="view-container">
+    <div class="view-container flex flex-col gap-5">
 
       <div class="rounded-[2rem] border border-slate-200 bg-white px-5 py-5 shadow-sm">
         <div class="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           <div class="max-w-3xl">
-            <div class="flex items-center gap-2 text-[12px] text-slate-400 mb-1">Admin</div>
             <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">Supervisor Dashboard</p>
-            <h1 class="mt-1 text-2xl font-bold text-slate-900 tracking-tight">Track one teacher clearly, then inspect the whole platform.</h1>
-            <p class="mt-2 text-[13px] leading-6 text-slate-500">
-              Select a teacher first. The dashboard shows their classes, recent sessions, next visible work, and then keeps platform analytics separate below.
-            </p>
+            <h1 class="mt-1 text-2xl font-bold text-slate-900 tracking-tight">${_escapeHtml(sectionTitle)}</h1>
+            <p class="mt-2 text-[13px] leading-6 text-slate-500">${_escapeHtml(sectionSubtitle)}</p>
           </div>
           <div class="grid grid-cols-2 gap-2 text-[12px] text-slate-600 sm:grid-cols-4 xl:min-w-[560px]">
             ${_ownerQuickSignal('Teachers', teacherTotal, 'blue')}
@@ -211,51 +233,69 @@ function _renderOwner(el) {
         </div>
       </div>
 
-      ${_ownerSectionNav()}
-
-      <section id="owner-section-teacher" class="scroll-mt-48">
-        ${_ownerTeacherFocusPanel(operationRows, selectedTeacher)}
+      <div data-owner-pane="overview" class="flex flex-col gap-5 ${pane('overview')}">
+      <section class="card">
+        <div class="card-header">
+          <div>
+            <h3 class="font-semibold text-slate-700 text-[14px]">Teacher Progress</h3>
+            <p class="text-[12px] text-slate-400 mt-1">Curriculum coverage and activity per teacher. Click a teacher to inspect their week.</p>
+          </div>
+          <span class="badge ${attentionRows.length ? 'badge-amber' : 'badge-green'}">${attentionRows.length ? `${attentionRows.length} need follow-up` : 'All on track'}</span>
+        </div>
+        <div class="card-body flex flex-col gap-2">
+          ${operationRows.length ? visibleOperationRows.map(row => _ownerProgressCard(row, selectedTeacherId)).join('') : `
+            <div class="empty-state py-10">
+              <div class="text-xl font-black opacity-30">TCH</div>
+              <p class="text-[13px] text-slate-400">No teachers yet. Add one in the Accounts section.</p>
+            </div>`}
+          ${operationRows.length > visibleOperationRows.length ? `
+            <div class="mt-1 flex justify-center">
+              <button id="btn-owner-teacher-show-more" class="btn btn-secondary btn-sm">Show all ${operationRows.length} teachers</button>
+            </div>` : (Number(_ownerTeacherLimit || 8) > 8 && operationRows.length > 8 ? `
+            <div class="mt-1 flex justify-center">
+              <button id="btn-owner-teacher-show-less" class="btn btn-ghost btn-sm">Show less</button>
+            </div>` : '')}
+        </div>
       </section>
 
-      <section id="owner-section-calendar" class="scroll-mt-48">
+      ${selectedTeacher ? `
+      <section class="flex flex-col gap-3">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+          <div>
+            <p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-600">Inspecting</p>
+            <h2 class="text-lg font-bold text-slate-900">${_escapeHtml(selectedTeacher.full_name || selectedTeacher.email || 'Teacher')}</h2>
+          </div>
+          <label class="flex items-center gap-2 text-[12px] text-slate-500">
+            Switch teacher
+            <select id="owner-teacher-focus-select" class="!h-9 !text-[13px] !w-56">
+              ${operationRows.map(row => `
+                <option value="${Number(row.teacher_id || 0)}" ${Number(row.teacher_id || 0) === selectedTeacherId ? 'selected' : ''}>
+                  ${_escapeHtml(row.full_name || row.email || 'Teacher')}
+                </option>`).join('')}
+            </select>
+          </label>
+        </div>
         ${_ownerTeacherTrackerPanel(selectedTeacher)}
-      </section>
+        ${_ownerTeacherSessionLog(selectedTeacher)}
+      </section>` : ''}
+      </div>
 
-      <section id="owner-section-analytics" class="scroll-mt-48">
+      <div data-owner-pane="classes" class="flex flex-col gap-5 ${pane('classes')}">
         ${_ownerAnalyticsPanel({
-        lockedCount: locked.length,
-        teacherTotal,
-        activeClassTotal,
-        studentTotal,
-        sessionTotal,
-        examTotal,
-        overviewCounts,
-        classRows,
-        recentSessionRows,
-      })}
-      </section>
-
-      <section id="owner-section-actions" class="scroll-mt-48 grid gap-4 xl:grid-cols-[1.05fr_.95fr]">
-        ${_ownerSupervisorBriefPanel(supervisionBrief)}
-        ${_ownerNeedsAttentionPanel(attentionRows, overviewCounts)}
-      </section>
-
-      <section id="owner-section-directory" class="scroll-mt-48 grid gap-4 xl:grid-cols-[1.2fr_.8fr]">
-        ${_ownerTeacherDirectoryPanel({
-          operationRows,
-          filteredOperationRows,
-          visibleOperationRows,
-          attentionRows,
-          selectedTeacherId,
+          lockedCount: locked.length,
+          teacherTotal,
+          activeClassTotal,
+          studentTotal,
+          sessionTotal,
+          examTotal,
+          overviewCounts,
+          classRows,
+          recentSessionRows,
         })}
-        ${_ownerRecentActivityPanel(_ownerTeacherRecentRows(selectedTeacher, recentSessionRows), selectedTeacher)}
-      </section>
-
-      <section id="owner-section-classes" class="scroll-mt-48">
         ${_ownerClassSupervisionPanel(classRows, classAttentionRows)}
-      </section>
+      </div>
 
-      <section id="owner-section-ai" class="scroll-mt-48 card">
+      <section id="owner-section-ai" class="scroll-mt-48 card ${pane('ai')}">
         <div class="card-header">
           <h3 class="font-semibold text-slate-700 text-[14px]">AI & NotebookLM Setup</h3>
         </div>
@@ -322,7 +362,7 @@ function _renderOwner(el) {
       </section>
 
       <!-- Holiday controls -->
-      <section id="owner-section-school-calendar" class="scroll-mt-48 card">
+      <section id="owner-section-school-calendar" class="scroll-mt-48 card ${pane('calendar')}">
         <div class="card-header">
           <h3 class="font-semibold text-slate-700 text-[14px]">Academic Calendar Controls</h3>
         </div>
@@ -361,6 +401,7 @@ function _renderOwner(el) {
       </section>
 
       <!-- Teacher management -->
+      <div data-owner-pane="teachers" class="flex flex-col gap-5 ${pane('teachers')}">
       <section id="owner-section-accounts" class="scroll-mt-48 grid gap-4">
         <div class="card">
           <div class="card-header">
@@ -461,9 +502,10 @@ function _renderOwner(el) {
           </div>`).join('')}
         </div>
       </section>` : ''}
+      </div>
 
       <!-- Change Password -->
-      <section id="owner-section-security" class="scroll-mt-48 card">
+      <section id="owner-section-security" class="scroll-mt-48 card ${pane('settings')}">
         <div class="card-header">
           <h3 class="font-semibold text-slate-700 text-[14px]">Owner Password</h3>
         </div>
@@ -482,6 +524,8 @@ function _renderOwner(el) {
           <button id="btn-change-pwd" class="btn btn-primary self-start">Update Password</button>
         </div>
       </section>
+
+      ${_ownerRetentionPanel()}
 
     </div>`;
 
@@ -602,145 +646,6 @@ function _ownerAttentionRows(rows) {
   return (Array.isArray(rows) ? rows : []).filter(row => _ownerTeacherHealth(row).rank <= 4);
 }
 
-function _ownerFilteredTeacherRows(rows) {
-  const search = String(_ownerTeacherSearch || '').trim().toLowerCase();
-  return (Array.isArray(rows) ? rows : []).filter(row => {
-    const health = row._health || _ownerTeacherHealth(row);
-    if (_ownerTeacherFilter === 'attention' && health.rank > 4) return false;
-    if (_ownerTeacherFilter === 'locked' && row.is_active !== false) return false;
-    if (_ownerTeacherFilter === 'no_class' && health.rank !== 1) return false;
-    if (_ownerTeacherFilter === 'quiet' && health.rank !== 4) return false;
-    if (!search) return true;
-    const haystack = [
-      row.full_name,
-      row.email,
-      row.class_names,
-      (Array.isArray(row.classes) ? row.classes.map(cls => cls?.name) : []),
-    ].flat().filter(Boolean).join(' ').toLowerCase();
-    return haystack.includes(search);
-  });
-}
-
-function _ownerFilterButton(filter, label, count) {
-  const active = _ownerTeacherFilter === filter;
-  return `
-    <button class="btn ${active ? 'btn-primary' : 'btn-ghost'} btn-sm btn-owner-teacher-filter"
-      data-filter="${_escapeHtml(filter)}">
-      ${_escapeHtml(label)} <span class="ml-1 opacity-70">${Number(count || 0)}</span>
-    </button>`;
-}
-
-function _ownerSupervisionBrief(teacherRows, classRows, recentRows) {
-  const teachers = Array.isArray(teacherRows) ? teacherRows : [];
-  const classes = Array.isArray(classRows) ? classRows : [];
-  const recent = Array.isArray(recentRows) ? recentRows : [];
-  const lockedTeachers = teachers.filter(row => row.is_active === false);
-  const teachersNoClass = teachers.filter(row => _ownerTeacherHealth(row).rank === 1);
-  const teachersNoRoster = teachers.filter(row => _ownerTeacherHealth(row).rank === 2);
-  const teachersNoSessions = teachers.filter(row => _ownerTeacherHealth(row).rank === 3);
-  const quietTeachers = teachers.filter(row => _ownerTeacherHealth(row).rank === 4);
-  const unassignedClasses = classes.filter(row => _ownerClassHealth(row).rank === 0);
-  const lockedTeacherClasses = classes.filter(row => _ownerClassHealth(row).rank === 1);
-  const noRosterClasses = classes.filter(row => _ownerClassHealth(row).rank === 2);
-  const noSessionClasses = classes.filter(row => _ownerClassHealth(row).rank === 3);
-  const quietClasses = classes.filter(row => _ownerClassHealth(row).rank === 5);
-  const openSessions = recent.filter(row => row.is_open);
-  const recentWithoutChecklist = recent.filter(row => _num(row.checked_session_rows, 0) <= 0);
-  const priorities = [
-    ...lockedTeachers.slice(0, 2).map(row => `Unlock or confirm locked teacher: ${row.full_name || row.email}`),
-    ...unassignedClasses.slice(0, 2).map(row => `Assign a teacher to ${row.name}`),
-    ...lockedTeacherClasses.slice(0, 2).map(row => `Fix locked teacher assigned to ${row.name}`),
-    ...teachersNoClass.slice(0, 2).map(row => `Assign class to ${row.full_name || row.email}`),
-    ...openSessions.slice(0, 2).map(row => `Close open session for ${row.class_name}`),
-    ...noRosterClasses.slice(0, 2).map(row => `Import roster for ${row.name}`),
-  ].slice(0, 5);
-  return {
-    priorities,
-    teacher: {
-      locked: lockedTeachers.length,
-      noClass: teachersNoClass.length,
-      noRoster: teachersNoRoster.length,
-      noSessions: teachersNoSessions.length,
-      quiet: quietTeachers.length,
-    },
-    class: {
-      unassigned: unassignedClasses.length,
-      lockedTeacher: lockedTeacherClasses.length,
-      noRoster: noRosterClasses.length,
-      noSessions: noSessionClasses.length,
-      quiet: quietClasses.length,
-    },
-    recent: {
-      total: recent.length,
-      open: openSessions.length,
-      withoutChecklist: recentWithoutChecklist.length,
-    },
-  };
-}
-
-function _ownerSupervisorBriefPanel(brief) {
-  const priorityRows = Array.isArray(brief?.priorities) ? brief.priorities : [];
-  const hasWork = priorityRows.length > 0;
-  return `
-    <div class="rounded-3xl border ${hasWork ? 'border-amber-200 bg-amber-50/40' : 'border-green-200 bg-green-50/40'} px-5 py-4 shadow-sm">
-      <div class="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2 flex-wrap">
-            <p class="text-[11px] font-semibold uppercase tracking-[0.18em] ${hasWork ? 'text-amber-600' : 'text-green-700'}">Supervisor Brief</p>
-            <span class="badge ${hasWork ? 'badge-amber' : 'badge-green'}">${hasWork ? `${priorityRows.length} priority item${priorityRows.length === 1 ? '' : 's'}` : 'No urgent action'}</span>
-          </div>
-          <h2 class="mt-1 text-lg font-bold text-slate-900">What should be checked first today</h2>
-          <div class="mt-3 grid gap-2">
-            ${priorityRows.length ? priorityRows.map((item, idx) => `
-              <div class="rounded-2xl border border-white/70 bg-white px-3 py-2 text-[13px] text-slate-700">
-                <span class="font-bold text-slate-900">${idx + 1}.</span> ${_escapeHtml(item)}
-              </div>`).join('') : `
-              <div class="rounded-2xl border border-white/70 bg-white px-3 py-2 text-[13px] text-slate-600">
-                Teacher accounts, class assignment, recent activity, and core setup signals do not show urgent gaps.
-              </div>`}
-          </div>
-        </div>
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-2 min-w-0 xl:w-[520px] xl:flex-shrink-0">
-          <div class="rounded-2xl border border-white/70 bg-white px-3 py-3">
-            <p class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Teachers</p>
-            <p class="mt-1 text-[12px] text-slate-600">${_num(brief?.teacher?.locked, 0)} locked</p>
-            <p class="text-[12px] text-slate-600">${_num(brief?.teacher?.noClass, 0)} no class</p>
-            <p class="text-[12px] text-slate-600">${_num(brief?.teacher?.quiet, 0)} quiet</p>
-          </div>
-          <div class="rounded-2xl border border-white/70 bg-white px-3 py-3">
-            <p class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Classes</p>
-            <p class="mt-1 text-[12px] text-slate-600">${_num(brief?.class?.unassigned, 0)} unassigned</p>
-            <p class="text-[12px] text-slate-600">${_num(brief?.class?.noRoster, 0)} no roster</p>
-            <p class="text-[12px] text-slate-600">${_num(brief?.class?.lockedTeacher, 0)} locked teacher</p>
-          </div>
-          <div class="rounded-2xl border border-white/70 bg-white px-3 py-3">
-            <p class="text-[11px] uppercase tracking-wider text-slate-400 font-semibold">Sessions</p>
-            <p class="mt-1 text-[12px] text-slate-600">${_num(brief?.recent?.total, 0)} recent</p>
-            <p class="text-[12px] text-slate-600">${_num(brief?.recent?.open, 0)} open</p>
-            <p class="text-[12px] text-slate-600">${_num(brief?.recent?.withoutChecklist, 0)} no checklist</p>
-          </div>
-          <button id="btn-owner-copy-brief" class="btn btn-secondary btn-sm sm:col-span-3">Copy Supervisor Brief</button>
-        </div>
-      </div>
-    </div>`;
-}
-
-function _ownerSupervisorBriefText() {
-  const brief = _ownerSupervisionBrief(_ownerTeacherRows(Array.isArray(_ownerOverview?.teachers) ? _ownerOverview.teachers : []), _ownerClassRows(), _ownerRecentSessionRows());
-  const lines = ['Supervisor brief'];
-  lines.push('');
-  if (brief.priorities.length) {
-    brief.priorities.forEach((item, idx) => lines.push(`${idx + 1}. ${item}`));
-  } else {
-    lines.push('No urgent supervisor actions detected.');
-  }
-  lines.push('');
-  lines.push(`Teachers: ${brief.teacher.locked} locked, ${brief.teacher.noClass} no class, ${brief.teacher.quiet} quiet.`);
-  lines.push(`Classes: ${brief.class.unassigned} unassigned, ${brief.class.noRoster} no roster, ${brief.class.lockedTeacher} with locked teacher.`);
-  lines.push(`Sessions: ${brief.recent.total} recent, ${brief.recent.open} open, ${brief.recent.withoutChecklist} without checked checklist rows.`);
-  return lines.join('\n');
-}
-
 function _ownerQuickSignal(label, value, tone = 'slate') {
   const toneMap = {
     blue: 'bg-blue-50 border-blue-100 text-blue-800',
@@ -756,36 +661,60 @@ function _ownerQuickSignal(label, value, tone = 'slate') {
     </div>`;
 }
 
-function _ownerSectionNav() {
-  const items = [
-    ['owner-section-teacher', 'Teacher'],
-    ['owner-section-calendar', 'Calendar'],
-    ['owner-section-analytics', 'Analytics'],
-    ['owner-section-actions', 'Actions'],
-    ['owner-section-directory', 'Directory'],
-    ['owner-section-classes', 'Classes'],
-    ['owner-section-ai', 'NotebookLM'],
-    ['owner-section-school-calendar', 'School Calendar'],
-    ['owner-section-accounts', 'Accounts'],
-    ['owner-section-assignments', 'Assignments'],
-    ['owner-section-security', 'Security'],
-  ];
+function _fmtBytes(value) {
+  const bytes = Number(value || 0);
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let unit = 0;
+  let amount = bytes;
+  while (amount >= 1024 && unit < units.length - 1) {
+    amount /= 1024;
+    unit += 1;
+  }
+  return `${amount.toFixed(unit === 0 || amount >= 10 ? 0 : 1)} ${units[unit]}`;
+}
+
+function _ownerRetentionRow(label, days, usage) {
+  const enabled = Number(days || 0) > 0;
   return `
-    <nav id="owner-section-nav" aria-label="Supervisor dashboard sections" class="sticky top-[72px] z-20 -mx-1 rounded-[1.6rem] border border-slate-200 bg-white/90 px-3 py-3 shadow-sm backdrop-blur">
-      <div class="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-600">Supervisor sections</p>
-          <p class="text-[12px] text-slate-500">Jump to the part you need without scrolling through the whole dashboard.</p>
-        </div>
-        <div class="flex gap-2 overflow-x-auto pb-1 lg:max-w-[760px]">
-          ${items.map(([id, label]) => `
-            <button type="button" data-owner-section-target="${_escapeHtmlAttr(id)}" class="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-[12px] font-semibold text-slate-600 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">
-              ${_escapeHtml(label)}
-            </button>
-          `).join('')}
-        </div>
+    <div class="rounded-2xl border border-slate-200 bg-white px-3 py-3">
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-[13px] font-semibold text-slate-800">${_escapeHtml(label)}</p>
+        ${enabled ? `<span class="badge badge-green">Delete after ${Number(days)}d</span>` : '<span class="badge badge-gray">Keep forever</span>'}
       </div>
-    </nav>`;
+      <p class="mt-1 text-[12px] text-slate-500">${Number(usage?.file_count || 0)} files • ${_fmtBytes(usage?.total_bytes)}</p>
+    </div>`;
+}
+
+function _ownerRetentionPanel() {
+  const hidden = _ownerSection === 'settings' ? '' : 'hidden';
+  const policy = _retentionStatus?.policy || {};
+  const usage = _retentionStatus?.usage || {};
+  const anyEnabled = [policy.uploads_days, policy.exports_days, policy.logs_days].some(d => Number(d || 0) > 0);
+  return `
+    <section class="scroll-mt-48 card ${hidden}">
+      <div class="card-header">
+        <div>
+          <h3 class="font-semibold text-slate-700 text-[14px]">Storage &amp; Retention</h3>
+          <p class="text-[12px] text-slate-400 mt-1">Stored uploads, exports, and logs. Cleanup removes items older than the configured window.</p>
+        </div>
+        <span class="badge ${anyEnabled ? 'badge-green' : 'badge-gray'}">${anyEnabled ? 'Policy active' : 'Cleanup disabled'}</span>
+      </div>
+      <div class="card-body flex flex-col gap-3">
+        ${_retentionStatus ? `
+          <div class="grid gap-2 sm:grid-cols-3">
+            ${_ownerRetentionRow('Uploads', policy.uploads_days, usage.uploads)}
+            ${_ownerRetentionRow('Exports', policy.exports_days, usage.exports)}
+            ${_ownerRetentionRow('Logs', policy.logs_days, usage.logs)}
+          </div>
+          <p class="text-[11px] text-slate-400">Windows are set via <span class="font-mono">RETENTION_*_DAYS</span> env vars; 0 keeps files indefinitely.${policy.run_on_startup ? ' Automatic cleanup runs on each restart.' : ''}</p>
+          <div class="flex gap-2 flex-wrap">
+            <button id="btn-owner-retention-preview" class="btn btn-secondary btn-sm"${anyEnabled ? '' : ' disabled'}>Preview cleanup</button>
+            <button id="btn-owner-retention-run" class="btn btn-primary btn-sm"${anyEnabled ? '' : ' disabled'}>Run cleanup now</button>
+          </div>
+        ` : '<p class="text-[12px] text-slate-500">Retention status is unavailable right now.</p>'}
+      </div>
+    </section>`;
 }
 
 function _ownerTeacherSessionRows(row) {
@@ -796,50 +725,6 @@ function _ownerTeacherSessionRows(row) {
 function _ownerTeacherTimetableRows(row) {
   if (Array.isArray(row?.timetable_rules)) return row.timetable_rules;
   return [];
-}
-
-function _ownerTeacherRecentRows(row, fallbackRows = []) {
-  const ownRows = _ownerTeacherSessionRows(row);
-  if (ownRows.length) return ownRows;
-  const teacherId = Number(row?.teacher_id || 0);
-  if (!teacherId) return Array.isArray(fallbackRows) ? fallbackRows : [];
-  return (Array.isArray(fallbackRows) ? fallbackRows : []).filter(item => Number(item.teacher_user_id || 0) === teacherId);
-}
-
-function _ownerTeacherFocusPanel(rows, selectedTeacher) {
-  const safeRows = Array.isArray(rows) ? rows : [];
-  const selectedId = Number(selectedTeacher?.teacher_id || 0);
-  const health = selectedTeacher ? (selectedTeacher._health || _ownerTeacherHealth(selectedTeacher)) : null;
-  return `
-    <div class="rounded-[2rem] border border-slate-200 bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 px-5 py-5 text-white shadow-sm">
-      <div class="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,.9fr)] xl:items-end">
-        <div>
-          <p class="text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-200/80">Teacher focus</p>
-          <h2 class="mt-2 text-2xl font-bold tracking-tight">${_escapeHtml(selectedTeacher?.full_name || selectedTeacher?.email || 'Select a teacher')}</h2>
-          <p class="mt-2 max-w-2xl text-[13px] leading-6 text-slate-300">
-            This is the supervisor lens. Change the teacher here, then read only this teacher's calendar, sessions, classes, and next move.
-          </p>
-          <div class="mt-4 flex flex-wrap gap-2">
-            ${health ? `<span class="badge ${health.badgeClass}">${_escapeHtml(health.label)}</span>` : '<span class="badge badge-gray">No teacher selected</span>'}
-            ${selectedTeacher ? `<span class="rounded-full bg-white/10 px-3 py-1 text-[12px] font-semibold text-white">${_num(selectedTeacher.assigned_classes, 0)} classes</span>` : ''}
-            ${selectedTeacher ? `<span class="rounded-full bg-white/10 px-3 py-1 text-[12px] font-semibold text-white">${_num(selectedTeacher.sessions, 0)} sessions</span>` : ''}
-            ${selectedTeacher ? `<span class="rounded-full bg-white/10 px-3 py-1 text-[12px] font-semibold text-white">${_num(selectedTeacher.open_sessions, 0)} open</span>` : ''}
-          </div>
-        </div>
-        <div class="rounded-3xl border border-white/10 bg-white/10 p-4 backdrop-blur">
-          <label class="text-[10px] font-bold uppercase tracking-[0.18em] text-blue-100">Select teacher to inspect</label>
-          <select id="owner-teacher-focus-select" class="mt-2 !h-11 !rounded-2xl !border-white/15 !bg-white !text-[14px] !font-semibold !text-slate-900">
-            ${safeRows.length ? safeRows.map(row => `
-              <option value="${Number(row.teacher_id || 0)}" ${Number(row.teacher_id || 0) === selectedId ? 'selected' : ''}>
-                ${_escapeHtml(row.full_name || row.email || 'Teacher')}
-              </option>`).join('') : '<option value="">No teachers</option>'}
-          </select>
-          <p class="mt-3 text-[12px] leading-5 text-blue-100/80">
-            The directory filters below do not change this selection unless you click Inspect or choose a teacher here.
-          </p>
-        </div>
-      </div>
-    </div>`;
 }
 
 function _ownerLocalDateKey(dateValue) {
@@ -1458,100 +1343,6 @@ function _ownerProgressMeter(label, value, total, hint) {
     </div>`;
 }
 
-function _ownerNeedsAttentionPanel(attentionRows, overviewCounts) {
-  const rows = Array.isArray(attentionRows) ? attentionRows : [];
-  return `
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <h3 class="font-semibold text-slate-700 text-[14px]">Action Queue</h3>
-          <p class="text-[12px] text-slate-400 mt-1">Short list only. This should stay readable.</p>
-        </div>
-        <span class="badge ${rows.length ? 'badge-amber' : 'badge-green'}">${rows.length ? `${rows.length} teacher${rows.length === 1 ? '' : 's'}` : 'Clear'}</span>
-      </div>
-      <div class="card-body flex flex-col gap-3">
-        <div class="grid grid-cols-2 gap-2">
-          ${_ownerSmallStat('Open units', _num(overviewCounts?.active_units, 0), _num(overviewCounts?.active_units, 0) ? 'amber' : 'slate')}
-          ${_ownerSmallStat('Open sessions', _num(overviewCounts?.open_sessions, 0), _num(overviewCounts?.open_sessions, 0) ? 'amber' : 'slate')}
-        </div>
-        <div class="rounded-2xl border border-slate-200 bg-white px-3 py-3">
-          ${rows.length ? rows.slice(0, 5).map(row => {
-            const health = _ownerTeacherHealth(row);
-            return `
-              <button class="w-full text-left flex items-start gap-2 py-2 border-b border-slate-100 last:border-b-0 btn-owner-inspect-teacher" data-tid="${Number(row.teacher_id || 0)}">
-                <span class="badge ${health.badgeClass} mt-0.5">${_escapeHtml(health.label)}</span>
-                <span class="min-w-0 flex-1">
-                  <span class="block text-[12px] font-semibold text-slate-800 truncate">${_escapeHtml(row.full_name || row.email || 'Teacher')}</span>
-                  <span class="block text-[12px] text-slate-500">${_escapeHtml(health.reason)}</span>
-                </span>
-              </button>`;
-          }).join('') : '<p class="text-[12px] text-slate-500">No urgent follow-up detected.</p>'}
-        </div>
-      </div>
-    </div>`;
-}
-
-function _ownerTeacherDirectoryPanel({ operationRows, filteredOperationRows, visibleOperationRows, attentionRows, selectedTeacherId }) {
-  const safeRows = Array.isArray(operationRows) ? operationRows : [];
-  const filtered = Array.isArray(filteredOperationRows) ? filteredOperationRows : [];
-  const visible = Array.isArray(visibleOperationRows) ? visibleOperationRows : [];
-  const attention = Array.isArray(attentionRows) ? attentionRows : [];
-  return `
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <h3 class="font-semibold text-slate-700 text-[14px]">Teacher Directory</h3>
-          <p class="text-[12px] text-slate-400 mt-1">Use this list to find a teacher, then inspect them in the tracker above.</p>
-        </div>
-        <span class="badge ${attention.length ? 'badge-amber' : 'badge-green'}">${attention.length ? `${attention.length} needs follow-up` : 'Healthy'}</span>
-      </div>
-      <div class="card-body">
-        ${safeRows.length ? `
-          <div class="mb-3 rounded-2xl border border-slate-200 bg-slate-50/80 px-3 py-3">
-            <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div class="min-w-0 flex-1">
-                <label class="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-400">Find teacher or class</label>
-                <div class="mt-1 flex gap-2">
-                  <input id="owner-teacher-search" type="search" value="${_escapeHtml(_ownerTeacherSearch)}" placeholder="Search teacher, email, or class..." class="!h-9 !text-[13px]" />
-                  <button id="btn-owner-apply-teacher-search" class="btn btn-secondary btn-sm flex-shrink-0">Search</button>
-                </div>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                ${_ownerFilterButton('all', 'All', safeRows.length)}
-                ${_ownerFilterButton('attention', 'Follow-up', attention.length)}
-                ${_ownerFilterButton('locked', 'Locked', safeRows.filter(row => row.is_active === false).length)}
-                ${_ownerFilterButton('no_class', 'No class', safeRows.filter(row => _ownerTeacherHealth(row).rank === 1).length)}
-                ${_ownerFilterButton('quiet', 'Quiet', safeRows.filter(row => _ownerTeacherHealth(row).rank === 4).length)}
-              </div>
-            </div>
-            <div class="mt-3 flex items-center justify-between gap-2 text-[12px] text-slate-500">
-              <span>Showing ${visible.length} of ${filtered.length} matching teacher${filtered.length === 1 ? '' : 's'}.</span>
-              ${_ownerTeacherSearch || _ownerTeacherFilter !== 'all' ? '<button id="btn-owner-clear-teacher-filter" class="btn btn-ghost btn-sm">Clear filter</button>' : ''}
-            </div>
-          </div>
-          <div class="grid gap-2">
-            ${visible.length ? visible.map(row => _ownerTeacherActivityRow(row, selectedTeacherId)).join('') : `
-              <div class="rounded-2xl border border-slate-200 bg-white px-4 py-6 text-center">
-                <p class="text-[13px] font-semibold text-slate-700">No teachers match this filter.</p>
-                <p class="mt-1 text-[12px] text-slate-400">Clear the search or switch back to All.</p>
-              </div>`}
-          </div>
-          ${filtered.length > visible.length ? `
-            <div class="mt-3 flex justify-center">
-              <button id="btn-owner-teacher-show-more" class="btn btn-secondary btn-sm">Show more teachers</button>
-            </div>` : (_ownerTeacherLimit > 8 && filtered.length > 8 ? `
-            <div class="mt-3 flex justify-center">
-              <button id="btn-owner-teacher-show-less" class="btn btn-ghost btn-sm">Show less</button>
-            </div>` : '')}
-        ` : `
-          <div class="empty-state py-10">
-            <div class="text-xl font-black opacity-30">OPS</div>
-            <p class="text-[13px] text-slate-400">No teacher activity yet.</p>
-          </div>`}
-      </div>
-    </div>`;
-}
-
 function _ownerCompactClasses(row) {
   const names = Array.isArray(row.class_names) ? row.class_names.filter(Boolean) : [];
   if (!names.length) return 'No classes assigned';
@@ -1567,58 +1358,105 @@ function _ownerProgressPct(row) {
   return Math.round((done / total) * 100);
 }
 
-function _ownerTeacherActivityRow(row, selectedTeacherId = 0) {
+function _ownerProgressCard(row, selectedTeacherId = 0) {
   const health = row._health || _ownerTeacherHealth(row);
   const pct = _ownerProgressPct(row);
-  const avg = row.average_exam_score == null ? null : Number(row.average_exam_score);
-  const avgLabel = avg == null || Number.isNaN(avg) ? '-' : avg.toFixed(avg % 1 === 0 ? 0 : 1);
   const selected = Number(row.teacher_id || 0) === Number(selectedTeacherId || 0);
+  const open = _num(row.open_sessions, 0);
+  const pctLabel = pct == null ? '—' : `${pct}%`;
+  const pctWidth = pct == null ? 0 : Math.max(0, Math.min(100, pct));
   return `
-    <div class="rounded-2xl border ${selected ? 'border-blue-200 bg-blue-50/40' : 'border-slate-200 bg-white'} px-3 py-3 shadow-[0_1px_0_rgba(15,23,42,0.03)]">
-      <div class="flex flex-col gap-3 lg:flex-row lg:items-center">
-        <div class="min-w-0 flex-1">
+    <button type="button"
+      class="btn-owner-inspect-teacher w-full text-left rounded-2xl border ${selected ? 'border-blue-300 bg-blue-50/50' : 'border-slate-200 bg-white'} px-4 py-3 transition hover:border-blue-200 hover:bg-blue-50/40"
+      data-tid="${Number(row.teacher_id || 0)}">
+      <div class="flex items-center justify-between gap-3">
+        <div class="min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
-            <p class="text-[13px] font-semibold text-slate-800 truncate">${_escapeHtml(row.full_name || row.email || 'Teacher')}</p>
+            <span class="text-[14px] font-semibold text-slate-900 truncate">${_escapeHtml(row.full_name || row.email || 'Teacher')}</span>
             <span class="badge ${health.badgeClass}">${_escapeHtml(health.label)}</span>
-            ${selected ? '<span class="badge badge-blue">Selected</span>' : ''}
+            ${selected ? '<span class="badge badge-blue">Viewing</span>' : ''}
           </div>
-          <p class="mt-1 text-[12px] text-slate-400 truncate">${_escapeHtml(row.email || '')}</p>
-          <p class="mt-1 text-[12px] text-slate-500 truncate">${_escapeHtml(_ownerCompactClasses(row))}</p>
+          <p class="mt-0.5 text-[12px] text-slate-400 truncate">${_escapeHtml(_ownerCompactClasses(row))}</p>
         </div>
-        <div class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2 min-w-0 lg:w-[520px] lg:flex-shrink-0">
-          <div class="rounded-xl bg-slate-50 border border-slate-100 px-2 py-2">
-            <p class="text-[13px] font-bold text-slate-800">${_num(row.assigned_classes, 0)}</p>
-            <p class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Classes</p>
-          </div>
-          <div class="rounded-xl bg-slate-50 border border-slate-100 px-2 py-2">
-            <p class="text-[13px] font-bold text-slate-800">${_num(row.students, 0)}</p>
-            <p class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Students</p>
-          </div>
-          <div class="rounded-xl bg-slate-50 border border-slate-100 px-2 py-2">
-            <p class="text-[13px] font-bold text-slate-800">${_num(row.sessions, 0)}</p>
-            <p class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Sessions</p>
-          </div>
-          <div class="rounded-xl bg-slate-50 border border-slate-100 px-2 py-2">
-            <p class="text-[13px] font-bold text-slate-800">${pct == null ? '-' : `${pct}%`}</p>
-            <p class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Progress</p>
-          </div>
-          <div class="rounded-xl bg-slate-50 border border-slate-100 px-2 py-2">
-            <p class="text-[13px] font-bold text-slate-800">${_num(row.exam_results, 0)}</p>
-            <p class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Results</p>
-          </div>
-          <div class="rounded-xl bg-slate-50 border border-slate-100 px-2 py-2">
-            <p class="text-[13px] font-bold text-slate-800">${_escapeHtml(avgLabel)}</p>
-            <p class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Avg</p>
-          </div>
+        <div class="text-right shrink-0">
+          <p class="text-[18px] font-bold ${pct == null ? 'text-slate-300' : 'text-slate-900'} leading-none">${pctLabel}</p>
+          <p class="mt-1 text-[10px] font-semibold uppercase tracking-wider text-slate-400">Coverage</p>
         </div>
       </div>
-      <div class="mt-2 flex items-center justify-between gap-2 text-[12px] text-slate-500">
-        <span>${_escapeHtml(health.reason)}</span>
-        <div class="flex items-center gap-2">
-          <span class="text-slate-400">Last session: ${_escapeHtml(_fmtOwnerDate(row.last_session_date))}</span>
-          <button class="btn btn-ghost btn-sm btn-owner-inspect-teacher" data-tid="${Number(row.teacher_id || 0)}">${selected ? 'Viewing' : 'Inspect'}</button>
+      <div class="mt-2 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+        <div class="h-full rounded-full bg-gradient-to-r from-blue-500 to-green-500" style="width:${pctWidth}%"></div>
+      </div>
+      <div class="mt-2 flex items-center gap-3 text-[12px] text-slate-500 flex-wrap">
+        <span><b class="text-slate-700">${_num(row.assigned_classes, 0)}</b> classes</span>
+        <span><b class="text-slate-700">${_num(row.students, 0)}</b> students</span>
+        <span><b class="text-slate-700">${_num(row.sessions, 0)}</b> sessions</span>
+        ${open ? `<span class="text-amber-600"><b>${open}</b> open</span>` : ''}
+        <span class="ml-auto text-slate-400">Last: ${_escapeHtml(_fmtOwnerDate(row.last_session_date))}</span>
+      </div>
+    </button>`;
+}
+
+function _ownerTeacherSessionLog(row) {
+  const sessions = _ownerTeacherSessionRows(row).slice().sort((a, b) => {
+    const ad = _ownerSessionDateTime(a)?.getTime() || 0;
+    const bd = _ownerSessionDateTime(b)?.getTime() || 0;
+    return bd - ad;
+  });
+  const recorded = sessions.filter(session => !_ownerSessionIsFuture(session));
+  const list = recorded.length ? recorded : sessions;
+  const visible = list.slice(0, 10);
+  const withChecklist = list.filter(session => _num(session?.checked_session_rows, 0) > 0).length;
+  return `
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <h3 class="font-semibold text-slate-700 text-[14px]">Session Checklist Log</h3>
+          <p class="text-[12px] text-slate-400 mt-1">What this teacher checked off in each recent session — the actual lesson coverage.</p>
+        </div>
+        <span class="badge ${withChecklist ? 'badge-green' : 'badge-gray'}">${withChecklist} of ${list.length} with checklist</span>
+      </div>
+      <div class="card-body flex flex-col gap-2">
+        ${visible.length ? visible.map(session => _ownerSessionLogRow(session)).join('') : `
+          <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-center">
+            <p class="text-[13px] font-semibold text-slate-700">No sessions recorded yet.</p>
+            <p class="mt-1 text-[12px] text-slate-400">Checklist items will appear here once the teacher records sessions.</p>
+          </div>`}
+        ${list.length > visible.length ? `<p class="text-[12px] text-slate-400 text-center">Showing 10 of ${list.length} recent sessions. Use the calendar above to browse older weeks.</p>` : ''}
+      </div>
+    </div>`;
+}
+
+function _ownerSessionLogRow(session) {
+  const state = _ownerSessionState(session);
+  const items = Array.isArray(session?.checked_items)
+    ? session.checked_items.map(value => String(value || '').trim()).filter(Boolean)
+    : [];
+  const title = session?.unit_title || session?.class_name || 'Session';
+  const sessionNumber = Number(session?.unit_session_number || 0);
+  return `
+    <div class="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <div class="min-w-0">
+          <p class="text-[13px] font-semibold text-slate-800 truncate">${_escapeHtml(title)}</p>
+          <p class="mt-0.5 text-[12px] text-slate-400">${_escapeHtml(session?.class_name || 'Class')} • ${_escapeHtml(_fmtOwnerDate(session?.session_date))} • ${_escapeHtml(_ownerSessionTimeLabel(session))}</p>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+          ${sessionNumber ? `<span class="badge badge-blue">Session ${sessionNumber}</span>` : ''}
+          <span class="badge ${state.badgeClass}">${_escapeHtml(state.label)}</span>
+          <span class="badge ${items.length ? 'badge-green' : 'badge-gray'}">${items.length} checked</span>
         </div>
       </div>
+      ${items.length ? `
+        <ul class="mt-2 flex flex-col gap-1">
+          ${items.map(item => `
+            <li class="flex items-start gap-2 text-[12px] text-slate-700">
+              <span class="mt-[5px] inline-block h-1.5 w-1.5 shrink-0 rounded-full bg-green-500"></span>
+              <span class="min-w-0">${_escapeHtml(item)}</span>
+            </li>`).join('')}
+        </ul>` : `
+        <p class="mt-2 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-[12px] text-amber-700">
+          No checklist items were checked in this session${state.label === 'Open / unclosed' ? ' yet — it is still open.' : '.'}
+        </p>`}
     </div>`;
 }
 
@@ -1650,111 +1488,6 @@ function _ownerSmallStat(label, value, tone = 'slate') {
       <p class="text-[20px] font-bold leading-none">${_escapeHtml(value)}</p>
       <p class="mt-1 text-[10px] uppercase tracking-wider text-slate-400 font-semibold">${_escapeHtml(label)}</p>
     </div>`;
-}
-
-function _ownerTeacherInspector(row) {
-  if (!row) {
-    return `
-      <div class="card">
-        <div class="card-body">
-          <p class="text-[13px] text-slate-500">Select a teacher to inspect their class load and follow-up status.</p>
-        </div>
-      </div>`;
-  }
-  const health = row._health || _ownerTeacherHealth(row);
-  const pct = _ownerProgressPct(row);
-  const avg = row.average_exam_score == null ? null : Number(row.average_exam_score);
-  const avgLabel = avg == null || Number.isNaN(avg) ? '-' : avg.toFixed(avg % 1 === 0 ? 0 : 1);
-  const classes = _ownerClassDetailRows(row);
-  const isActive = row.is_active !== false;
-  return `
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <h3 class="font-semibold text-slate-700 text-[14px]">Teacher Inspector</h3>
-          <p class="text-[12px] text-slate-400 mt-1">Use this to decide the next supervisor action for one teacher.</p>
-        </div>
-        <span class="badge ${health.badgeClass}">${_escapeHtml(health.label)}</span>
-      </div>
-      <div class="card-body flex flex-col gap-4">
-        <div class="rounded-3xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 px-4 py-4">
-          <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div class="min-w-0">
-              <p class="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Selected teacher</p>
-              <h4 class="mt-1 text-xl font-bold text-slate-900 truncate">${_escapeHtml(row.full_name || row.email || 'Teacher')}</h4>
-              <p class="mt-1 text-[13px] text-slate-500 truncate">${_escapeHtml(row.email || '')}</p>
-              <p class="mt-2 text-[13px] text-slate-600">${_escapeHtml(health.reason)}</p>
-            </div>
-            <div class="flex gap-2 flex-wrap">
-              <button class="btn btn-ghost btn-sm btn-send-invite" data-tid="${Number(row.teacher_id || 0)}">Invite</button>
-              <button class="btn btn-ghost btn-sm btn-reset-pwd" data-tid="${Number(row.teacher_id || 0)}">Reset password</button>
-              ${isActive
-      ? `<button class="btn btn-ghost btn-sm !text-amber-600 btn-lock" data-tid="${Number(row.teacher_id || 0)}">Lock</button>`
-      : `<button class="btn btn-secondary btn-sm btn-unlock" data-tid="${Number(row.teacher_id || 0)}">Unlock</button>`}
-            </div>
-          </div>
-          <div class="mt-4 grid grid-cols-2 md:grid-cols-4 xl:grid-cols-8 gap-2">
-            ${_ownerSmallStat('Classes', _num(row.assigned_classes, 0), 'blue')}
-            ${_ownerSmallStat('Students', _num(row.students, 0), 'slate')}
-            ${_ownerSmallStat('Sessions', _num(row.sessions, 0), 'green')}
-            ${_ownerSmallStat('Open', _num(row.open_sessions, 0), _num(row.open_sessions, 0) ? 'amber' : 'slate')}
-            ${_ownerSmallStat('Units', _num(row.active_units, 0), 'blue')}
-            ${_ownerSmallStat('Progress', pct == null ? '-' : `${pct}%`, pct == null ? 'slate' : 'green')}
-            ${_ownerSmallStat('Results', _num(row.exam_results, 0), 'slate')}
-            ${_ownerSmallStat('Avg', avgLabel, 'slate')}
-          </div>
-        </div>
-
-        <div class="grid gap-3 lg:grid-cols-[1.4fr_1fr]">
-          <div class="rounded-3xl border border-slate-200 bg-white px-4 py-4">
-            <div class="flex items-center justify-between gap-2">
-              <div>
-                <p class="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Assigned classes</p>
-                <p class="mt-1 text-[13px] text-slate-500">Class load and latest session signal for this teacher.</p>
-              </div>
-              <span class="badge badge-gray">${classes.length} class${classes.length === 1 ? '' : 'es'}</span>
-            </div>
-            <div class="mt-3 grid gap-2">
-              ${classes.length ? classes.map(cls => `
-                <div class="rounded-2xl border border-slate-100 bg-slate-50 px-3 py-3">
-                  <div class="flex items-start justify-between gap-3">
-                    <div class="min-w-0">
-                      <p class="text-[13px] font-semibold text-slate-800 truncate">${_escapeHtml(cls.name || 'Class')}</p>
-                      <p class="mt-1 text-[12px] text-slate-400">${_escapeHtml([cls.level, cls.subject].filter(Boolean).join(' • ') || 'No level/subject')}</p>
-                    </div>
-                    ${cls.is_archived ? '<span class="badge badge-gray">Archived</span>' : '<span class="badge badge-green">Active</span>'}
-                  </div>
-                  <div class="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[12px]">
-                    <span class="rounded-xl bg-white border border-slate-100 px-2 py-2"><b>${cls.students == null ? '-' : _num(cls.students, 0)}</b> students</span>
-                    <span class="rounded-xl bg-white border border-slate-100 px-2 py-2"><b>${cls.sessions == null ? '-' : _num(cls.sessions, 0)}</b> sessions</span>
-                    <span class="rounded-xl bg-white border border-slate-100 px-2 py-2"><b>${cls.active_units == null ? '-' : _num(cls.active_units, 0)}</b> open units</span>
-                    <span class="rounded-xl bg-white border border-slate-100 px-2 py-2">${_escapeHtml(_fmtOwnerDate(cls.last_session_date))}</span>
-                  </div>
-                </div>`).join('') : '<p class="text-[13px] text-slate-500">No class assigned yet.</p>'}
-            </div>
-          </div>
-
-          <div class="rounded-3xl border border-slate-200 bg-white px-4 py-4">
-            <p class="text-[11px] uppercase tracking-[0.18em] text-slate-400 font-semibold">Supervisor next move</p>
-            <h4 class="mt-2 text-[15px] font-bold text-slate-800">${_escapeHtml(health.label)}</h4>
-            <p class="mt-2 text-[13px] leading-6 text-slate-600">${_escapeHtml(_ownerSupervisorAdvice(row, health))}</p>
-            <div class="mt-4 rounded-2xl border border-slate-100 bg-slate-50 px-3 py-3 text-[12px] text-slate-500">
-              Last session: <span class="font-semibold text-slate-700">${_escapeHtml(_fmtOwnerDate(row.last_session_date))}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>`;
-}
-
-function _ownerSupervisorAdvice(row, health) {
-  if (health.rank === 0) return 'Unlock only if this teacher should currently use the platform. Otherwise keep the account locked.';
-  if (health.rank === 1) return 'Assign at least one class before expecting any teaching workflow data from this teacher.';
-  if (health.rank === 2) return 'Import or verify the student roster so attendance and class statistics become meaningful.';
-  if (health.rank === 3) return 'Ask the teacher to start recording sessions from the timetable and checklist.';
-  if (health.rank === 4) return 'Check whether the teacher is still using the app, or whether sessions are being recorded late.';
-  if (_num(row.open_sessions, 0) > 0) return 'There is an open session. Ask the teacher to close it once the class record is complete.';
-  return 'No urgent supervisor action. Keep monitoring progress and session consistency.';
 }
 
 function _ownerClassRows() {
@@ -1893,68 +1626,6 @@ function _ownerSessionTimeLabel(row) {
   const when = _ownerSessionDateTime(row);
   if (when && when.getTime() >= Date.now() + 15 * 60 * 1000) return `${start} (planned)`;
   return row?.is_open ? `${start} (unclosed)` : start;
-}
-
-function _ownerRecentActivityPanel(rows, selectedTeacher = null) {
-  const safeRows = Array.isArray(rows) ? rows : [];
-  const openCount = safeRows.filter(row => row.is_open).length;
-  const withChecklist = safeRows.filter(row => _num(row.checked_session_rows, 0) > 0).length;
-  const selectedLabel = selectedTeacher?.full_name || selectedTeacher?.email || '';
-  return `
-    <div class="card">
-      <div class="card-header">
-        <div>
-          <h3 class="font-semibold text-slate-700 text-[14px]">${selectedLabel ? 'Selected Teacher Activity' : 'Recent Teaching Activity'}</h3>
-          <p class="text-[12px] text-slate-400 mt-1">${selectedLabel ? `Latest visible sessions for ${_escapeHtml(selectedLabel)}.` : 'Latest recorded classroom sessions across teachers.'}</p>
-        </div>
-        <span class="badge ${openCount ? 'badge-amber' : 'badge-gray'}">${openCount ? `${openCount} open` : 'No open sessions'}</span>
-      </div>
-      <div class="card-body flex flex-col gap-3">
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
-          ${_ownerSmallStat('Recent', safeRows.length, 'blue')}
-          ${_ownerSmallStat('Open', openCount, openCount ? 'amber' : 'slate')}
-          ${_ownerSmallStat('With checklist', withChecklist, withChecklist ? 'green' : 'slate')}
-          ${_ownerSmallStat('Attendance rows', safeRows.reduce((sum, row) => sum + _num(row.attendance_rows, 0), 0), 'slate')}
-        </div>
-        ${safeRows.length ? `
-          <div class="grid gap-2">
-            ${safeRows.slice(0, 8).map(row => _ownerRecentActivityRow(row)).join('')}
-          </div>
-          ${safeRows.length > 8 ? `<p class="text-[12px] text-slate-400">Showing 8 of ${safeRows.length} recent sessions.</p>` : ''}
-        ` : `
-          <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-5 text-center">
-            <p class="text-[13px] font-semibold text-slate-700">No session activity yet.</p>
-            <p class="mt-1 text-[12px] text-slate-400">${selectedLabel ? 'This teacher has no visible sessions in the current overview.' : 'Recent sessions will appear here once teachers start recording work.'}</p>
-          </div>`}
-      </div>
-    </div>`;
-}
-
-function _ownerRecentActivityRow(row) {
-  const checkedRows = _num(row.checked_session_rows, 0);
-  const progressItems = _num(row.progress_items, 0);
-  const attendanceRows = _num(row.attendance_rows, 0);
-  return `
-    <div class="rounded-2xl border border-slate-200 bg-white px-3 py-3">
-      <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <div class="min-w-0">
-          <div class="flex items-center gap-2 flex-wrap">
-            <p class="text-[13px] font-semibold text-slate-800 truncate">${_escapeHtml(row.class_name || 'Class')}</p>
-            <span class="badge ${row.is_open ? 'badge-amber' : 'badge-green'}">${row.is_open ? 'Open' : 'Closed'}</span>
-            ${row.unit_session_number ? `<span class="badge badge-blue">Session ${Number(row.unit_session_number)}</span>` : ''}
-          </div>
-          <p class="mt-1 text-[12px] text-slate-500 truncate">${_escapeHtml(row.teacher_name || 'No assigned teacher')}</p>
-          <p class="mt-1 text-[12px] text-slate-400">${_escapeHtml(_fmtOwnerDate(row.session_date))} • ${_escapeHtml(_fmtOwnerTimeRange(row))}</p>
-        </div>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 lg:min-w-[460px]">
-          <span class="rounded-xl bg-slate-50 border border-slate-100 px-2 py-2 text-[12px]"><b>${checkedRows}</b> checked</span>
-          <span class="rounded-xl bg-slate-50 border border-slate-100 px-2 py-2 text-[12px]"><b>${progressItems}</b> progress</span>
-          <span class="rounded-xl bg-slate-50 border border-slate-100 px-2 py-2 text-[12px]"><b>${attendanceRows}</b> attendance</span>
-          <span class="rounded-xl bg-slate-50 border border-slate-100 px-2 py-2 text-[12px]"><b>${_num(row.absent_rows, 0)}</b> absent</span>
-        </div>
-      </div>
-      ${row.note_preview ? `<p class="mt-2 text-[12px] text-slate-500">${_escapeHtml(row.note_preview)}</p>` : ''}
-    </div>`;
 }
 
 function _bindOwnerEvents(el) {
@@ -2128,15 +1799,6 @@ function _bindOwnerEvents(el) {
     _ownerTeacherLimit = 8;
     _renderOwner(el);
   });
-  el.querySelector('#btn-owner-copy-brief')?.addEventListener('click', async () => {
-    try {
-      await copyText(_ownerSupervisorBriefText());
-      showToast('Supervisor brief copied.', 'ok');
-    } catch (err) {
-      showToast(err.message || 'Could not copy supervisor brief.', 'error');
-    }
-  });
-
   el.querySelector('#btn-owner-notebooklm-refresh')?.addEventListener('click', async function () {
     this.classList.add('btn-busy'); this.disabled = true;
     try {
@@ -2220,6 +1882,25 @@ function _bindOwnerEvents(el) {
       btn.classList.remove('btn-busy'); btn.disabled = false;
     }
   });
+
+  const runRetentionCleanup = async (btn, dryRun) => {
+    btn.classList.add('btn-busy'); btn.disabled = true;
+    try {
+      const res = await api(`/ops/retention/cleanup?dry_run=${dryRun ? 'true' : 'false'}`, { method: 'POST' });
+      const deleted = Number(res?.total_deleted || 0);
+      const freed = _fmtBytes(res?.total_freed_bytes);
+      showToast(`${dryRun ? 'Preview: would remove' : 'Removed'} ${deleted} item${deleted === 1 ? '' : 's'} (${freed}).`, 'ok');
+      if (!dryRun) {
+        _retentionStatus = await api('/ops/retention/status').catch(() => _retentionStatus);
+      }
+      _renderOwner(el);
+    } catch (err) {
+      showToast(err.message || 'Retention cleanup failed.', 'error');
+      btn.classList.remove('btn-busy'); btn.disabled = false;
+    }
+  };
+  el.querySelector('#btn-owner-retention-preview')?.addEventListener('click', function () { runRetentionCleanup(this, true); });
+  el.querySelector('#btn-owner-retention-run')?.addEventListener('click', function () { runRetentionCleanup(this, false); });
 
   el.querySelector('#btn-owner-holiday-refresh')?.addEventListener('click', async function () {
     this.classList.add('btn-busy'); this.disabled = true;

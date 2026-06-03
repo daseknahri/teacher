@@ -61,10 +61,16 @@ route('class', teacherGuard(renderClassView));
 route('workflow', teacherGuard(renderWorkflowView));
 route('calendar', teacherGuard(renderCalendarView));
 route('exams', teacherGuard(renderExamView));
-route('owner', authGuard(() => {
+const ownerSectionRoute = (sectionName) => authGuard(() => {
     if (!isOwner()) { navigate('class'); return; }
-    renderOwnerView();
-}));
+    renderOwnerView(sectionName);
+});
+route('owner', ownerSectionRoute('overview'));
+route('owner-classes', ownerSectionRoute('classes'));
+route('owner-teachers', ownerSectionRoute('teachers'));
+route('owner-calendar', ownerSectionRoute('calendar'));
+route('owner-ai', ownerSectionRoute('ai'));
+route('owner-settings', ownerSectionRoute('settings'));
 route('quick-planner', teacherGuard(renderQuickPlannerView));
 
 fallback(() => {

@@ -61,6 +61,9 @@ def ensure_schema_compatibility() -> None:
             conn.execute(text("ALTER TABLE sessions ADD COLUMN unit_id INTEGER"))
         if "unit_session_number" not in session_columns:
             conn.execute(text("ALTER TABLE sessions ADD COLUMN unit_session_number INTEGER"))
+        if "version" not in session_columns:
+            conn.execute(text("ALTER TABLE sessions ADD COLUMN version INTEGER DEFAULT 1"))
+            conn.execute(text("UPDATE sessions SET version = 1 WHERE version IS NULL"))
         user_columns = _columns("users")
         if "failed_login_attempts" not in user_columns:
             conn.execute(text("ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0"))

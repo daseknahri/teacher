@@ -8,12 +8,13 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .config import ALERT_ON_5XX, ALERT_ON_EXCEPTION, ALERT_SLOW_MS, EXPORTS_DIR, LOGS_DIR, STORAGE_DIR, UPLOADS_DIR
-from .database import Base, engine, ensure_schema_compatibility
+from .config import ALERT_ON_5XX, ALERT_ON_EXCEPTION, ALERT_SLOW_MS, EXPORTS_DIR, LOGS_DIR, RETENTION_RUN_ON_STARTUP, STORAGE_DIR, UPLOADS_DIR
+from .database import Base, SessionLocal, engine, ensure_schema_compatibility
 from .routers import audit, auth, classes, exams, ops, reports, sessions, workflow
 from .services.alerts import send_request_alert
 from .services.logging_setup import configure_logging
 from .services.rate_limit import reset_rate_limits
+from .services.retention import run_retention_cleanup
 
 
 def create_app() -> FastAPI:
@@ -29,6 +30,16 @@ def create_app() -> FastAPI:
     reset_rate_limits()
     Base.metadata.create_all(bind=engine)
     ensure_schema_compatibility()
+    if RETENTION_RUN_ON_STARTUP:
+        try:
+            with SessionLocal() as cleanup_db:
+                report = run_retention_cleanup(cleanup_db)
+            logger.info(
+                "retention.startup_cleanup",
+                extra={"total_deleted": report.get("total_deleted", 0), "total_freed_bytes": report.get("total_freed_bytes", 0)},
+            )
+        except Exception:
+            logger.exception("retention.startup_cleanup_failed")
     logger.info("startup.complete", extra={"storage_dir": str(STORAGE_DIR), "logs_dir": str(LOGS_DIR)})
 
     @app.get("/health")

@@ -221,6 +221,10 @@ class ClassSession(Base):
     start_time: Mapped[time | None] = mapped_column(Time, nullable=True)
     end_time: Mapped[time | None] = mapped_column(Time, nullable=True)
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Optimistic-locking counter: bumped on every mutation so concurrent edits to the same
+    # session are detected (a stale expected_version is rejected with 409 instead of silently
+    # overwriting the other writer's changes).
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     classroom: Mapped["Classroom"] = relationship(back_populates="sessions")
