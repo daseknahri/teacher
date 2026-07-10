@@ -35,6 +35,7 @@ from ..schemas import ClassroomCreate, ClassroomOut, ClassroomUpdate, StudentOut
 from ..services.audit import log_audit
 from ..services.excel import parse_roster_excel
 from ..services.rate_limit import enforce_rate_limit
+from ..services.school_time import school_today
 from ..services.upload_validation import (
     ALLOWED_EXCEL_EXTENSIONS,
     ALLOWED_EXCEL_MIME_TYPES,
@@ -504,7 +505,7 @@ def owner_overview(
                 select(ClassTimetableRule)
                 .where(
                     ClassTimetableRule.class_id.in_(class_ids),
-                    (ClassTimetableRule.effective_to.is_(None)) | (ClassTimetableRule.effective_to >= date.today()),
+                    (ClassTimetableRule.effective_to.is_(None)) | (ClassTimetableRule.effective_to >= school_today()),
                 )
                 .order_by(ClassTimetableRule.weekday.asc(), ClassTimetableRule.start_time.asc())
                 .limit(40)

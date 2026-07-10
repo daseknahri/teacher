@@ -148,6 +148,7 @@ from ..services.timetable_import import (
     parse_timetable_ics_preview,
     parse_timetable_xlsx_preview,
 )
+from ..services.school_time import school_now, school_today
 from ..services.workflow import extract_text_from_document, generate_unit_checklist
 from ..services import workflow_generation as workflow_generation_service
 from ..services.workflow_content import (
@@ -1108,7 +1109,7 @@ def _safe_serialize_session(db: Session, session: ClassSession, *, class_id: int
                 class_id=_safe_int(getattr(session, "class_id", class_id), default=int(class_id)),
                 unit_id=_safe_optional_int(getattr(session, "unit_id", None)),
                 unit_session_number=_safe_optional_int(getattr(session, "unit_session_number", None)),
-                session_date=getattr(session, "session_date", date.today()),
+                session_date=getattr(session, "session_date", school_today()),
                 start_time=getattr(session, "start_time", None),
                 end_time=getattr(session, "end_time", None),
                 note=getattr(session, "note", None),
@@ -2037,7 +2038,7 @@ def _auto_close_completed_past_unit(db: Session, *, unit_id: int) -> bool:
     if _remaining_leaf_items_count(db, unit_id=int(unit_id)) > 0:
         return False
 
-    today_value = date.today()
+    today_value = school_today()
     latest_session_date = db.scalar(
         select(func.max(ClassSession.session_date)).where(ClassSession.unit_id == int(unit_id))
     )
@@ -3559,7 +3560,7 @@ def _create_unit_with_generated_checklist(
         linked_exam = Exam(
             class_id=int(class_id),
             title=_normalize_workflow_title(unit.title, fallback="Exam"),
-            exam_date=date.today(),
+            exam_date=school_today(),
             max_score=20.0,
             weight=1.0,
         )
@@ -6103,7 +6104,7 @@ def auto_plan_workflow_calendar(
         )
 
     if action == "load_week_plan":
-        base_day = payload.week_start or date.today()
+        base_day = payload.week_start or school_today()
         week_start = _start_of_week_date(base_day)
         week_end = week_start + timedelta(days=6)
 
@@ -6546,7 +6547,7 @@ def start_workflow_session(
     current_user: User = Depends(get_current_user),
 ) -> WorkflowSessionOut:
     _ = ensure_class_writable(db, class_id, current_user)
-    now = datetime.now()
+    now = school_now()
     unit = _ensure_active_unit(db, class_id)
     open_existing = db.scalar(
         select(ClassSession).where(
@@ -6777,7 +6778,7 @@ def end_workflow_session(
     if session is None or session.class_id != class_id or session.unit_id is None:
         raise HTTPException(status_code=404, detail="Workflow session not found.")
 
-    now_time = _utc_now_naive().replace(second=0, microsecond=0).time()
+    now_time = school_now().replace(second=0, microsecond=0).time()
     was_closed_before_update = session.end_time is not None
     empty_payload_close = (
         payload.session_date is None
@@ -6906,7 +6907,7 @@ def confirm_workflow_session(
     if session is None or session.class_id != class_id or session.unit_id is None:
         raise HTTPException(status_code=404, detail="Workflow session not found.")
     _ensure_workflow_session_writable(db, session)
-    if session.session_date > date.today():
+    if session.session_date > school_today():
         raise HTTPException(status_code=409, detail="Future sessions cannot be confirmed yet.")
     already_confirmed = bool(
         db.scalar(select(WorkflowSessionWriteup.id).where(WorkflowSessionWriteup.session_id == int(session.id)))
@@ -6923,7 +6924,7 @@ def confirm_workflow_session(
     if already_confirmed:
         raise HTTPException(status_code=409, detail="This session is already confirmed.")
 
-    now_time = _utc_now_naive().replace(second=0, microsecond=0).time()
+    now_time = school_now().replace(second=0, microsecond=0).time()
     if session.start_time is None:
         session.start_time = now_time
     if session.end_time is None:
@@ -7638,7 +7639,7 @@ def generate_workflow_session_writeup(
     if session is None or int(session.class_id) != int(class_id) or session.unit_id is None:
         raise HTTPException(status_code=404, detail="Workflow session not found.")
     _ensure_workflow_session_writable(db, session)
-    if session.session_date > date.today():
+    if session.session_date > school_today():
         raise HTTPException(status_code=409, detail="Future sessions cannot generate a write-up yet.")
 
     existing = db.scalar(select(WorkflowSessionWriteup).where(WorkflowSessionWriteup.session_id == int(session_id)))
@@ -7696,7 +7697,7 @@ def close_workflow_unit(
     if open_session is not None:
         raise HTTPException(status_code=409, detail=f"Session #{open_session.id} is still open. End it first.")
 
-    today = date.today()
+    today = school_today()
     future_sessions = db.scalars(
         select(ClassSession).where(
             ClassSession.class_id == int(class_id),

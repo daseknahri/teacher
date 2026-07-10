@@ -31,6 +31,7 @@ from ..services.audit import log_audit
 from ..services.extraction import extract_structured_progress, resolve_raw_text
 from ..services.holidays import find_blocked_holiday
 from ..services.rate_limit import enforce_rate_limit
+from ..services.school_time import school_now, school_today
 from ..services.upload_validation import (
     ALLOWED_IMAGE_EXTENSIONS,
     ALLOWED_IMAGE_MIME_TYPES,
@@ -243,7 +244,7 @@ def quick_submit_session(
         raise HTTPException(status_code=400, detail=f"Unknown student ids: {unknown_ids}")
     absent_set = set(absent_ids)
 
-    now = datetime.now()
+    now = school_now()
     if _is_non_working_day(now.date()):
         raise HTTPException(status_code=409, detail="Sunday is a non-working day.")
     start_time = now.replace(second=0, microsecond=0).time()
@@ -472,7 +473,7 @@ def update_session(
             payload.end_time is not None,
         )
     )
-    if time_fields_requested and session.unit_id is not None and session.session_date < datetime.utcnow().date():
+    if time_fields_requested and session.unit_id is not None and session.session_date < school_today():
         raise HTTPException(
             status_code=409,
             detail="Past workflow sessions are locked for date/time edits.",

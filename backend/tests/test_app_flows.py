@@ -10653,3 +10653,72 @@ def test_retention_cleanup_removes_old_exports(client, monkeypatch):
     _, teacher_headers = _create_teacher_and_login(client, headers)
     forbidden = client.post("/ops/retention/cleanup", headers=teacher_headers)
     assert forbidden.status_code == 403
+
+
+def test_session_wall_clock_uses_school_timezone_not_utc(client, monkeypatch):
+    """start_time and end_time must come from the same clock: the school's.
+
+    Regression test. start_workflow_session used datetime.now() (machine-local) while the close
+    path used UTC, so on any host ahead of UTC an empty-payload close produced end_time <
+    start_time and got clamped back to start_time -- silently recording a zero-duration session.
+    Pinning SCHOOL_TIMEZONE to a far-from-UTC zone makes the mismatch observable.
+    """
+    from datetime import datetime as _dt, time as _time
+    from zoneinfo import ZoneInfo
+    from app import config as app_config
+
+    monkeypatch.setattr(app_config, "SCHOOL_TIMEZONE", "Asia/Tokyo")  # UTC+9, no DST
+
+    headers = _auth_headers(client)
+    class_id = int(client.post("/classes", json={"name": "TZ Class"}, headers=headers).json()["id"])
+    roster = _build_roster_file([("TZ1", "One")])
+    assert client.post(
+        f"/classes/{class_id}/students/import",
+        headers=headers,
+        files={"file": ("s.xlsx", roster, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    ).status_code == 200
+
+    unit_resp = client.post(
+        f"/workflow/classes/{class_id}/units/start",
+        headers=headers,
+        data={"unit_type": "chapter", "title": "TZ Unit", "source_text": "seed"},
+    )
+    assert unit_resp.status_code == 201
+    unit_id = int(unit_resp.json()["id"])
+
+    # An open session on a weekday, starting at midnight so the close-time clamp cannot fire and
+    # mask which clock end_time actually came from.
+    school_date = _dt.now(ZoneInfo("Asia/Tokyo")).date()
+    while school_date.isoweekday() == 7:
+        school_date += timedelta(days=1)
+    create_resp = client.post(
+        f"/workflow/classes/{class_id}/sessions",
+        headers=headers,
+        json={
+            "session_date": school_date.isoformat(),
+            "start_time": "00:00:00",
+            "unit_id": unit_id,
+            "allow_on_holiday": True,
+        },
+    )
+    assert create_resp.status_code == 201
+    session_id = int(create_resp.json()["id"])
+    assert create_resp.json()["end_time"] is None
+
+    end_resp = client.post(f"/workflow/classes/{class_id}/sessions/{session_id}/end", headers=headers, json={})
+    assert end_resp.status_code == 200
+
+    recorded = _time.fromisoformat(str(end_resp.json()["end_time"]))
+    expected = _dt.now(ZoneInfo("Asia/Tokyo")).replace(tzinfo=None)
+
+    recorded_minutes = recorded.hour * 60 + recorded.minute
+    expected_minutes = expected.hour * 60 + expected.minute
+    # Tolerate the midnight wrap and a slow test run.
+    delta = min(
+        abs(recorded_minutes - expected_minutes),
+        1440 - abs(recorded_minutes - expected_minutes),
+    )
+    assert delta <= 3, (
+        f"end_time {recorded} is not the school's wall clock (expected ~{expected.time()}). "
+        "It was probably read from UTC or the machine-local clock."
+    )

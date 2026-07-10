@@ -20,6 +20,7 @@ from ..schemas import ExamCreate, ExamOut, ExamResultOut, ExamResultUpdate, Exam
 from ..services.audit import log_audit
 from ..services.excel import build_exam_template, build_exam_template_notescc, parse_exam_results_excel
 from ..services.rate_limit import enforce_rate_limit
+from ..services.school_time import school_today
 from ..services.upload_validation import (
     ALLOWED_EXCEL_EXTENSIONS,
     ALLOWED_EXCEL_MIME_TYPES,
@@ -176,7 +177,7 @@ def _safe_unlink(path: str | None) -> bool:
 
 
 def _delete_future_linked_sessions_for_exam(db: Session, exam: Exam) -> tuple[list[int], int]:
-    today_value = date.today()
+    today_value = school_today()
     sessions = db.scalars(
         select(ClassSession)
         .join(WorkflowUnit, WorkflowUnit.id == ClassSession.unit_id)

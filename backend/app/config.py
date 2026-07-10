@@ -12,6 +12,10 @@ EXPORTS_DIR = STORAGE_DIR / "exports"
 LOGS_DIR = STORAGE_DIR / "logs"
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'app.db'}")
+# Timezone of the school. Session dates and start/end times are wall-clock values a teacher reads
+# off a timetable, so they must all come from this one clock (see app/services/school_time.py).
+# Audit/created_at timestamps are instants and stay UTC.
+SCHOOL_TIMEZONE = os.getenv("SCHOOL_TIMEZONE", "Africa/Casablanca")
 AUTH_TOKEN_TTL_HOURS = int(os.getenv("AUTH_TOKEN_TTL_HOURS", "24"))
 NOTEBOOKLM_REFRESH_HELPER_TTL_MINUTES = int(os.getenv("NOTEBOOKLM_REFRESH_HELPER_TTL_MINUTES", "10"))
 MAX_FAILED_LOGIN_ATTEMPTS = int(os.getenv("MAX_FAILED_LOGIN_ATTEMPTS", "5"))
