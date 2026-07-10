@@ -6435,11 +6435,22 @@ def test_closing_unit_deletes_future_planned_sessions(client):
     assert unit_resp.status_code == 201
     unit_id = int(unit_resp.json()["id"])
 
+    # Closing a unit deletes sessions dated after today, so these must stay relative to
+    # the current date. Hardcoded dates silently stop testing anything once the clock
+    # passes them. Sundays are rejected as non-working days, so step off them.
+    def _skip_sunday(value: date, *, forward: bool) -> date:
+        while value.isoweekday() == 7:
+            value += timedelta(days=1 if forward else -1)
+        return value
+
+    past_date = _skip_sunday(date.today() - timedelta(days=45), forward=False)
+    future_date = _skip_sunday(date.today() + timedelta(days=30), forward=True)
+
     past_session_resp = client.post(
         f"/workflow/classes/{class_id}/sessions",
         headers=headers,
         json={
-            "session_date": "2026-05-26",
+            "session_date": past_date.isoformat(),
             "start_time": "08:00:00",
             "end_time": "09:00:00",
             "unit_id": unit_id,
@@ -6454,7 +6465,7 @@ def test_closing_unit_deletes_future_planned_sessions(client):
         f"/workflow/classes/{class_id}/sessions",
         headers=headers,
         json={
-            "session_date": "2026-06-10",
+            "session_date": future_date.isoformat(),
             "start_time": "08:00:00",
             "end_time": "09:00:00",
             "unit_id": unit_id,
