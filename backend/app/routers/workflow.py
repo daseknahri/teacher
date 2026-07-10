@@ -19,6 +19,7 @@ from .. import config as app_config
 from ..config import MAX_SCREENSHOT_UPLOAD_BYTES, UPLOADS_DIR
 from ..database import get_db
 from ..models import (
+    AuditLog,
     AttendanceRecord,
     AttendanceStatus,
     ClassAccess,
@@ -148,6 +149,7 @@ from ..services.timetable_import import (
     parse_timetable_xlsx_preview,
 )
 from ..services.workflow import extract_text_from_document, generate_unit_checklist
+from ..services import workflow_generation as workflow_generation_service
 from ..services.workflow_content import (
     _serialize_checked_item_contexts,
     build_session_outline_rows,
@@ -165,7 +167,6 @@ from ..services.workflow_generation import (
     build_source_section_lesson_package,
     delete_provider_unit_context,
     generate_leaf_content_package,
-    initialize_unit_notebooklm_context,
     generate_unit_assistant_package,
     generate_unit_material_package,
     render_section_latex_source,
@@ -2564,6 +2565,18 @@ def _session_has_saved_workflow_state(db: Session, *, session_id: int) -> bool:
     return False
 
 
+def _session_has_been_started(db: Session, *, session_id: int) -> bool:
+    return db.scalar(
+        select(AuditLog.id)
+        .where(
+            AuditLog.entity_type == "session",
+            AuditLog.entity_id == int(session_id),
+            AuditLog.action.in_(("workflow.session.start", "workflow.session.start_reuse")),
+        )
+        .limit(1)
+    ) is not None
+
+
 def _find_reusable_workflow_session_for_unit_start(
     db: Session,
     *,
@@ -2577,6 +2590,8 @@ def _find_reusable_workflow_session_for_unit_start(
         if int(session.class_id) != int(class_id) or int(session.unit_id or 0) != int(unit_id):
             return False
         if session.end_time is None:
+            return False
+        if _session_has_been_started(db, session_id=int(session.id)):
             return False
         if _session_has_saved_workflow_state(db, session_id=int(session.id)):
             return False
@@ -2603,6 +2618,14 @@ def _find_reusable_workflow_session_for_unit_start(
         if _is_reusable(row):
             return row
     return None
+
+
+def _class_has_timetable_rules(db: Session, *, class_id: int) -> bool:
+    return db.scalar(
+        select(ClassTimetableRule.id)
+        .where(ClassTimetableRule.class_id == int(class_id))
+        .limit(1)
+    ) is not None
 
 
 def _session_note_from_rule(
@@ -6546,11 +6569,16 @@ def start_workflow_session(
 
     absent_set = set(absent_ids)
 
-    reusable_session = _find_reusable_workflow_session_for_unit_start(
-        db,
-        class_id=int(class_id),
-        unit_id=int(unit.id),
-        preferred_session_id=(int(payload.session_id) if payload.session_id is not None else None),
+    should_try_reuse = payload.session_id is not None or not _class_has_timetable_rules(db, class_id=int(class_id))
+    reusable_session = (
+        _find_reusable_workflow_session_for_unit_start(
+            db,
+            class_id=int(class_id),
+            unit_id=int(unit.id),
+            preferred_session_id=(int(payload.session_id) if payload.session_id is not None else None),
+        )
+        if should_try_reuse
+        else None
     )
     if payload.session_id is not None and reusable_session is None:
         requested_session = db.get(ClassSession, int(payload.session_id))
@@ -6771,7 +6799,10 @@ def end_workflow_session(
         session.end_time = payload.end_time
     elif session.end_time is None and empty_payload_close:
         # Backward-compatible close behavior for legacy callers posting {}.
-        session.end_time = now_time
+        close_time = now_time
+        if session.start_time is not None and close_time < session.start_time:
+            close_time = session.start_time
+        session.end_time = close_time
     if session.start_time is not None and session.end_time is not None and session.end_time < session.start_time:
         raise HTTPException(status_code=400, detail="end_time must be greater than or equal to start_time.")
     if payload.note is not None:
@@ -7764,7 +7795,7 @@ def start_notebooklm_for_workflow_unit(
         raise HTTPException(status_code=400, detail="No exam PDF or source text is available to start NotebookLM.")
 
     try:
-        provider_context, raw_context_response = initialize_unit_notebooklm_context(
+        provider_context, raw_context_response = workflow_generation_service.initialize_unit_notebooklm_context(
             unit_type=unit.unit_type,
             title=unit.title,
             source_text=source_text,

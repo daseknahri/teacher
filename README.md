@@ -103,6 +103,7 @@ Excel formats supported:
 8. Check owner analytics overview (global counts + per-teacher activity).
 
 ## Project Docs
+- `CLAUDE.md` complete repo handoff for Claude Code / future AI agents
 - `docs/roadmap/ROADMAP.md` current implemented scope and architecture
 - `docs/roadmap/APP-FUNCTIONALITY-WORKFLOWS.md` module-by-module functionality and workflows
 - `docs/roadmap/FUTURE-TODO.md` prioritized next backlog + ready-to-test checklist

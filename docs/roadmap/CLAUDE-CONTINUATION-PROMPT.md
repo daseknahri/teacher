@@ -1,6 +1,6 @@
 # Claude Continuation Prompt
 
-Last updated: 2026-05-19
+Last updated: 2026-06-03
 
 Use this prompt when handing the repo to Claude and you want it to continue the work without breaking the current app direction.
 
@@ -11,15 +11,23 @@ You are continuing work on the Teacher Progress app.
 
 Before changing code, read these files in this order:
 
-1. docs/roadmap/AI-CONTENT-BANK-HANDOFF.md
-2. docs/roadmap/NOTEBOOKLM-UNIT-BRAIN-ARCHITECTURE.md
-3. docs/roadmap/LEAF-CONTENT-BANK-SPEC.md
-4. docs/roadmap/EXACT-SOURCE-LESSON-MODE.md
-5. docs/roadmap/LEAF-CONTENT-READER-ROADMAP.md
-6. docs/roadmap/AI-COLLABORATION-PROTOCOL.md
-7. docs/roadmap/AI-WORKLOG.md
+1. CLAUDE.md
+2. docs/roadmap/AI-WORKLOG.md
+3. docs/roadmap/AI-COLLABORATION-PROTOCOL.md
+4. docs/roadmap/AI-CONTENT-BANK-HANDOFF.md
+5. docs/roadmap/NOTEBOOKLM-UNIT-BRAIN-ARCHITECTURE.md
+6. docs/roadmap/LEAF-CONTENT-BANK-SPEC.md
+7. docs/roadmap/EXACT-SOURCE-LESSON-MODE.md
+8. docs/roadmap/LEAF-CONTENT-READER-ROADMAP.md
 
-Project direction to preserve:
+Current stable app direction to preserve:
+
+- The checklist/session workflow is the current source of truth.
+- Teachers upload a unit/exercise PDF, review the extracted checklist, teach from it, and check only what was really covered.
+- Supervisor/owner views should make teacher activity readable through filters, analytics, and calendar/session detail.
+- Exam and exam-correction units are intentionally minimal templates for now.
+
+Long-term direction to preserve:
 
 - NotebookLM is the grounded understanding and generation layer for each unit.
 - The app is the source of truth for workflow, progress, rendering, review, and stored teaching content.
@@ -42,6 +50,8 @@ Current workflow reality to preserve:
 - Session routes already use checked item paths and grouped teaching flow.
 - Session write-ups already use grouped teaching sections.
 - Headlines/session outline should preserve the path from top heading down to the taught row.
+- Exercise-series extraction should store only the series title and exact exercise headlines.
+- Chapter extraction should preserve student buckets such as Activites, Contenu de la lecon, and Evaluation while dropping teacher meta sections.
 
 How to work safely:
 
@@ -53,10 +63,11 @@ How to work safely:
 
 Best next direction if no other task is specified:
 
-- build persisted leaf content records
-- add one leaf content generation endpoint
-- build one leaf reader/editor with Markdown + LaTeX rendering
-- connect that reader to session flow
+- continue supervisor dashboard/calendar UX cleanup
+- make selected teacher analytics and calendar session details easier to read
+- keep the teacher workflow stable while doing this
+
+Only move to content-bank/RAG work when the user explicitly asks for that phase.
 
 When you finish, leave:
 

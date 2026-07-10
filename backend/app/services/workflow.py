@@ -14,6 +14,7 @@ from .extraction import resolve_raw_text
 from .workflow_generation import (
     ensure_notebooklm_generation_ready,
     generate_unit_checklist_package,
+    notebooklm_provider_ready,
 )
 
 
@@ -73,13 +74,8 @@ def generate_unit_checklist(
     configured_provider = str(app_config.UNIT_PLANNER_PROVIDER or "fallback").strip().lower() or "fallback"
     has_document = bool(str(document_path or "").strip())
 
-    if has_document:
-        ensure_notebooklm_generation_ready(action_label="unit extraction")
-        configured_provider = "notebooklm"
-    elif configured_provider == "notebooklm":
-        ensure_notebooklm_generation_ready(action_label="unit extraction")
-    elif configured_provider == "openai" and not OPENAI_API_KEY:
-        configured_provider = "fallback"
+    if configured_provider == "openai" and not OPENAI_API_KEY:
+        configured_provider = "notebooklm" if has_document and notebooklm_provider_ready() else "fallback"
 
     package = generate_unit_checklist_package(
         unit_type=unit_type,

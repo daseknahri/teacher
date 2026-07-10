@@ -591,6 +591,8 @@ def generate_unit_checklist_package(
             document_path=document_path,
             outline_hint_lines=None,
         )
+        if document_path:
+            ensure_reference_outline_context()
         response_mode = str((raw_provider_response or {}).get("response_mode") or "").strip().lower()
         if items:
             actual_provider = "notebooklm"
@@ -670,7 +672,67 @@ def generate_unit_checklist_package(
                     raw_provider_response["unit_map"] = unit_map
                     if layout_seed_diagnostics:
                         raw_provider_response["pdf_layout_diagnostics"] = _copy_jsonable(layout_seed_diagnostics)
-                repair_outline = layout_seed
+                shadow_reference = reference_outline or layout_seed or outline_seed
+                shadow_items: list[dict[str, Any]] | None = None
+                if (
+                    document_path
+                    and app_config.OPENAI_API_KEY
+                    and shadow_reference
+                    and _candidate_needs_structural_repair(
+                        selected_outline,
+                        reference_outline=shadow_reference,
+                        unit_type=unit_type,
+                        unit_title=title,
+                    )
+                ):
+                    try:
+                        shadow_items, openai_shadow_raw, openai_shadow_error = _openai_generate_checklist(
+                            unit_type=unit_type,
+                            title=title,
+                            source_text=source_text,
+                            session_count=session_count,
+                            outline_hint_lines=outline_hint_lines,
+                        )
+                    except Exception as exc:
+                        shadow_items = None
+                        openai_shadow_error = f"{exc.__class__.__name__}: {exc}"
+                    normalized_shadow = _postprocess_checklist_items(
+                        shadow_items or [],
+                        unit_type=unit_type,
+                        unit_title=title,
+                    )
+                    if normalized_shadow:
+                        selected_name, selected_items = _select_best_checklist_candidate(
+                            [
+                                ("notebooklm", selected_outline),
+                                ("openai", normalized_shadow),
+                            ],
+                            reference_outline=shadow_reference,
+                            unit_type=unit_type,
+                            unit_title=title,
+                        )
+                        if selected_name == "openai":
+                            selected_outline = selected_items
+                            selected_structure_source = "openai_shadow"
+                            actual_provider = "openai"
+                            model = app_config.OPENAI_MODEL
+                            raw_provider_response = openai_shadow_raw
+                            error_message = openai_shadow_error
+                            provider_context = None
+                            unit_map = _normalize_unit_map_payload(
+                                None,
+                                fallback_outline=selected_outline,
+                                unit_title=title,
+                                unit_type=unit_type,
+                                source_mode="openai-derived",
+                            )
+                            content_blocks = _normalize_content_blocks_payload(
+                                None,
+                                unit_map=unit_map,
+                                fallback_outline=selected_outline,
+                            )
+                            unit_map = _apply_content_blocks_to_unit_map(unit_map, content_blocks)
+                repair_outline = layout_seed if actual_provider == "notebooklm" else []
                 if repair_outline and _candidate_needs_structural_repair(
                     selected_outline,
                     reference_outline=repair_outline,
@@ -679,8 +741,10 @@ def generate_unit_checklist_package(
                 ):
                     selected_outline = repair_outline
                     selected_structure_source = "pdf_layout_seed"
-                    if isinstance(raw_provider_response, dict):
-                        raw_provider_response["selected_structure_source"] = selected_structure_source
+                if isinstance(raw_provider_response, dict):
+                    raw_provider_response["selected_structure_source"] = selected_structure_source
+                    raw_provider_response["unit_map"] = unit_map
+                    raw_provider_response["content_blocks"] = content_blocks
                 items = _copy_jsonable(selected_outline)
                 items = _apply_session_numbers(items, session_count=session_count)
                 if unit_type in {WorkflowUnitType.CHAPTER, WorkflowUnitType.EXERCISE_SERIES}:
@@ -1068,6 +1132,8 @@ def _build_leaf_content_markdown_from_blocks(
 
 def _build_exact_source_segments_from_blocks(
     blocks: list[dict[str, Any]] | None,
+    *,
+    include_secondary: bool = False,
 ) -> list[dict[str, Any]]:
     SOURCE_SEGMENT_LABELS = {
         "activity": "Activity",
@@ -1225,25 +1291,43 @@ def _build_exact_source_segments_from_blocks(
         excerpt = _normalize_content_block_markdown(block.get("source_excerpt_raw") or block.get("source_excerpt"), limit=4000)
         material = _normalize_content_block_markdown(block.get("teaching_material_raw") or block.get("teaching_material"), limit=6000)
         use_material = bool(material) and len(material) >= len(excerpt)
-        content_md = material if use_material else (excerpt or material)
-        if not content_md:
+        primary = material if use_material else (excerpt or material)
+        if not primary:
             continue
-        content_source = "teaching_material" if use_material else "source_excerpt"
-        candidate_segments = split_exact_source_rows(
-            title=title,
-            kind=kind,
-            phase=phase,
-            content_md=content_md,
-            content_source=content_source,
-        ) or [
-            {
-                "title": title or None,
-                "kind": kind,
-                "teaching_phase": phase,
-                "content_md": content_md,
-                "content_source": content_source,
-            }
+        content_candidates = [
+            (
+                primary,
+                "teaching_material" if use_material else "source_excerpt",
+            )
         ]
+        secondary = excerpt if use_material else material
+        if include_secondary and secondary and _semantic_title_key(secondary) != _semantic_title_key(primary):
+            content_candidates.append(
+                (
+                    secondary,
+                    "source_excerpt" if use_material else "teaching_material",
+                )
+            )
+        candidate_segments: list[dict[str, Any]] = []
+        for content_md, content_source in content_candidates:
+            candidate_segments.extend(
+                split_exact_source_rows(
+                    title=title,
+                    kind=kind,
+                    phase=phase,
+                    content_md=content_md,
+                    content_source=content_source,
+                )
+                or [
+                    {
+                        "title": title or None,
+                        "kind": kind,
+                        "teaching_phase": phase,
+                        "content_md": content_md,
+                        "content_source": content_source,
+                    }
+                ]
+            )
         for candidate in candidate_segments:
             segment_key = "|".join(
                 value
@@ -1468,7 +1552,7 @@ def build_source_section_lesson_package(
         section_path=normalized_section_path or None,
         fallback_to_all=False,
     )
-    exact_blocks = _build_exact_source_segments_from_blocks(selected_blocks)
+    exact_blocks = _build_exact_source_segments_from_blocks(selected_blocks, include_secondary=True)
     return {
         "section_title": normalized_section_title,
         "section_path_json": normalized_section_path,
@@ -6019,9 +6103,6 @@ def _normalize_notebooklm_outline_items(
                 [*ancestor_titles, title],
             )
             session_number = _normalize_session_number(node.get("session_number"))
-            if unit_type == WorkflowUnitType.CHAPTER and _is_generic_section_bucket_title(title):
-                output.extend(children)
-                continue
             has_specific_ancestor = any(
                 anc
                 and not _titles_equivalent(anc, unit_title)
@@ -6041,7 +6122,10 @@ def _normalize_notebooklm_outline_items(
             if session_number is not None:
                 normalized_node["session_number"] = session_number
             output.append(normalized_node)
-        return _dedupe_sibling_nodes(output)
+        deduped = _dedupe_sibling_nodes(output)
+        if unit_type == WorkflowUnitType.CHAPTER:
+            return _resequence_outline_for_teaching_flow(deduped)
+        return deduped
 
     normalized = _collapse_duplicate_outline_branches(walk(items, []))
     if unit_type != WorkflowUnitType.CHAPTER or not normalized:

@@ -1,6 +1,6 @@
 # AI Worklog
 
-Last updated: 2026-05-22
+Last updated: 2026-06-03
 
 Use this file as a shared handoff log between coding sessions, AI helpers, and engineers.
 
@@ -20,6 +20,41 @@ After finishing:
 Keep entries short and factual.
 
 ---
+
+### 2026-06-03 14:25 - Codex
+
+- Status: done
+- Goal: Stabilize the current teacher/supervisor app and create a complete Claude Code handoff before switching agents.
+- Files touched:
+  - `CLAUDE.md`
+  - `README.md`
+  - `backend/app/routers/workflow.py`
+  - `backend/app/services/workflow.py`
+  - `backend/app/services/workflow_generation.py`
+  - `backend/tests/conftest.py`
+  - `backend/tests/test_app_flows.py`
+  - `docs/roadmap/AI-WORKLOG.md`
+  - `docs/roadmap/CLAUDE-CONTINUATION-PROMPT.md`
+  - `docs/roadmap/AI-COLLABORATION-PROTOCOL.md`
+- Assumptions:
+  - The current source of truth is the teacher checklist/session workflow, not the future content bank.
+  - Claude should continue from the stabilized app state and only add richer AI/content-bank features one at a time.
+- Notes:
+  - Added root `CLAUDE.md` as the primary handoff map for future AI agents.
+  - Fixed backend test isolation so local `.env`, live OpenAI keys, NotebookLM auth, and persistent app DB do not leak into tests.
+  - Fixed NotebookLM/PDF extraction selection so weak exercise-series outlines can be repaired from PDF layout headings.
+  - Preserved exact exercise headlines, including compound titles like `Exercice 2B.3 - POLYNESIE 2001`.
+  - Preserved student-facing chapter buckets (`Activites`, `Contenu de la lecon`, `Evaluation`) and resequenced chapter children into teaching order.
+  - Kept exam/exam-correction extraction deterministic and minimal.
+  - Fixed session/timetable reuse so already-started sessions are not silently reused as fresh live sessions.
+- Result:
+  - Backend: `python -m pytest backend/tests -q --tb=short` -> `199 passed`.
+  - Frontend: `npm run smoke:ui` -> passed.
+  - Frontend: `npm run build` -> passed with only the existing Vite chunk-size warning.
+- Follow-up:
+  - Commit before switching agents if the next tool expects a clean branch.
+  - Claude should read `CLAUDE.md` first, then this worklog, before making code changes.
+  - Next product work should likely continue supervisor dashboard/calendar UX, not content-bank/RAG yet, unless explicitly requested.
 
 ### 2026-05-22 00:40 - Codex
 

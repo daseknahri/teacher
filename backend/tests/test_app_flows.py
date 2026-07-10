@@ -3350,7 +3350,7 @@ def test_parse_notebooklm_outline_response_collapses_duplicate_parent_child_titl
     assert chapter["children"][0]["children"][0]["title"] == "1) Inverse d'un nombre rationnel :"
 
 
-def test_parse_notebooklm_outline_response_drops_generic_buckets_and_itemized_rows_for_chapters():
+def test_parse_notebooklm_outline_response_preserves_student_buckets_and_drops_loose_itemized_rows():
     from app.models import WorkflowUnitType
     from app.services import workflow_generation
 
@@ -3377,12 +3377,11 @@ def test_parse_notebooklm_outline_response_drops_generic_buckets_and_itemized_ro
     assert items
     chapter = items[0]
     child_titles = [str(row.get("title") or "") for row in chapter.get("children", [])]
-    assert "Activites" not in child_titles
-    assert "Contenu de la lecon" not in child_titles
-    assert "Evaluation" not in child_titles
-    assert "Activite 1 :" not in child_titles
-    assert "Exercice 1 :" not in child_titles
-    assert child_titles == ["I- Addition et soustraction de deux nombres rationnels :"]
+    assert child_titles == ["Activites", "Contenu de la lecon", "Evaluation"]
+    flat_titles = [str(row.get("title") or "") for row in _flatten_checklist(items)]
+    assert "Activite 1 :" not in flat_titles
+    assert "Exercice 1 :" not in flat_titles
+    assert chapter["children"][1]["children"][0]["title"] == "I- Addition et soustraction de deux nombres rationnels :"
 
 
 def test_parse_notebooklm_outline_response_keeps_itemized_rows_when_nested_under_real_concepts():
@@ -8117,7 +8116,7 @@ def test_masked_export_privacy_mode(client):
     session_resp = client.post(
         f"/classes/{class_id}/sessions",
         headers=headers,
-        json={"session_date": "2026-03-08", "note": "privacy test"},
+        json={"session_date": "2026-03-09", "note": "privacy test"},
     )
     assert session_resp.status_code == 201
     session_id = session_resp.json()["id"]
@@ -8140,7 +8139,7 @@ def test_masked_export_privacy_mode(client):
     exam_resp = client.post(
         f"/classes/{class_id}/exams",
         headers=headers,
-        json={"title": "CC-Privacy", "exam_date": "2026-03-08", "max_score": 20, "weight": 1},
+        json={"title": "CC-Privacy", "exam_date": "2026-03-09", "max_score": 20, "weight": 1},
     )
     assert exam_resp.status_code == 201
     exam_id = exam_resp.json()["id"]

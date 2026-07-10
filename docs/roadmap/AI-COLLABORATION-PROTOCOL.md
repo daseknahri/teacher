@@ -1,6 +1,6 @@
 # AI Collaboration Protocol
 
-Last updated: 2026-05-19
+Last updated: 2026-06-03
 
 This file explains the safest way to let multiple coding models or engineers work on the same repo without breaking the project direction.
 
@@ -22,11 +22,12 @@ Think of the repo docs as the communication layer.
 
 Treat these files as the architecture truth:
 
-1. `docs/roadmap/AI-CONTENT-BANK-HANDOFF.md`
-2. `docs/roadmap/NOTEBOOKLM-UNIT-BRAIN-ARCHITECTURE.md`
-3. `docs/roadmap/LEAF-CONTENT-BANK-SPEC.md`
-4. `docs/roadmap/LEAF-CONTENT-READER-ROADMAP.md`
-5. `docs/roadmap/AI-WORKLOG.md`
+1. `CLAUDE.md`
+2. `docs/roadmap/AI-WORKLOG.md`
+3. `docs/roadmap/AI-CONTENT-BANK-HANDOFF.md`
+4. `docs/roadmap/NOTEBOOKLM-UNIT-BRAIN-ARCHITECTURE.md`
+5. `docs/roadmap/LEAF-CONTENT-BANK-SPEC.md`
+6. `docs/roadmap/LEAF-CONTENT-READER-ROADMAP.md`
 
 ### 2. One owner per active area
 
