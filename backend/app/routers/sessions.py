@@ -41,6 +41,21 @@ from ..services.upload_validation import (
 router = APIRouter(tags=["sessions"], dependencies=[Depends(require_teacher)])
 
 
+def _check_session_version(session: ClassSession, expected_version: int | None) -> None:
+    """Reject the write if the client's last-seen version is stale (concurrent edit)."""
+    if expected_version is None:
+        return
+    current = int(session.version or 1)
+    if int(expected_version) != current:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "This session was changed by someone else since you opened it. "
+                "Reload the latest version and reapply your changes."
+            ),
+        )
+
+
 def _ensure_session_writable(db: Session, session: ClassSession) -> None:
     if is_class_archived(db, session.class_id):
         raise HTTPException(status_code=409, detail="Class is archived and cannot be modified.")
@@ -399,6 +414,7 @@ def get_session_detail(
             "start_time": session.start_time.isoformat() if session.start_time else None,
             "end_time": session.end_time.isoformat() if session.end_time else None,
             "note": session.note,
+            "version": int(session.version or 1),
         },
         "attendance": [
             {
@@ -447,6 +463,7 @@ def update_session(
         raise HTTPException(status_code=404, detail="Session not found.")
     _ = ensure_class_access(db, session.class_id, current_user)
     _ensure_session_writable(db, session)
+    _check_session_version(session, payload.expected_version)
 
     time_fields_requested = any(
         (
@@ -475,6 +492,8 @@ def update_session(
     if payload.note is not None:
         session.note = payload.note
 
+    session.version = int(session.version or 1) + 1
+
     log_audit(
         db,
         user=current_user,
@@ -496,6 +515,7 @@ def update_session(
 def upsert_attendance(
     session_id: int,
     payload: list[AttendanceIn],
+    expected_version: int | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[AttendanceRecord]:
@@ -504,6 +524,7 @@ def upsert_attendance(
         raise HTTPException(status_code=404, detail="Session not found.")
     _ = ensure_class_access(db, session.class_id, current_user)
     _ensure_session_writable(db, session)
+    _check_session_version(session, expected_version)
 
     student_ids = set(db.scalars(select(Student.id).where(Student.class_id == session.class_id)).all())
     for row in payload:
@@ -521,6 +542,7 @@ def upsert_attendance(
                 comment=row.comment,
             )
         )
+    session.version = int(session.version or 1) + 1
     log_audit(
         db,
         user=current_user,

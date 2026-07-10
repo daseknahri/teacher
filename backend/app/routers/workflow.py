@@ -6839,6 +6839,8 @@ def end_workflow_session(
     if session.unit_id is not None and session.end_time is not None:
         auto_closed_unit = _auto_close_completed_past_unit(db, unit_id=int(session.unit_id))
 
+    session.version = int(getattr(session, "version", 1) or 1) + 1
+
     log_audit(
         db,
         user=current_user,

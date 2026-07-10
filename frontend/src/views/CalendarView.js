@@ -3545,7 +3545,7 @@ async function _moveSessionBlock({ classId, session, targetDayKey, targetSlotInd
     await api(`/sessions/${session.session_id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, expected_version: _cachedSessionVersion(session.session_id) }),
     });
     _selectedSessionId = Number(session.session_id);
     _selectedSessionError = null;
@@ -3557,9 +3557,27 @@ async function _moveSessionBlock({ classId, session, targetDayKey, targetSlotInd
     await _selectSession(Number(session.session_id), el, classId);
   } catch (err) {
     showToast(String(err?.message || 'Failed to move session block.'), 'error');
+    await _handleSessionConflict(err, { sessionId: Number(session.session_id), el, classId });
   } finally {
     _mutationInFlight = false;
   }
+}
+
+function _cachedSessionVersion(sessionId) {
+  const v = _sessionDetailCache.get(Number(sessionId))?.session?.version;
+  return Number.isFinite(Number(v)) ? Number(v) : null;
+}
+
+async function _handleSessionConflict(err, { sessionId, el, classId }) {
+  // On a 409 optimistic-lock conflict the local copy is stale; drop it and reload so the
+  // user can retry against the latest version (the backend supplies a friendly message).
+  if (err?.status !== 409) return false;
+  _sessionDetailCache.delete(Number(sessionId));
+  try {
+    await _reloadCalendarData(classId);
+    _renderCalendar(el, classId);
+  } catch { /* keep the conflict toast even if the refresh fails */ }
+  return true;
 }
 
 async function _editSessionBlock({ classId, session, el }) {
@@ -3590,7 +3608,7 @@ async function _editSessionBlock({ classId, session, el }) {
     await api(`/sessions/${session.session_id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, expected_version: _cachedSessionVersion(session.session_id) }),
     });
     _selectedSessionId = Number(session.session_id);
     _selectedSessionError = null;
@@ -3604,6 +3622,7 @@ async function _editSessionBlock({ classId, session, el }) {
     await _selectSession(Number(session.session_id), el, classId);
   } catch (err) {
     showToast(String(err?.message || 'Failed to update session block.'), 'error');
+    await _handleSessionConflict(err, { sessionId: Number(session.session_id), el, classId });
   } finally {
     _mutationInFlight = false;
   }
@@ -4483,7 +4502,7 @@ function _renderCalendar(el, classId) {
           await api(`/sessions/${sessionId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({ ...payload, expected_version: _cachedSessionVersion(sessionId) })
           });
           _sessionDetailCache.delete(sessionId);
           await _reloadCalendarData(classId);
@@ -4494,7 +4513,9 @@ function _renderCalendar(el, classId) {
           }
         } catch (err) {
           showToast(err.message || 'Failed to resize.', 'error');
-          _renderCalendar(el, classId);
+          if (!(await _handleSessionConflict(err, { sessionId, el, classId }))) {
+            _renderCalendar(el, classId);
+          }
         } finally {
           _mutationInFlight = false;
         }
@@ -4937,7 +4958,8 @@ function _renderCalendar(el, classId) {
         };
       });
 
-      await api(`/sessions/${sessionId}/attendance`, {
+      const _attVersion = _cachedSessionVersion(sessionId);
+      await api(`/sessions/${sessionId}/attendance${_attVersion != null ? `?expected_version=${_attVersion}` : ''}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(attendancePayload),
@@ -4955,6 +4977,7 @@ function _renderCalendar(el, classId) {
       );
     } catch (err) {
       showToast(String(err?.message || 'Failed to update attendance.'), 'error');
+      await _handleSessionConflict(err, { sessionId, el, classId });
     } finally {
       _mutationInFlight = false;
       if (button) button.disabled = false;

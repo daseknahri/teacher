@@ -37,6 +37,15 @@ ALERT_SLOW_MS = int(os.getenv("ALERT_SLOW_MS", "2500"))
 ALERT_MIN_INTERVAL_SECONDS = int(os.getenv("ALERT_MIN_INTERVAL_SECONDS", "300"))
 ALERT_TIMEOUT_SECONDS = int(os.getenv("ALERT_TIMEOUT_SECONDS", "10"))
 
+# Retention policy: delete stored artifacts older than N days. 0 (default) disables cleanup
+# for that category so nothing is removed unless an operator opts in.
+RETENTION_UPLOADS_DAYS = int(os.getenv("RETENTION_UPLOADS_DAYS", "0"))
+RETENTION_EXPORTS_DAYS = int(os.getenv("RETENTION_EXPORTS_DAYS", "0"))
+RETENTION_LOGS_DAYS = int(os.getenv("RETENTION_LOGS_DAYS", "0"))
+# When true, run a retention sweep once at application startup (e.g. on each deploy/restart),
+# in addition to any external scheduler that calls POST /ops/retention/cleanup.
+RETENTION_RUN_ON_STARTUP = _env_bool("RETENTION_RUN_ON_STARTUP", False)
+
 MAX_EXCEL_UPLOAD_BYTES = int(os.getenv("MAX_EXCEL_UPLOAD_BYTES", str(5 * 1024 * 1024)))
 MAX_SCREENSHOT_UPLOAD_BYTES = int(os.getenv("MAX_SCREENSHOT_UPLOAD_BYTES", str(10 * 1024 * 1024)))
 UPLOAD_RATE_LIMIT_COUNT = int(os.getenv("UPLOAD_RATE_LIMIT_COUNT", "10"))

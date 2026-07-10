@@ -19,7 +19,12 @@ const TEACHER_NAV_ROUTES = [
 ];
 
 const OWNER_NAV_ROUTES = [
-  { id: 'owner', icon: 'AD', label: 'Owner Panel' },
+  { id: 'owner', icon: 'TP', label: 'Teacher Progress' },
+  { id: 'owner-classes', icon: 'CL', label: 'Classes' },
+  { id: 'owner-teachers', icon: 'TC', label: 'Accounts' },
+  { id: 'owner-calendar', icon: 'CA', label: 'Calendar' },
+  { id: 'owner-ai', icon: 'AI', label: 'NotebookLM' },
+  { id: 'owner-settings', icon: 'ST', label: 'Settings' },
 ];
 
 const _classChangeListeners = [];
@@ -91,7 +96,7 @@ function _topbarUserMarkup() {
 
 function _applyRouteChrome() {
   const route = currentRoute();
-  const isOwnerRoute = route === 'owner';
+  const isOwnerRoute = typeof route === 'string' && route.startsWith('owner');
   const classSection = document.getElementById('topbar-class-section');
   const quickPlanner = document.getElementById('btn-open-quick-planner');
   const topbarTitle = document.getElementById('topbar-context-title');

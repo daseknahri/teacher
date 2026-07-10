@@ -10547,3 +10547,98 @@ def test_leaf_content_generate_requires_blueprint(client):
     )
     assert resp.status_code == 409
     assert "blueprint" in resp.json()["detail"].lower()
+
+
+def test_session_update_optimistic_locking(client):
+    headers = _auth_headers(client)
+    class_id = client.post("/classes", json={"name": "Lock Class", "subject": "Math"}, headers=headers).json()["id"]
+    roster = _build_roster_file([("L1", "One"), ("L2", "Two")])
+    import_resp = client.post(
+        f"/classes/{class_id}/students/import",
+        headers=headers,
+        files={"file": ("s.xlsx", roster, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+    )
+    assert import_resp.status_code == 200
+    students = client.get(f"/classes/{class_id}/students", headers=headers).json()
+
+    create = client.post(f"/classes/{class_id}/sessions", headers=headers, json={"session_date": "2026-03-09", "note": "v1"})
+    assert create.status_code == 201
+    session_id = create.json()["id"]
+    assert create.json()["version"] == 1
+
+    # Correct version edits and bumps the counter.
+    r1 = client.put(f"/sessions/{session_id}", headers=headers, json={"note": "v2", "expected_version": 1})
+    assert r1.status_code == 200
+    assert r1.json()["version"] == 2
+
+    # A stale expected_version is rejected with 409 (concurrent edit).
+    r2 = client.put(f"/sessions/{session_id}", headers=headers, json={"note": "v3", "expected_version": 1})
+    assert r2.status_code == 409
+
+    # Omitting expected_version stays backward-compatible.
+    r3 = client.put(f"/sessions/{session_id}", headers=headers, json={"note": "v3b"})
+    assert r3.status_code == 200
+    assert r3.json()["version"] == 3
+
+    # Attendance honors the same guard and bumps the version.
+    att = [{"student_id": students[0]["id"], "status": "present", "minutes_late": 0, "comment": None}]
+    stale = client.put(f"/sessions/{session_id}/attendance?expected_version=1", headers=headers, json=att)
+    assert stale.status_code == 409
+    ok = client.put(f"/sessions/{session_id}/attendance?expected_version=3", headers=headers, json=att)
+    assert ok.status_code == 200
+
+    # The attendance write bumped the version, so a session edit holding the old version now conflicts.
+    conflict = client.put(f"/sessions/{session_id}", headers=headers, json={"note": "x", "expected_version": 3})
+    assert conflict.status_code == 409
+
+
+def test_retention_cleanup_removes_old_exports(client, monkeypatch):
+    from datetime import datetime, timedelta
+    from app import config as app_config
+    from app.database import SessionLocal
+    from app.models import ExportArtifact
+
+    headers = _auth_headers(client)
+    class_id = client.post("/classes", json={"name": "Ret Class"}, headers=headers).json()["id"]
+
+    monkeypatch.setattr(app_config, "RETENTION_EXPORTS_DAYS", 30)
+    app_config.EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    old_file = app_config.EXPORTS_DIR / "old_export.xlsx"
+    old_file.write_bytes(b"stale-export")
+    with SessionLocal() as db:
+        db.add(
+            ExportArtifact(
+                class_id=class_id,
+                export_type="test",
+                file_name="old_export.xlsx",
+                file_path=str(old_file),
+                file_size=old_file.stat().st_size,
+                created_at=datetime.utcnow() - timedelta(days=60),
+            )
+        )
+        db.commit()
+
+    # Dry run previews the deletion without removing anything.
+    dry = client.post("/ops/retention/cleanup?dry_run=true", headers=headers)
+    assert dry.status_code == 200
+    assert dry.json()["categories"]["exports"]["deleted"] == 1
+    assert old_file.exists()
+
+    # Real run removes the row and the file.
+    res = client.post("/ops/retention/cleanup", headers=headers)
+    assert res.status_code == 200
+    assert res.json()["categories"]["exports"]["deleted"] == 1
+    assert res.json()["total_deleted"] >= 1
+    assert not old_file.exists()
+
+    # Status reflects the configured policy and a disabled category stays off.
+    status_resp = client.get("/ops/retention/status", headers=headers)
+    assert status_resp.status_code == 200
+    body = status_resp.json()
+    assert body["policy"]["exports_days"] == 30
+    assert body["policy"]["uploads_days"] == 0
+
+    # A teacher cannot run retention (owner-only).
+    _, teacher_headers = _create_teacher_and_login(client, headers)
+    forbidden = client.post("/ops/retention/cleanup", headers=teacher_headers)
+    assert forbidden.status_code == 403

@@ -34,6 +34,7 @@ from ..database import get_db
 from ..models import User
 from ..security import require_owner
 from ..services.auth import create_temporary_access_token
+from ..services.retention import get_retention_status, run_retention_cleanup
 from ..services.workflow_generation import (
     get_notebooklm_runtime_health,
     note_notebooklm_manual_auth_clear,
@@ -244,6 +245,25 @@ def ops_status(
             "login_lockout_minutes": LOGIN_LOCKOUT_MINUTES,
         },
     }
+
+
+@router.get("/retention/status")
+def retention_status(
+    _: User = Depends(require_owner),
+    db: Session = Depends(get_db),
+) -> dict:
+    return get_retention_status(db)
+
+
+@router.post("/retention/cleanup")
+def retention_cleanup(
+    dry_run: bool = False,
+    _: User = Depends(require_owner),
+    db: Session = Depends(get_db),
+) -> dict:
+    # Owner-triggered (or scheduler-triggered) sweep. Schedule it externally by POSTing here
+    # on a cron/Coolify schedule, or set RETENTION_RUN_ON_STARTUP to sweep on each restart.
+    return run_retention_cleanup(db, dry_run=dry_run)
 
 
 @router.get("/notebooklm/status")

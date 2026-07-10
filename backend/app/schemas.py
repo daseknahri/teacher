@@ -63,6 +63,7 @@ class SessionOut(BaseModel):
     start_time: time | None
     end_time: time | None
     note: str | None
+    version: int = 1
 
     model_config = {"from_attributes": True}
 
@@ -72,6 +73,9 @@ class SessionUpdate(BaseModel):
     start_time: time | None = None
     end_time: time | None = None
     note: str | None = None
+    # Optional optimistic-locking guard: the version the client last read. When provided and
+    # it no longer matches the stored row, the update is rejected with 409 (concurrent edit).
+    expected_version: int | None = None
 
 
 class AttendanceIn(BaseModel):
