@@ -60,35 +60,38 @@ npm run build   # outputs dist/, which the backend serves at http://127.0.0.1:80
 ```
 
 ### Tests
+Run from the repo root (this is the invocation `CLAUDE.md` documents):
 ```powershell
-cd backend
-.\.venv\Scripts\python.exe -m pytest -q
+$env:PYTHONPATH='backend'
+.\backend\.venv\Scripts\python.exe -m pytest backend/tests -q --tb=short
 ```
-**Baseline: 191 passed / 10 failed.** The 10 failures are all the AI/NotebookLM-generation cluster
-(non-deterministic / need external providers) — they are **deferred, not regressions**. Everything
-else is green. The full suite takes ~5–16 min.
+**Baseline: 201 passed / 0 failed** (~8 min). The suite is fully green. `conftest.py` pins
+`DATABASE_URL`/`STORAGE_DIR` and forces the AI providers to deterministic `fallback` *before* the
+app is imported — that is what makes the NotebookLM/OpenAI tests reproducible without any provider.
+Do not "fix" a test by loosening it before checking that `conftest.py` is being honoured.
 
 ---
 
-## Current status (what was done 2026-07-10)
+## Current status (2026-07-10)
 
-Committed as `fdcd4f5` "Supervisor dashboard UX + P0 production-hardening" (on `main`):
+`main` is at `99b3f0b`. It contains two streams of work that were reconciled:
 
-- **Supervisor dashboard redesign** — the owner panel is now sidebar-driven with six sub-routes
-  (Teacher Progress, Classes, Accounts, Calendar, NotebookLM, Settings); a clean Teacher Progress
+- **Supervisor dashboard redesign** — the owner panel is sidebar-driven with six sub-routes
+  (Teacher Progress, Classes, Accounts, Calendar, NotebookLM, Settings); a Teacher Progress
   overview (coverage %, health) + a **Session Checklist Log** (what each teacher checked off per
   session); a Storage & Retention panel in Settings. Files: `frontend/src/views/OwnerView.js`,
   `components/AppShell.js`, `main.js`.
-- **Test baseline made reliable** — `backend/tests/conftest.py` now gives each test a clean DB (the
-  engine is a module-level singleton, so the suite silently shared one DB and was order-dependent).
-- **Real bug fixed** — `start_workflow_session` used machine-local `datetime.now()` while session
-  end uses UTC → `end_time < start_time` 409/400 on hosts ahead of UTC. Now UTC everywhere.
 - **Optimistic locking on session updates** — `ClassSession.version`, 409 on stale `expected_version`
   (update + attendance), wired through all calendar edit paths. Prevents concurrent overwrite.
 - **Retention policy + cleanup** — `RETENTION_*_DAYS` config (0 = disabled), `backend/app/services/
   retention.py`, owner-only `GET`/`POST /ops/retention`, opt-in startup sweep, owner UI panel.
+- **Session-reuse + timetable correctness** — `_session_has_been_started()` (audit-based) so a
+  finished session is never silently reused, `_class_has_timetable_rules()` so timetable classes take
+  the next valid slot, and an `end_time` clamp on legacy empty close payloads.
+- **Date-robust tests** — several tests hardcoded dates that expired (a "future" session dated in the
+  past, a session on a Sunday). They now derive dates from `date.today()`.
 
-Deferred by owner decision: **Alembic migrations**, and the **10 AI tests**.
+Deferred by owner decision: **Alembic migrations**.
 
 ---
 
@@ -96,30 +99,38 @@ Deferred by owner decision: **Alembic migrations**, and the **10 AI tests**.
 
 - **The dev `app.db` can get wiped** (test runs / env cleanup). If login fails with "Invalid
   credentials", just re-run `POST /auth/bootstrap-owner`.
-- **The local working copy vanished once** during this session (environment/disk cleanup, not disk
-  full). Nothing was lost because it was pushed. Treat GitHub as the only durable copy; push often.
+- **A working copy vanished once** (environment/disk cleanup, not disk full). Nothing was lost because
+  it was pushed. Treat GitHub as the only durable copy; push often. Related: the content-bank work
+  lived on six local-only branches for weeks. They are now on `origin`.
 - **NotebookLM won't work headless / in CI** — it automates Google's web UI and needs a manual auth
-  file (`storage_state.json`). Do not build critical paths on it (see eval doc §2).
-- **`OPENAI_API_KEY` is empty by default** → AI extraction falls back to a heuristic parser; the 10
-  AI tests assert on generated content and will fail without a provider. Quarantine candidates.
+  file (`storage_state.json`). Do not build critical paths on it (see eval doc §2). Tests never need
+  it: `conftest.py` forces `fallback`.
+- **Hardcoded dates in tests are a recurring bug.** Anything compared against `date.today()` (future
+  session cleanup, non-working Sundays, holidays) must be computed relative to today.
 - **Windows/PowerShell**: run the backend via the venv python directly (`.\.venv\Scripts\python.exe`).
-  `git`/`gh`: `gh` is NOT installed here; open PRs from the GitHub web link or install it.
-- **Two big machines, one repo**: `.env`, `.venv`, `node_modules`, `dist`, `app.db`, `storage/` are
-  gitignored — you re-create them per machine (see setup above).
+  `gh` is NOT installed here; open PRs from the GitHub web link or install it.
+- **Local-only files**: `.env`, `.venv`, `node_modules`, `dist`, `app.db`, `storage/` are gitignored —
+  recreate them per machine (see setup above). The 1AC source PDFs live outside the repo entirely.
 
 ---
 
 ## Where to go next (recommended order)
 
+0. **Read the six `claude/*` branches on `origin` first.** They contain an in-progress content-bank /
+   leaf-content implementation (generation, persistence, visibility, reader, source-block extraction).
+   Any curriculum work must reconcile with them, not ignore them.
 1. **Content / curriculum** (the owner's priority) — see `CONTENT-CURRICULUM-STRATEGY.md`. Blocked
    on the owner sharing the 1AC-maths PDFs on disk. Then: add `Curriculum`/`CurriculumNode`/
    `CurriculumNodeContent` tables, an owner authoring/import screen, digitize the programme skeleton,
    pilot one chapter of content, wire class instantiation + a teacher node-reader.
-2. **Alembic** — baseline the current schema, stop the 117-statement runtime patching in
+2. **Fix the session timezone.** `start_workflow_session` records machine-local time while
+   `end_workflow_session` records UTC. The `end_time` clamp hides the resulting inversion by
+   producing **zero-duration sessions** on any host ahead of UTC. Pick one clock — ideally a
+   configured school timezone (`Africa/Casablanca`) — and use it for both.
+3. **Alembic** — baseline the current schema, stop the 117-statement runtime patching in
    `database.py`. (Changes the Coolify deploy step — coordinate with the owner.)
-3. **Split the monolith files** — `workflow.py` (7.8k), `workflow_generation.py` (7.9k),
+4. **Split the monolith files** — `workflow.py` (7.8k), `workflow_generation.py` (7.9k),
    `WorkflowView.js` (7.4k), `CalendarView.js` (5.2k), `test_app_flows.py` (9.4k).
-4. **Quarantine the 10 AI tests** (skip-if-no-provider) so the suite is green by default.
 5. **Long-term:** move the frontend to a component framework (Svelte/Vue) — see eval doc §5.
 
 ---

@@ -1,8 +1,22 @@
 # Content & Curriculum Strategy
 
-Date: 2026-07-10. Status: **decided direction, not yet implemented.** This supersedes the earlier
-AI-content-bank / leaf-content direction as the *primary* content strategy (those docs describe the
-per-class AI-extraction mechanism, which is being demoted — see `ARCHITECTURE-EVALUATION-2026-07.md`).
+Date: 2026-07-10. Status: **proposed direction, not yet implemented, and not yet reconciled with
+existing work.**
+
+> **Read this first.** An in-progress content-bank / leaf-content implementation already exists on
+> six branches on `origin`: `claude/leaf-content-generation`, `leaf-content-persistence`,
+> `leaf-content-visibility`, `workflow-leaf-reader`, `leaf-card-source-first`,
+> `exact-source-block-extraction` (plus the `CLAUDE-TASK-LEAF-*` specs in this folder). An earlier
+> draft of this document claimed to "supersede" that direction. It does not — that claim was written
+> without knowledge of those branches. What follows is a proposal for the *shared curriculum
+> skeleton*, which is a **layer above** the leaf-content work, not a replacement for it. Reconcile,
+> don't discard.
+
+`CLAUDE.md` already states a compatible intent: build "a stable content-bank builder outside the live
+teacher workflow," store content "with provenance, exact source references, Markdown/LaTeX math… and
+supervisor approval state," and treat NotebookLM as "an assistant/context tool rather than the only
+source of structure." This document sharpens *where the structure comes from*: a shared, authoritative
+curriculum rather than per-class AI extraction.
 
 ---
 

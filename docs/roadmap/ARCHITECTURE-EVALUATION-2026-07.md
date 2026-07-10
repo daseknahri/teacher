@@ -106,9 +106,10 @@ Measured this session:
 | `backend/tests/test_app_flows.py` | 9,362 (one file) |
 
 These are too large to hold in your head, review, or change safely. Concrete evidence of the cost:
-the 9.4k-line test file had **no per-test DB isolation** until this session (the engine is a
-module-level singleton), so the suite silently shared one database and gave order-dependent,
-unreliable results. Nobody noticed because the file is too big to reason about.
+several tests in the 9.4k-line file hardcoded dates (a "future" session dated `2026-06-10`, a session
+on a Sunday) and silently stopped testing what they claimed once the calendar moved past them. In a
+file that size nobody notices. A reviewer coming to this repo cold will also mis-attribute failures
+to the wrong cause — that happened during this very review.
 
 Split by domain: `workflow.py` → units / checklist / sessions / timetable / holidays routers;
 `test_app_flows.py` → one file per area; the giant views into sub-view modules.
@@ -140,11 +141,24 @@ a "when you can," not "now" — but it's the frontend's central problem.
 - **SQLite dev / Postgres prod** with dialect-branched DDL — dev/prod parity risk; ties into #3.
 - **Custom bearer-token auth** (`AuthToken` table, manual TTL/lockout) — acceptable at this scale,
   but rolling your own auth is always some risk. Leave it, but know it's there.
-- **`created_at` uses `datetime.utcnow`** (deprecated) and there was a real local-vs-UTC bug in
-  `start_workflow_session` (fixed this session). Standardize on one UTC helper everywhere.
+- **`created_at` uses `datetime.utcnow`** (deprecated). More importantly there is a live
+  local-vs-UTC bug: `start_workflow_session` records machine-local time while `end_workflow_session`
+  records UTC. The `end_time` clamp masks the inversion by producing **zero-duration sessions** on
+  any host ahead of UTC. Pick one clock — ideally a configured school timezone — for both.
 - **No API versioning / no generated client** — the frontend hard-codes paths. Minor.
-- **10 AI/NotebookLM tests assert on generated content** and are inherently non-deterministic /
-  provider-dependent. They should be quarantined (skip-if-no-provider) rather than sitting red.
+
+### Correction to an earlier draft of this document
+
+An earlier version of this review claimed that 10 AI/NotebookLM tests were "inherently
+non-deterministic / provider-dependent" and should be quarantined, and that several session-reuse
+tests were "stale." **Both claims were wrong.** They were made from a clone of `origin/main` that was
+missing substantial uncommitted work — the `conftest.py` that pins providers to `fallback` before the
+app is imported, and the `_session_has_been_started()` / `_class_has_timetable_rules()`
+implementation. With that work merged the suite is **201 passed / 0 failed**.
+
+The lesson generalizes and is worth keeping: **on this repo, a failing test is far more likely to be
+missing implementation than a bad test.** Do not loosen a test before confirming what it is asserting
+against actually exists.
 
 ---
 
