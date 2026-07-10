@@ -65,7 +65,7 @@ Run from the repo root (this is the invocation `CLAUDE.md` documents):
 $env:PYTHONPATH='backend'
 .\backend\.venv\Scripts\python.exe -m pytest backend/tests -q --tb=short
 ```
-**Baseline: 201 passed / 0 failed** (~8 min). The suite is fully green. `conftest.py` pins
+**Baseline: 202 passed / 0 failed** (~8 min). The suite is fully green. `conftest.py` pins
 `DATABASE_URL`/`STORAGE_DIR` and forces the AI providers to deterministic `fallback` *before* the
 app is imported — that is what makes the NotebookLM/OpenAI tests reproducible without any provider.
 Do not "fix" a test by loosening it before checking that `conftest.py` is being honoured.
@@ -89,7 +89,13 @@ Do not "fix" a test by loosening it before checking that `conftest.py` is being 
   finished session is never silently reused, `_class_has_timetable_rules()` so timetable classes take
   the next valid slot, and an `end_time` clamp on legacy empty close payloads.
 - **Date-robust tests** — several tests hardcoded dates that expired (a "future" session dated in the
-  past, a session on a Sunday). They now derive dates from `date.today()`.
+  past, a session on a Sunday). They now derive dates from today.
+- **One clock for wall-clock times** — `SCHOOL_TIMEZONE` (default `Africa/Casablanca`) +
+  `app/services/school_time.py`. `session_date`/`start_time`/`end_time` and every "is this in the
+  future?" comparison now read the school's clock. Previously `start` used machine-local time and the
+  close paths used UTC, so on hosts ahead of UTC the `end_time` clamp silently produced
+  zero-duration sessions. `created_at`/`closed_at`/audit rows are instants and stay **UTC** — do not
+  route those through `school_time`.
 
 Deferred by owner decision: **Alembic migrations**.
 
@@ -123,15 +129,11 @@ Deferred by owner decision: **Alembic migrations**.
    on the owner sharing the 1AC-maths PDFs on disk. Then: add `Curriculum`/`CurriculumNode`/
    `CurriculumNodeContent` tables, an owner authoring/import screen, digitize the programme skeleton,
    pilot one chapter of content, wire class instantiation + a teacher node-reader.
-2. **Fix the session timezone.** `start_workflow_session` records machine-local time while
-   `end_workflow_session` records UTC. The `end_time` clamp hides the resulting inversion by
-   producing **zero-duration sessions** on any host ahead of UTC. Pick one clock — ideally a
-   configured school timezone (`Africa/Casablanca`) — and use it for both.
-3. **Alembic** — baseline the current schema, stop the 117-statement runtime patching in
+2. **Alembic** — baseline the current schema, stop the 117-statement runtime patching in
    `database.py`. (Changes the Coolify deploy step — coordinate with the owner.)
-4. **Split the monolith files** — `workflow.py` (7.8k), `workflow_generation.py` (7.9k),
+3. **Split the monolith files** — `workflow.py` (7.8k), `workflow_generation.py` (7.9k),
    `WorkflowView.js` (7.4k), `CalendarView.js` (5.2k), `test_app_flows.py` (9.4k).
-5. **Long-term:** move the frontend to a component framework (Svelte/Vue) — see eval doc §5.
+4. **Long-term:** move the frontend to a component framework (Svelte/Vue) — see eval doc §5.
 
 ---
 

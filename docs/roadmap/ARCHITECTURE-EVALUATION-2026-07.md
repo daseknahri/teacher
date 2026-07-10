@@ -141,10 +141,13 @@ a "when you can," not "now" — but it's the frontend's central problem.
 - **SQLite dev / Postgres prod** with dialect-branched DDL — dev/prod parity risk; ties into #3.
 - **Custom bearer-token auth** (`AuthToken` table, manual TTL/lockout) — acceptable at this scale,
   but rolling your own auth is always some risk. Leave it, but know it's there.
-- **`created_at` uses `datetime.utcnow`** (deprecated). More importantly there is a live
-  local-vs-UTC bug: `start_workflow_session` records machine-local time while `end_workflow_session`
-  records UTC. The `end_time` clamp masks the inversion by producing **zero-duration sessions** on
-  any host ahead of UTC. Pick one clock — ideally a configured school timezone — for both.
+- **`created_at` uses `datetime.utcnow`** (deprecated; still worth migrating to
+  `datetime.now(UTC)`).
+- ~~Live local-vs-UTC bug: `start_workflow_session` records machine-local time while
+  `end_workflow_session` records UTC.~~ **Fixed.** `SCHOOL_TIMEZONE` +
+  `app/services/school_time.py` now provide the single wall-clock source for `session_date`,
+  `start_time`, `end_time` and every "is this in the future?" comparison. Instants
+  (`created_at`/`closed_at`/audit) stay UTC on purpose.
 - **No API versioning / no generated client** — the frontend hard-codes paths. Minor.
 
 ### Correction to an earlier draft of this document
